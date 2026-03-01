@@ -1,13 +1,15 @@
 """
 FastAPI uygulama fabrikası.
-Application factory pattern — test ve prod için ayrı instance'lar oluşturulabilir.
 """
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.responses import HTMLResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -26,32 +28,24 @@ from app.db.session import engine
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Uygulama başlangıç/bitiş hook'ları."""
     setup_logging()
-
-    # Başlangıç
     from app.core.logging import get_logger
+
     logger = get_logger(__name__)
     logger.info("app_starting", version=settings.APP_VERSION, env=settings.APP_ENV)
-
     yield
-
-    # Bitiş — bağlantıları kapat
     await engine.dispose()
     logger.info("app_stopped")
 
 
 def create_app() -> FastAPI:
-    """FastAPI app factory."""
-
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
         debug=settings.APP_DEBUG,
-        # Production'da docs'u kapat
-        docs_url="/docs" if not settings.is_production else None,
-        redoc_url="/redoc" if not settings.is_production else None,
-        openapi_url="/openapi.json" if not settings.is_production else None,
+        # Varsayılan docs'u kapat, aşağıda manuel tanımlıyoruz
+        docs_url=None,
+        redoc_url=None,
         lifespan=lifespan,
     )
 
@@ -74,7 +68,7 @@ def create_app() -> FastAPI:
         expose_headers=["X-Request-ID", "X-Process-Time-Ms"],
     )
 
-    # ── Custom Middleware (LIFO sırası — önce eklenen son çalışır) ────────────
+    # ── Middleware ────────────────────────────────────────────────────────────
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(TimingMiddleware)
     app.add_middleware(RequestIDMiddleware)
@@ -84,6 +78,24 @@ def create_app() -> FastAPI:
 
     # ── Routers ───────────────────────────────────────────────────────────────
     app.include_router(api_router)
+
+    # ── Docs — CDN yerine unpkg.com (daha güvenilir) ──────────────────────────
+    @app.get("/docs", include_in_schema=False)
+    async def swagger_ui() -> HTMLResponse:
+        return get_swagger_ui_html(
+            openapi_url="/openapi.json",
+            title=f"{settings.APP_NAME} - Swagger UI",
+            swagger_js_url="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js",
+            swagger_css_url="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css",
+        )
+
+    @app.get("/redoc", include_in_schema=False)
+    async def redoc_ui() -> HTMLResponse:
+        return get_redoc_html(
+            openapi_url="/openapi.json",
+            title=f"{settings.APP_NAME} - ReDoc",
+            redoc_js_url="https://unpkg.com/redoc@latest/bundles/redoc.standalone.js",
+        )
 
     # ── Health Check ──────────────────────────────────────────────────────────
     @app.get("/health", tags=["System"])

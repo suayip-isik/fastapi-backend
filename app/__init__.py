@@ -1,1 +1,1 @@
-# app package
+"""FastAPI Backend Application."""
