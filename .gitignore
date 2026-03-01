@@ -1,0 +1,79 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+eggs/
+*.egg-info/
+*.egg
+.eggs/
+
+# ── Virtual Environment ───────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+.env.local
+.env.staging
+.env.production
+
+# ── Environment / Secrets ─────────────────────────────────────────────────────
+.env
+!.env.example
+keys/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# ── Database ──────────────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Alembic ───────────────────────────────────────────────────────────────────
+# Versions klasörü commit'lenir, sadece cache'ler ignore edilir
+alembic/versions/__pycache__/
+
+# ── Testing / Coverage ────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+
+# ── Type Checking ─────────────────────────────────────────────────────────────
+.mypy_cache/
+.dmypy.json
+
+# ── Linting ───────────────────────────────────────────────────────────────────
+.ruff_cache/
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+# docker-compose.override.yml local ayarlar için kullanılabilir
+docker-compose.override.yml
+
+# ── IDE / Editor ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Uploads / Static (local storage kullanılıyorsa) ──────────────────────────
+uploads/
+media/
+
+# ── Node (eğer frontend eklenirse) ───────────────────────────────────────────
+node_modules/
+
+CLAUDE.md

@@ -1,0 +1,52 @@
+"""
+SQLAlchemy declarative base + ortak alanlar.
+Tüm modeller Base'den miras alır.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from uuid import UUID, uuid4
+
+from sqlalchemy import DateTime, func
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class Base(DeclarativeBase):
+    """Tüm modellerin base class'ı."""
+    pass
+
+
+class TimestampMixin:
+    """created_at / updated_at otomatik yönetim."""
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class UUIDMixin:
+    """UUID primary key."""
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        nullable=False,
+    )
+
+
+class BaseModel(UUIDMixin, TimestampMixin, Base):
+    """
+    UUIDMixin + TimestampMixin — genel amaçlı model base'i.
+    Abstract olarak işaretlenmiştir, tablo oluşturmaz.
+    """
+    __abstract__ = True
