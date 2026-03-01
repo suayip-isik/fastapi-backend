@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from uuid import UUID
-
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
@@ -45,16 +43,3 @@ class RefreshRequest(BaseModel):
 class OAuthCallbackRequest(BaseModel):
     code: str
     state: str | None = None
-
-
-class UserResponse(BaseModel):
-    id: UUID
-    email: str
-    username: str | None
-    full_name: str | None
-    avatar_url: str | None
-    role: str
-    is_active: bool
-    is_verified: bool
-
-    model_config = {"from_attributes": True}
