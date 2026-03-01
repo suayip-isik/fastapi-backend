@@ -1,5 +1,8 @@
 """Auth şemaları — request/response modelleri."""
+
 from __future__ import annotations
+
+from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -45,7 +48,7 @@ class OAuthCallbackRequest(BaseModel):
 
 
 class UserResponse(BaseModel):
-    id: str
+    id: UUID
     email: str
     username: str | None
     full_name: str | None

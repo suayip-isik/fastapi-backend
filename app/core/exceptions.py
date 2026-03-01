@@ -2,6 +2,7 @@
 Global exception hierarchy.
 Tüm uygulama hataları buradan türetilir — tutarlı API hata formatı sağlar.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -14,8 +15,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # ── Base ──────────────────────────────────────────────────────────────────────
 
+
 class AppError(Exception):
-    """Tüm uygulama hatalarının base class'ı."""
     status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR
     code: str = "INTERNAL_ERROR"
     message: str = "Beklenmeyen bir hata oluştu."
@@ -36,6 +37,7 @@ class AppError(Exception):
 
 
 # ── Auth Errors ───────────────────────────────────────────────────────────────
+
 
 class AuthenticationError(AppError):
     status_code = status.HTTP_401_UNAUTHORIZED
@@ -61,6 +63,7 @@ class InsufficientPermissionsError(AppError):
 
 # ── Resource Errors ───────────────────────────────────────────────────────────
 
+
 class NotFoundError(AppError):
     status_code = status.HTTP_404_NOT_FOUND
     code = "NOT_FOUND"
@@ -75,6 +78,7 @@ class AlreadyExistsError(AppError):
 
 # ── Validation / Business ─────────────────────────────────────────────────────
 
+
 class ValidationError(AppError):
     status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
     code = "VALIDATION_ERROR"
@@ -88,6 +92,7 @@ class BusinessRuleError(AppError):
 
 
 # ── Storage / External ────────────────────────────────────────────────────────
+
 
 class StorageError(AppError):
     status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -109,23 +114,46 @@ class InvalidFileTypeError(AppError):
 
 # ── Rate Limit ────────────────────────────────────────────────────────────────
 
+
 class RateLimitError(AppError):
     status_code = status.HTTP_429_TOO_MANY_REQUESTS
     code = "RATE_LIMIT_EXCEEDED"
     message = "Çok fazla istek gönderildi. Lütfen bekleyin."
 
 
-# ── Exception Handlers ────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _error_response(status_code: int, code: str, message: str, details: Any = None) -> JSONResponse:
+
+def _serialize_validation_errors(errors: list) -> list:
+    """Pydantic validation hatalarını JSON-serializable formata çevirir."""
+    result = []
+    for error in errors:
+        result.append(
+            {
+                "field": " -> ".join(str(loc) for loc in error.get("loc", [])),
+                "message": str(error.get("msg", "")),
+                "type": str(error.get("type", "")),
+            }
+        )
+    return result
+
+
+def _error_response(
+    status_code: int,
+    code: str,
+    message: str,
+    details: Any = None,
+) -> JSONResponse:
     content: dict = {"error": {"code": code, "message": message}}
-    if details:
+    if details is not None:
         content["error"]["details"] = details
     return JSONResponse(status_code=status_code, content=content)
 
 
+# ── Exception Handlers ────────────────────────────────────────────────────────
+
+
 def register_exception_handlers(app: FastAPI) -> None:
-    """Tüm exception handler'ları app'e kaydet."""
 
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
@@ -133,20 +161,21 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
-        return _error_response(exc.status_code, "HTTP_ERROR", exc.detail)
+        return _error_response(exc.status_code, "HTTP_ERROR", str(exc.detail))
 
     @app.exception_handler(RequestValidationError)
-    async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    async def validation_error_handler(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
         return _error_response(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             "VALIDATION_ERROR",
             "İstek doğrulama hatası.",
-            details=exc.errors(),
+            details=_serialize_validation_errors(exc.errors()),
         )
 
     @app.exception_handler(Exception)
     async def unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
-        # Production'da iç detayı gizle
         return _error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "INTERNAL_ERROR",
