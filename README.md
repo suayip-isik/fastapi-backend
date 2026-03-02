@@ -62,7 +62,7 @@ app/
 ```bash
 # 1. Ortamı hazırla
 cp .env.example .env
-# .env dosyasını düzenle
+# .env dosyasını düzenle (özellikle ADMIN_EMAIL ve ADMIN_PASSWORD)
 
 # 2. Çalıştır
 docker compose up -d
@@ -72,16 +72,43 @@ docker compose exec api alembic upgrade head
 
 # 4. API Docs
 open http://localhost:8000/docs
+
+# 5. Admin Panel
+open http://localhost:8000/admin
 ```
+
+> **Not:** Uygulama ilk başladığında `.env` içindeki `ADMIN_EMAIL` ve `ADMIN_PASSWORD` değerleriyle otomatik olarak bir admin kullanıcısı oluşturulur. Bu kullanıcı zaten mevcut ise tekrar oluşturulmaz.
 
 ## Admin Panel
 
 `/admin` adresinden erişilir. Yalnızca `UserRole.ADMIN` rolüne sahip kullanıcılar giriş yapabilir.
 
+### Erişim Bilgileri
+
+Uygulama ilk başlatıldığında `.env` dosyasındaki değerlerle otomatik admin kullanıcısı oluşturulur:
+
+| Alan    | Değer                         |
+| ------- | ----------------------------- |
+| URL     | `http://localhost:8000/admin` |
+| E-posta | `ADMIN_EMAIL` (`.env`)        |
+| Şifre   | `ADMIN_PASSWORD` (`.env`)     |
+
+> Varsayılan `.env.example` değerleri: `admin@example.com` / `changeme` — production ortamında mutlaka değiştirin.
+
+### Özellikler
+
 - Giriş: mevcut email/password + JWT doğrulaması (ayrı hesap gerektirmez)
 - Session yönetimi: `SessionMiddleware` + `itsdangerous` ile imzalı cookie
 - Mevcut view'lar: **Kullanıcılar** (tam CRUD), **OAuth Hesapları** (salt okunur, export yok)
 - Yeni view eklemek için `app/admin/views.py`'e `ModelView` subclass'ı eklemek yeterli — otomatik register edilir
+
+## API Dokümantasyonu
+
+| Arayüz       | URL                                  | Açıklama                           |
+| ------------ | ------------------------------------ | ---------------------------------- |
+| Swagger UI   | `http://localhost:8000/docs`         | Etkileşimli API explorer           |
+| ReDoc        | `http://localhost:8000/redoc`        | Okunabilir referans dokümantasyonu |
+| OpenAPI JSON | `http://localhost:8000/openapi.json` | Ham şema (CI/SDK üretimi için)     |
 
 ## Güvenlik Özellikleri
 
