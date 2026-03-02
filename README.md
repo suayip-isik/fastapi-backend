@@ -4,7 +4,7 @@
 
 ## Tech Stack
 
-| Katman           | Teknoloji                                 |
+| Layer            | Technology                                |
 | ---------------- | ----------------------------------------- |
 | Framework        | FastAPI + Python 3.12                     |
 | Database         | PostgreSQL 16 + SQLAlchemy 2.0 (async)    |
