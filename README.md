@@ -1,6 +1,6 @@
 # 🚀 FastAPI Production Backend
 
-> Modüler · Ölçeklenebilir · API-First · Production-Ready
+> Modular · Scalable · API-First · Production-Ready
 
 ## Tech Stack
 
