@@ -76,4 +76,5 @@ media/
 # ── Node (eğer frontend eklenirse) ───────────────────────────────────────────
 node_modules/
 
+.env
 CLAUDE.md
