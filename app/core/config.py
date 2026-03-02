@@ -2,6 +2,7 @@
 Core configuration — tüm ayarlar tek yerden yönetilir.
 Pydantic Settings ile .env dosyasından otomatik yüklenir.
 """
+
 from __future__ import annotations
 
 import json
@@ -102,6 +103,10 @@ class Settings(BaseSettings):
     def MAX_UPLOAD_SIZE_BYTES(self) -> int:
         return self.MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
+    # ── Admin Seed ────────────────────────────────────────────────────────────
+    ADMIN_EMAIL: str = "admin@example.com"
+    ADMIN_PASSWORD: str = "changeme"
+
     # ── Rate Limiting ─────────────────────────────────────────────────────────
     RATE_LIMIT_DEFAULT: str = "100/minute"
     RATE_LIMIT_AUTH: str = "5/minute"
@@ -129,8 +134,9 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_production_settings(self) -> "Settings":
         if self.APP_ENV == "production":
-            assert self.SECRET_KEY != "change-this-to-a-random-secret-key-in-production", \
+            assert self.SECRET_KEY != "change-this-to-a-random-secret-key-in-production", (
                 "Production'da SECRET_KEY değiştirilmeli!"
+            )
             assert not self.APP_DEBUG, "Production'da DEBUG kapalı olmalı!"
         return self
 

@@ -16,6 +16,7 @@
 | WebSocket        | FastAPI native                            |
 | Rate Limit       | slowapi (Redis-backed)                    |
 | Validation       | Pydantic v2                               |
+| Admin Panel      | SQLAdmin (role-based, JWT auth)           |
 | Containerization | Docker + Docker Compose                   |
 | Testing          | pytest + pytest-asyncio                   |
 | Docs             | OpenAPI (auto)                            |
@@ -40,6 +41,7 @@ app/
 │   └── session.py          # Async DB session factory
 ├── services/               # Business logic katmanı (SOLID)
 ├── schemas/                # Pydantic request/response şemaları
+├── admin/                  # SQLAdmin panel (views, auth backend)
 ├── tasks/                  # ARQ background task'ları
 ├── websockets/             # WebSocket handler'ları
 ├── storage/                # File upload abstraction
@@ -72,6 +74,15 @@ docker compose exec api alembic upgrade head
 open http://localhost:8000/docs
 ```
 
+## Admin Panel
+
+`/admin` adresinden erişilir. Yalnızca `UserRole.ADMIN` rolüne sahip kullanıcılar giriş yapabilir.
+
+- Giriş: mevcut email/password + JWT doğrulaması (ayrı hesap gerektirmez)
+- Session yönetimi: `SessionMiddleware` + `itsdangerous` ile imzalı cookie
+- Mevcut view'lar: **Kullanıcılar** (tam CRUD), **OAuth Hesapları** (salt okunur, export yok)
+- Yeni view eklemek için `app/admin/views.py`'e `ModelView` subclass'ı eklemek yeterli — otomatik register edilir
+
 ## Güvenlik Özellikleri
 
 - RS256 imzalı JWT token'lar (access + refresh)
@@ -81,6 +92,7 @@ open http://localhost:8000/docs
 - CORS politikası
 - Request ID tracking
 - Structured security audit logs
+- Admin paneli sadece `ADMIN` rolüne açık, her istekte token + rol doğrulaması yapılır
 
 ## Environment Variables
 

@@ -2,6 +2,7 @@
 Users endpoint'leri.
 Kullanıcı listeleme, güncelleme, silme işlemleri.
 """
+
 from __future__ import annotations
 
 from typing import Annotated
@@ -14,8 +15,7 @@ from app.api.dependencies.auth import AdminDep, CurrentUserDep
 from app.db.models.user import UserRole
 from app.db.session import get_db
 from app.schemas.common import MessageResponse, PaginatedResponse
-from app.schemas.auth import UserResponse
-from app.schemas.user import UpdateUserRequest, UserListResponse
+from app.schemas.user import UpdateUserRequest, UserResponse
 from app.services.user import UserService
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -44,7 +44,7 @@ async def update_me(
     return await service.update(current_user.id, data)
 
 
-@router.get("", response_model=PaginatedResponse[UserListResponse])
+@router.get("", response_model=PaginatedResponse[UserResponse])
 async def list_users(
     _: AdminDep,
     service: UserServiceDep,

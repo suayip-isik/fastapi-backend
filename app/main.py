@@ -1,5 +1,5 @@
 """
-FastAPI uygulama fabrikası.
+FastAPI uygulama fabrikasi.
 """
 
 from __future__ import annotations
@@ -13,7 +13,10 @@ from fastapi.responses import HTMLResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from sqladmin import Admin
+from starlette.middleware.sessions import SessionMiddleware
 
+from app.admin.auth import AdminAuthBackend
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
@@ -24,6 +27,8 @@ from app.core.middleware import (
     TimingMiddleware,
 )
 from app.db.session import engine
+from app.admin import get_all_views
+from app.admin.seed import create_default_admin
 
 
 @asynccontextmanager
@@ -33,6 +38,7 @@ async def lifespan(app: FastAPI):
 
     logger = get_logger(__name__)
     logger.info("app_starting", version=settings.APP_VERSION, env=settings.APP_ENV)
+    await create_default_admin()
     yield
     await engine.dispose()
     logger.info("app_stopped")
@@ -43,13 +49,15 @@ def create_app() -> FastAPI:
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
         debug=settings.APP_DEBUG,
-        # Varsayılan docs'u kapat, aşağıda manuel tanımlıyoruz
         docs_url=None,
         redoc_url=None,
         lifespan=lifespan,
     )
 
-    # ── Rate Limiting ─────────────────────────────────────────────────────────
+    # Session Middleware (SQLAdmin icin zorunlu)
+    app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
+
+    # Rate Limiting
     limiter = Limiter(
         key_func=get_remote_address,
         storage_uri=settings.REDIS_URL,
@@ -58,7 +66,7 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-    # ── CORS ──────────────────────────────────────────────────────────────────
+    # CORS
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[str(o) for o in settings.CORS_ORIGINS],
@@ -68,18 +76,30 @@ def create_app() -> FastAPI:
         expose_headers=["X-Request-ID", "X-Process-Time-Ms"],
     )
 
-    # ── Middleware ────────────────────────────────────────────────────────────
+    # Middleware
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(TimingMiddleware)
     app.add_middleware(RequestIDMiddleware)
 
-    # ── Exception Handlers ────────────────────────────────────────────────────
+    # Exception Handlers
     register_exception_handlers(app)
 
-    # ── Routers ───────────────────────────────────────────────────────────────
+    # Routers
     app.include_router(api_router)
 
-    # ── Docs — CDN yerine unpkg.com (daha güvenilir) ──────────────────────────
+    # Admin Panel
+    admin = Admin(
+        app,
+        engine=engine,
+        authentication_backend=AdminAuthBackend(secret_key=settings.SECRET_KEY),
+        title=f"{settings.APP_NAME} Admin",
+        base_url="/admin",
+    )
+
+    for view in get_all_views():
+        admin.add_view(view)
+
+    # Docs
     @app.get("/docs", include_in_schema=False)
     async def swagger_ui() -> HTMLResponse:
         return get_swagger_ui_html(
@@ -97,7 +117,7 @@ def create_app() -> FastAPI:
             redoc_js_url="https://unpkg.com/redoc@latest/bundles/redoc.standalone.js",
         )
 
-    # ── Health Check ──────────────────────────────────────────────────────────
+    # Health Check
     @app.get("/health", tags=["System"])
     async def health():
         return {"status": "ok", "version": settings.APP_VERSION, "env": settings.APP_ENV}
