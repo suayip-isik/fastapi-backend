@@ -18,8 +18,8 @@ from app.schemas.auth import (
     RefreshRequest,
     RegisterRequest,
     TokenResponse,
-    UserResponse,
 )
+from app.schemas.user import UserResponse
 from app.services.auth import AuthService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
