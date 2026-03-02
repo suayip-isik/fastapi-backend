@@ -2,13 +2,17 @@
 Auth service — tüm kimlik doğrulama business logic'i burada.
 Route handler'lar sadece bu service'i çağırır.
 """
+
 from __future__ import annotations
+
+import secrets
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import AlreadyExistsError, AuthenticationError, InvalidTokenError
+from app.core.redis import get_redis_client
 from app.core.security import (
     TokenType,
     create_token_pair,
@@ -19,6 +23,10 @@ from app.core.security import (
 from app.db.models.user import User
 from app.db.repositories.user import UserRepository
 from app.schemas.auth import RegisterRequest, TokenResponse
+from app.tasks.worker import enqueue, send_verification_email, send_password_reset_email
+
+_EMAIL_VERIFY_TTL = 24 * 60 * 60  # 24 saat (saniye)
+_PASSWORD_RESET_TTL = 15 * 60  # 15 dakika (saniye)
 
 
 class AuthService:
@@ -31,11 +39,18 @@ class AuthService:
         if await self._repo.email_exists(data.email):
             raise AlreadyExistsError("Bu e-posta adresi zaten kullanılıyor.")
 
-        return await self._repo.create(
+        user = await self._repo.create(
             email=data.email.lower(),
             hashed_password=hash_password(data.password),
             full_name=data.full_name,
         )
+
+        token = secrets.token_urlsafe(32)
+        redis = await get_redis_client()
+        await redis.setex(f"email_verify:{token}", _EMAIL_VERIFY_TTL, str(user.id))
+        await enqueue(send_verification_email, user.email, token)
+
+        return user
 
     async def login(self, email: str, password: str) -> TokenResponse:
         user = await self._repo.get_active_by_email(email)
@@ -155,6 +170,63 @@ class AuthService:
             avatar_url=gh_user.get("avatar_url"),
             access_token=access_token,
         )
+
+    # ── Email Verification ────────────────────────────────────────────────────
+
+    async def verify_email(self, token: str) -> None:
+        """Token geçerliyse kullanıcıyı doğrulanmış olarak işaretle."""
+        redis = await get_redis_client()
+        user_id = await redis.get(f"email_verify:{token}")
+        if not user_id:
+            raise InvalidTokenError("Geçersiz veya süresi dolmuş doğrulama token'ı.")
+
+        await redis.delete(f"email_verify:{token}")
+
+        user = await self._repo.get_by_id(user_id)
+        if not user:
+            raise InvalidTokenError("Kullanıcı bulunamadı.")
+
+        if not user.is_verified:
+            await self._repo.update(user.id, is_verified=True)
+
+    async def resend_verification(self, email: str) -> None:
+        """Doğrulama e-postasını yeniden gönder. Kullanıcı yoksa sessizce döner."""
+        user = await self._repo.get_active_by_email(email)
+        if not user or user.is_verified:
+            return
+
+        token = secrets.token_urlsafe(32)
+        redis = await get_redis_client()
+        await redis.setex(f"email_verify:{token}", _EMAIL_VERIFY_TTL, str(user.id))
+        await enqueue(send_verification_email, user.email, token)
+
+    # ── Password Reset ────────────────────────────────────────────────────────
+
+    async def forgot_password(self, email: str) -> None:
+        """Şifre sıfırlama e-postası gönder. Kullanıcı yoksa sessizce döner."""
+        user = await self._repo.get_active_by_email(email)
+        if not user or not user.hashed_password:
+            return  # OAuth kullanıcısı ya da var olmayan e-posta — user enumeration yok
+
+        token = secrets.token_urlsafe(32)
+        redis = await get_redis_client()
+        await redis.setex(f"password_reset:{token}", _PASSWORD_RESET_TTL, str(user.id))
+        await enqueue(send_password_reset_email, user.email, token)
+
+    async def reset_password(self, token: str, new_password: str) -> None:
+        """Token geçerliyse şifreyi güncelle."""
+        redis = await get_redis_client()
+        user_id = await redis.get(f"password_reset:{token}")
+        if not user_id:
+            raise InvalidTokenError("Geçersiz veya süresi dolmuş şifre sıfırlama token'ı.")
+
+        await redis.delete(f"password_reset:{token}")
+
+        user = await self._repo.get_by_id(user_id)
+        if not user or not user.is_active:
+            raise InvalidTokenError("Kullanıcı bulunamadı.")
+
+        await self._repo.update(user.id, hashed_password=hash_password(new_password))
 
     # ── Internal ──────────────────────────────────────────────────────────────
 

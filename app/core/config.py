@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     APP_DEBUG: bool = False
     APP_VERSION: str = "1.0.0"
+    APP_URL: str = "http://localhost:8000"
     SECRET_KEY: str
     ALLOWED_HOSTS: list[str] = ["*"]
     CORS_ORIGINS: list[AnyHttpUrl | str] = []
@@ -102,6 +103,13 @@ class Settings(BaseSettings):
     @property
     def MAX_UPLOAD_SIZE_BYTES(self) -> int:
         return self.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+
+    # ── Email / SMTP ──────────────────────────────────────────────────────────
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    EMAILS_FROM_EMAIL: str = "noreply@example.com"
 
     # ── Admin Seed ────────────────────────────────────────────────────────────
     ADMIN_EMAIL: str = "admin@example.com"

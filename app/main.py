@@ -29,6 +29,7 @@ from app.core.middleware import (
 from app.db.session import engine
 from app.admin import get_all_views
 from app.admin.seed import create_default_admin
+from app.core.redis import close_redis
 
 
 @asynccontextmanager
@@ -41,6 +42,7 @@ async def lifespan(app: FastAPI):
     await create_default_admin()
     yield
     await engine.dispose()
+    await close_redis()
     logger.info("app_stopped")
 
 

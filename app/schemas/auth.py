@@ -43,3 +43,34 @@ class RefreshRequest(BaseModel):
 class OAuthCallbackRequest(BaseModel):
     code: str
     state: str | None = None
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password_strength(cls, v: str) -> str:
+        errors = []
+        if not any(c.isupper() for c in v):
+            errors.append("büyük harf")
+        if not any(c.islower() for c in v):
+            errors.append("küçük harf")
+        if not any(c.isdigit() for c in v):
+            errors.append("rakam")
+        if errors:
+            raise ValueError(f"Şifre şunları içermeli: {', '.join(errors)}")
+        return v
