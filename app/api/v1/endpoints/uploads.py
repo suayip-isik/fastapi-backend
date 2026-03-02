@@ -1,6 +1,7 @@
 """
 File upload endpoint'leri.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, UploadFile, File
@@ -35,10 +36,15 @@ async def delete_file(
     key: str,
     current_user: CurrentUserDep,
 ):
-    """Dosya sil. (Sadece kendi dosyalarını silebilir)"""
-    # Güvenlik: key kullanıcıya ait olmalı
-    if not key.startswith(f"users/{current_user.id}/"):
-        from app.core.exceptions import InsufficientPermissionsError
+    """Dosya sil. (Kullanıcı kendi dosyasını, admin herkesinkini silebilir)"""
+    from app.core.exceptions import InsufficientPermissionsError
+    from app.db.models.user import UserRole
+
+    is_admin = current_user.role == UserRole.ADMIN
+    is_owner = key.startswith(f"users/{str(current_user.id)}/")
+
+    if not is_admin and not is_owner:
         raise InsufficientPermissionsError("Bu dosyayı silme yetkiniz yok.")
+
     await storage.delete(key)
     return MessageResponse(message="Dosya silindi.")
