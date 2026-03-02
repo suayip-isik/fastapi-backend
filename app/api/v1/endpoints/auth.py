@@ -13,12 +13,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies.auth import CurrentUserDep
 from app.db.session import get_db
 from app.schemas.auth import (
+    ForgotPasswordRequest,
     LoginRequest,
     OAuthCallbackRequest,
     RefreshRequest,
     RegisterRequest,
+    ResendVerificationRequest,
+    ResetPasswordRequest,
     TokenResponse,
+    VerifyEmailRequest,
 )
+from app.schemas.common import MessageResponse
 from app.schemas.user import UserResponse
 from app.services.auth import AuthService
 
@@ -81,6 +86,38 @@ async def github_login(service: AuthServiceDep):
 async def github_callback(code: str, service: AuthServiceDep):
     """GitHub OAuth callback."""
     return await service.github_callback(code)
+
+
+# ── Email Verification ────────────────────────────────────────────────────────
+
+@router.post("/verify-email", response_model=MessageResponse)
+async def verify_email(data: VerifyEmailRequest, service: AuthServiceDep):
+    """E-posta adresini doğrula."""
+    await service.verify_email(data.token)
+    return MessageResponse(message="E-posta adresiniz başarıyla doğrulandı.")
+
+
+@router.post("/resend-verification", response_model=MessageResponse)
+async def resend_verification(data: ResendVerificationRequest, service: AuthServiceDep):
+    """Doğrulama e-postasını yeniden gönder."""
+    await service.resend_verification(data.email)
+    return MessageResponse(message="Doğrulama e-postası gönderildi.")
+
+
+# ── Password Reset ────────────────────────────────────────────────────────────
+
+@router.post("/forgot-password", response_model=MessageResponse)
+async def forgot_password(data: ForgotPasswordRequest, service: AuthServiceDep):
+    """Şifre sıfırlama e-postası gönder. Kullanıcı varlığını açıklamaz."""
+    await service.forgot_password(data.email)
+    return MessageResponse(message="Şifre sıfırlama talimatları e-posta adresinize gönderildi.")
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+async def reset_password(data: ResetPasswordRequest, service: AuthServiceDep):
+    """Token ile şifreyi sıfırla."""
+    await service.reset_password(data.token, data.new_password)
+    return MessageResponse(message="Şifreniz başarıyla sıfırlandı.")
 
 
 # ── Me ────────────────────────────────────────────────────────────────────────

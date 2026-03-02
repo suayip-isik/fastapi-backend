@@ -11,6 +11,7 @@ from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
 
 from app.core.config import settings
+from app.core.email import send_email
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -50,6 +51,40 @@ async def process_file_upload(ctx: dict, file_key: str, user_id: str) -> dict:
     return {"status": "processed", "file_key": file_key}
 
 
+async def send_verification_email(ctx: dict, email: str, token: str) -> dict:
+    """E-posta doğrulama linki gönder."""
+    logger.info("sending_verification_email", email=email)
+    verify_url = f"{settings.APP_URL}/api/v1/auth/verify-email?token={token}"
+    await send_email(
+        to=email,
+        subject="E-posta adresinizi doğrulayın",
+        html_body=(
+            f"<p>Hesabınızı doğrulamak için "
+            f"<a href='{verify_url}'>buraya tıklayın</a>.</p>"
+            f"<p>Bu link 24 saat geçerlidir.</p>"
+        ),
+    )
+    logger.info("verification_email_sent", email=email)
+    return {"status": "sent", "email": email}
+
+
+async def send_password_reset_email(ctx: dict, email: str, token: str) -> dict:
+    """Şifre sıfırlama linki gönder."""
+    logger.info("sending_password_reset_email", email=email)
+    reset_url = f"{settings.APP_URL}/api/v1/auth/reset-password?token={token}"
+    await send_email(
+        to=email,
+        subject="Şifre sıfırlama isteği",
+        html_body=(
+            f"<p>Şifrenizi sıfırlamak için "
+            f"<a href='{reset_url}'>buraya tıklayın</a>.</p>"
+            f"<p>Bu link 15 dakika geçerlidir.</p>"
+        ),
+    )
+    logger.info("password_reset_email_sent", email=email)
+    return {"status": "sent", "email": email}
+
+
 async def cleanup_expired_tokens(ctx: dict) -> dict:
     """
     Süresi dolmuş refresh token'ları temizle.
@@ -69,6 +104,8 @@ class WorkerSettings:
         send_welcome_email,
         process_file_upload,
         cleanup_expired_tokens,
+        send_verification_email,
+        send_password_reset_email,
     ]
 
     # Cron jobs
