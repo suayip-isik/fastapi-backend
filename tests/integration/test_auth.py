@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-import pytest
-from httpx import AsyncClient
 from unittest.mock import AsyncMock
 
 import fakeredis.aioredis as fakeredis_aioredis
+import pytest
+from httpx import AsyncClient
+from sqlalchemy import update as sa_update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models.user import User
 
 
 @pytest.mark.asyncio
@@ -371,3 +375,134 @@ async def test_refresh_blacklisted_token(client: AsyncClient):
 
     res = await client.post("/api/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
     assert res.status_code == 401
+
+
+# ── Register Validation ───────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_register_weak_password_no_uppercase(client: AsyncClient):
+    """Büyük harf içermeyen şifre 422 dönmeli."""
+    res = await client.post(
+        "/api/v1/auth/register",
+        json={"email": "weak1@example.com", "password": "weakpass1"},
+    )
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_register_weak_password_no_digit(client: AsyncClient):
+    """Rakam içermeyen şifre 422 dönmeli."""
+    res = await client.post(
+        "/api/v1/auth/register",
+        json={"email": "weak2@example.com", "password": "WeakPassword"},
+    )
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_register_password_too_short(client: AsyncClient):
+    """8 karakterden kısa şifre 422 dönmeli."""
+    res = await client.post(
+        "/api/v1/auth/register",
+        json={"email": "weak3@example.com", "password": "Sh0rt"},
+    )
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_register_invalid_email(client: AsyncClient):
+    """Geçersiz email formatı 422 dönmeli."""
+    res = await client.post(
+        "/api/v1/auth/register",
+        json={"email": "not-an-email", "password": "StrongPass1"},
+    )
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_register_without_full_name(client: AsyncClient):
+    """full_name opsiyonel — gönderilmese de 201 dönmeli."""
+    res = await client.post(
+        "/api/v1/auth/register",
+        json={"email": "nofullname@example.com", "password": "StrongPass1"},
+    )
+    assert res.status_code == 201
+    assert res.json()["full_name"] is None
+
+
+# ── Auth Edge Cases ───────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_login_deactivated_user(client: AsyncClient, db_session: AsyncSession):
+    """Deaktif edilmiş kullanıcı giriş yapamamalı."""
+    await client.post(
+        "/api/v1/auth/register",
+        json={"email": "inactive@example.com", "password": "StrongPass1"},
+    )
+    await db_session.execute(
+        sa_update(User).where(User.email == "inactive@example.com").values(is_active=False)
+    )
+    db_session.expire_all()
+
+    res = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "inactive@example.com", "password": "StrongPass1"},
+    )
+    assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_refresh_with_access_token_fails(client: AsyncClient):
+    """Access token'ı refresh token olarak kullanmak 401 dönmeli."""
+    tokens = await _register_and_login(client, "wrong_token_type@example.com")
+
+    # Access token'ı refresh endpoint'ine gönder — type=ACCESS, REFRESH bekleniyor
+    res = await client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": tokens["access_token"]},
+    )
+    assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_logout_without_refresh_token(client: AsyncClient):
+    """Refresh token olmadan logout 200 dönmeli — access token yine de blacklist'e girmeli."""
+    tokens = await _register_and_login(client, "logout_no_refresh@example.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    res = await client.post(
+        "/api/v1/auth/logout",
+        json={},  # refresh_token gönderilmiyor
+        headers=headers,
+    )
+    assert res.status_code == 200
+
+    # Access token artık geçersiz olmalı
+    me = await client.get("/api/v1/auth/me", headers=headers)
+    assert me.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_resend_verification_already_verified_sends_no_email(
+    client: AsyncClient,
+    fake_redis: fakeredis_aioredis.FakeRedis,
+    mock_enqueue: AsyncMock,
+):
+    """Zaten doğrulanmış kullanıcı için resend 200 dönmeli ama email gitmemeli."""
+    await client.post(
+        "/api/v1/auth/register",
+        json={"email": "alreadyverified@example.com", "password": "StrongPass1"},
+    )
+    verify_token = mock_enqueue.call_args.args[2]
+    await client.post("/api/v1/auth/verify-email", json={"token": verify_token})
+
+    mock_enqueue.reset_mock()
+
+    res = await client.post(
+        "/api/v1/auth/resend-verification",
+        json={"email": "alreadyverified@example.com"},
+    )
+    assert res.status_code == 200
+    mock_enqueue.assert_not_called()

@@ -34,7 +34,7 @@ class ConnectionManager:
         self._rooms: dict[str, dict[str, WebSocket]] = defaultdict(dict)
 
     async def connect(self, websocket: WebSocket, room_id: str, user_id: str) -> None:
-        await websocket.accept()
+        # Endpoint zaten accept() çağırdı — burada yalnızca kayıt yapılır
         self._rooms[room_id][user_id] = websocket
         logger.info("ws_connected", room_id=room_id, user_id=user_id)
 
@@ -142,6 +142,7 @@ async def websocket_endpoint(
                         "content": data.get("content", ""),
                         "room_id": room_id,
                     },
+                    exclude=user_id,
                 )
             elif msg_type == "ping":
                 await websocket.send_json({"type": "pong"})
