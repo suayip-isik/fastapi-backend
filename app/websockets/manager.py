@@ -2,6 +2,7 @@
 WebSocket connection manager.
 Connection'ları room bazlı yönetir.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -19,6 +20,7 @@ router = APIRouter(prefix="/ws", tags=["WebSocket"])
 
 
 # ── Connection Manager ────────────────────────────────────────────────────────
+
 
 class ConnectionManager:
     """
@@ -51,7 +53,9 @@ class ConnectionManager:
             except Exception:
                 self.disconnect(room_id, user_id)
 
-    async def broadcast_to_room(self, room_id: str, message: dict, exclude: str | None = None) -> None:
+    async def broadcast_to_room(
+        self, room_id: str, message: dict, exclude: str | None = None
+    ) -> None:
         room = self._rooms.get(room_id, {})
         dead_users = []
         for user_id, ws in room.items():
