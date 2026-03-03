@@ -74,3 +74,7 @@ class ResetPasswordRequest(BaseModel):
         if errors:
             raise ValueError(f"Şifre şunları içermeli: {', '.join(errors)}")
         return v
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str | None = None

@@ -24,27 +24,26 @@ TEST_DATABASE_URL = settings.DATABASE_URL.replace(
     f"/{settings.POSTGRES_DB}", "/test_db"
 )
 
-test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
-TestSessionFactory = async_sessionmaker(test_engine, expire_on_commit=False)
 
+@pytest.fixture(scope="session", autouse=True)
+def setup_db():
+    """Test başında tabloları oluştur, sonunda sil (sync — kendi loop'unu kullanır)."""
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Session-scoped event loop."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+    async def _create() -> None:
+        engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        await engine.dispose()
 
+    async def _drop() -> None:
+        engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+        await engine.dispose()
 
-@pytest_asyncio.fixture(scope="session", autouse=True)
-async def setup_db():
-    """Test başında tabloları oluştur, sonunda sil."""
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    asyncio.run(_create())
     yield
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await test_engine.dispose()
+    asyncio.run(_drop())
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -56,7 +55,7 @@ async def fake_redis():
     fake = fakeredis_aioredis.FakeRedis(decode_responses=True)
     redis_module._redis_client = fake
     yield fake
-    await fake.aclose()
+    await fake.close()
     redis_module._redis_client = None
 
 
@@ -72,11 +71,12 @@ def mock_enqueue():
 
 @pytest_asyncio.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Her test için transaction + rollback."""
-    async with test_engine.begin() as conn:
-        async with TestSessionFactory(bind=conn) as session:
-            yield session
-            await session.rollback()
+    """Her test için kendi event loop'unda taze engine + session."""
+    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        yield session
+    await engine.dispose()
 
 
 @pytest_asyncio.fixture

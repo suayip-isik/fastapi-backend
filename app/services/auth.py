@@ -6,6 +6,7 @@ Route handler'lar sadece bu service'i çağırır.
 from __future__ import annotations
 
 import secrets
+from datetime import datetime, timezone
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,12 +69,42 @@ class AuthService:
         if payload.type != TokenType.REFRESH:
             raise InvalidTokenError("Geçersiz token türü.")
 
+        redis = await get_redis_client()
+        if await redis.exists(f"blacklist:{payload.jti}"):
+            raise InvalidTokenError("Refresh token geçersiz kılınmış.")
+
         user = await self._repo.get_by_id(payload.sub)
         if not user or not user.is_active:
             raise AuthenticationError("Kullanıcı bulunamadı.")
 
+        # Eski refresh token'ı blacklist'e ekle (rotation)
+        remaining = int((payload.exp - datetime.now(timezone.utc)).total_seconds())
+        if remaining > 0:
+            await redis.setex(f"blacklist:{payload.jti}", remaining, "1")
+
         tokens = create_token_pair(str(user.id))
         return TokenResponse(**tokens)
+
+    async def logout(self, access_token: str, refresh_token: str | None) -> None:
+        """Access ve refresh token'ları blacklist'e ekle."""
+        redis = await get_redis_client()
+
+        access_payload = decode_token(access_token)
+        remaining = int((access_payload.exp - datetime.now(timezone.utc)).total_seconds())
+        if remaining > 0:
+            await redis.setex(f"blacklist:{access_payload.jti}", remaining, "1")
+
+        if refresh_token:
+            try:
+                refresh_payload = decode_token(refresh_token)
+                if refresh_payload.type == TokenType.REFRESH:
+                    remaining = int(
+                        (refresh_payload.exp - datetime.now(timezone.utc)).total_seconds()
+                    )
+                    if remaining > 0:
+                        await redis.setex(f"blacklist:{refresh_payload.jti}", remaining, "1")
+            except Exception:
+                pass  # Geçersiz refresh token — sessizce geç
 
     # ── Google OAuth ──────────────────────────────────────────────────────────
 
