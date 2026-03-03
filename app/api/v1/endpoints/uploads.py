@@ -22,18 +22,26 @@ class UploadResponse(MessageResponse):
     url: str
 
 
+def get_audit_service() -> AuditService:
+    return AuditService()
+
+
+AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
+
+
 @router.post("", response_model=UploadResponse)
 @limiter.limit(settings.RATE_LIMIT_UPLOAD)
 async def upload_file(
     request: Request,
     current_user: CurrentUserDep,
+    audit: AuditServiceDep,
     file: UploadFile = File(...),
 ):
     """Dosya yükle. (Giriş gerekli)"""
     folder = f"users/{current_user.id}"
     key = await storage.upload(file, folder=folder)
     url = await storage.get_url(key)
-    await AuditService().log(
+    await audit.log(
         AuditAction.FILE_UPLOADED,
         user_id=current_user.id,
         extra={"key": key, "filename": file.filename},
@@ -47,6 +55,7 @@ async def delete_file(
     request: Request,
     key: str,
     current_user: CurrentUserDep,
+    audit: AuditServiceDep,
 ):
     """Dosya sil. (Kullanıcı kendi dosyasını, admin herkesinkini silebilir)"""
     from app.core.exceptions import InsufficientPermissionsError
@@ -59,7 +68,7 @@ async def delete_file(
         raise InsufficientPermissionsError("Bu dosyayı silme yetkiniz yok.")
 
     await storage.delete(key)
-    await AuditService().log(
+    await audit.log(
         AuditAction.FILE_DELETED,
         user_id=current_user.id,
         extra={"key": key},

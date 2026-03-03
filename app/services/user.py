@@ -1,5 +1,5 @@
 """
-User service — kullanıcı yönetimi business logic.
+UserService — kullanıcı yönetimi business logic.
 """
 
 from __future__ import annotations
@@ -15,16 +15,13 @@ from app.db.models.user import User, UserRole
 from app.db.repositories.user import UserRepository
 from app.schemas.user import UpdateUserRequest
 from app.services.audit import AuditService
+from app.services.base import AuditableMixin
 
 
-class UserService:
+class UserService(AuditableMixin):
     def __init__(self, session: AsyncSession, audit: AuditService | None = None) -> None:
         self._repo = UserRepository(session)
         self._audit = audit
-
-    async def _audit_log(self, action: AuditAction, **kwargs) -> None:
-        if self._audit:
-            await self._audit.log(action, **kwargs)
 
     async def get_by_id(self, user_id: UUID) -> User:
         user = await self._repo.get_by_id(user_id)
@@ -33,10 +30,7 @@ class UserService:
         return user
 
     async def get_all(self, page: int = 1, size: int = 20) -> tuple[list[User], int]:
-        offset = (page - 1) * size
-        users = await self._repo.get_all(offset=offset, limit=size)
-        total = await self._repo.count()
-        return users, total
+        return await self._repo.get_page(offset=(page - 1) * size, limit=size)
 
     async def update(self, user_id: UUID, data: UpdateUserRequest) -> User:
         user = await self._repo.get_by_id_or_raise(user_id)
