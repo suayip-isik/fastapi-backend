@@ -72,9 +72,12 @@ def disable_rate_limits():
 def mock_enqueue():
     """
     Tüm testlerde ARQ enqueue'yu mock'la.
-    app.services.auth.enqueue patch'lenir (kullanıldığı yer).
+    register → app.services.auth.enqueue
+    resend_verification / forgot_password → app.services.account.enqueue
+    İki modül de aynı mock'a yönlendirilir.
     """
-    with patch("app.services.auth.enqueue", new_callable=AsyncMock) as mock:
+    mock = AsyncMock()
+    with patch("app.services.auth.enqueue", mock), patch("app.services.account.enqueue", mock):
         yield mock
 
 
