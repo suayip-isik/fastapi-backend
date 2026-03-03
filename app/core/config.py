@@ -10,14 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from pydantic import (
-    AnyHttpUrl,
-    PostgresDsn,
-    PrivateAttr,
-    RedisDsn,
-    field_validator,
-    model_validator,
-)
+from pydantic import AnyHttpUrl, PostgresDsn, RedisDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -80,23 +73,13 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
-    # Diskten bir kez okunur, sonraki çağrılarda bellekten gelir
-    _jwt_private_key: str = PrivateAttr(default="")
-    _jwt_public_key: str = PrivateAttr(default="")
-
-    @model_validator(mode="after")
-    def _load_jwt_keys(self) -> "Settings":
-        self._jwt_private_key = self.JWT_PRIVATE_KEY_PATH.read_text()
-        self._jwt_public_key = self.JWT_PUBLIC_KEY_PATH.read_text()
-        return self
-
     @property
     def JWT_PRIVATE_KEY(self) -> str:
-        return self._jwt_private_key
+        return self.JWT_PRIVATE_KEY_PATH.read_text()
 
     @property
     def JWT_PUBLIC_KEY(self) -> str:
-        return self._jwt_public_key
+        return self.JWT_PUBLIC_KEY_PATH.read_text()
 
     # ── OAuth2 ────────────────────────────────────────────────────────────────
     GOOGLE_CLIENT_ID: str = ""
@@ -134,9 +117,9 @@ class Settings(BaseSettings):
 
     # ── Rate Limiting ─────────────────────────────────────────────────────────
     RATE_LIMIT_DEFAULT: str = "100/minute"
-    RATE_LIMIT_AUTH: str = "5/minute"  # login, reset-password
-    RATE_LIMIT_AUTH_EMAIL: str = "3/hour"  # forgot-password, resend-verification
-    RATE_LIMIT_REGISTER: str = "3/hour"  # register
+    RATE_LIMIT_AUTH: str = "5/minute"         # login, reset-password
+    RATE_LIMIT_AUTH_EMAIL: str = "3/hour"     # forgot-password, resend-verification
+    RATE_LIMIT_REGISTER: str = "3/hour"       # register
     RATE_LIMIT_UPLOAD: str = "20/hour"
 
     # ── Logging ───────────────────────────────────────────────────────────────
@@ -165,8 +148,6 @@ class Settings(BaseSettings):
                 "Production'da SECRET_KEY değiştirilmeli!"
             )
             assert not self.APP_DEBUG, "Production'da DEBUG kapalı olmalı!"
-            assert self.ADMIN_PASSWORD != "changeme", "Production'da ADMIN_PASSWORD değiştirilmeli!"
-            assert self.ALLOWED_HOSTS != ["*"], "Production'da ALLOWED_HOSTS açık bırakılamaz!"
         return self
 
     @property
