@@ -9,7 +9,9 @@ from fastapi import APIRouter, Depends, File, Request, UploadFile
 from app.api.dependencies.auth import CurrentUserDep
 from app.core.config import settings
 from app.core.limiter import limiter
+from app.db.models.audit_log import AuditAction
 from app.schemas.common import MessageResponse
+from app.services.audit import AuditService
 from app.storage.backends import storage
 
 router = APIRouter(prefix="/uploads", tags=["Uploads"])
@@ -31,6 +33,11 @@ async def upload_file(
     folder = f"users/{current_user.id}"
     key = await storage.upload(file, folder=folder)
     url = await storage.get_url(key)
+    await AuditService().log(
+        AuditAction.FILE_UPLOADED,
+        user_id=current_user.id,
+        extra={"key": key, "filename": file.filename},
+    )
     return UploadResponse(message="Dosya başarıyla yüklendi.", key=key, url=url)
 
 
@@ -52,4 +59,9 @@ async def delete_file(
         raise InsufficientPermissionsError("Bu dosyayı silme yetkiniz yok.")
 
     await storage.delete(key)
+    await AuditService().log(
+        AuditAction.FILE_DELETED,
+        user_id=current_user.id,
+        extra={"key": key},
+    )
     return MessageResponse(message="Dosya silindi.")

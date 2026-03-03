@@ -14,7 +14,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.responses import Response
 
-from app.core.logging import get_logger, request_id_var, user_id_var
+from app.core.logging import get_logger, ip_address_var, request_id_var, user_agent_var, user_id_var
 
 logger = get_logger(__name__)
 
@@ -25,13 +25,17 @@ DOCS_PATHS = {"/docs", "/redoc", "/openapi.json"}
 class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         request_id = request.headers.get("X-Request-ID", str(uuid4()))
-        token = request_id_var.set(request_id)
+        rid_token = request_id_var.set(request_id)
+        ip_token = ip_address_var.set(request.client.host if request.client else "-")
+        ua_token = user_agent_var.set(request.headers.get("user-agent", "-"))
         try:
             response = await call_next(request)
             response.headers["X-Request-ID"] = request_id
             return response
         finally:
-            request_id_var.reset(token)
+            request_id_var.reset(rid_token)
+            ip_address_var.reset(ip_token)
+            user_agent_var.reset(ua_token)
 
 
 class TimingMiddleware(BaseHTTPMiddleware):

@@ -28,13 +28,21 @@ from app.schemas.auth import (
 )
 from app.schemas.common import MessageResponse
 from app.schemas.user import UserResponse
+from app.services.audit import AuditService
 from app.services.auth import AuthService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
-def get_auth_service(db: Annotated[AsyncSession, Depends(get_db)]) -> AuthService:
-    return AuthService(db)
+def get_audit_service() -> AuditService:
+    return AuditService()
+
+
+def get_auth_service(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    audit: Annotated[AuditService, Depends(get_audit_service)],
+) -> AuthService:
+    return AuthService(db, audit)
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
@@ -72,7 +80,7 @@ async def logout(
     service: AuthServiceDep,
 ):
     """Oturumu kapat. Access ve refresh token'ları blacklist'e ekler."""
-    await service.logout(credentials.credentials, data.refresh_token)
+    await service.logout(credentials.credentials, data.refresh_token, user_id=current_user.id)
     return MessageResponse(message="Başarıyla çıkış yapıldı.")
 
 

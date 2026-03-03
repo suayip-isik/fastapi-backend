@@ -21,18 +21,25 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.db.models.audit_log import AuditAction
 from app.db.models.user import User
 from app.db.repositories.user import UserRepository
 from app.schemas.auth import RegisterRequest, TokenResponse
-from app.tasks.worker import enqueue, send_verification_email, send_password_reset_email
+from app.services.audit import AuditService
+from app.tasks.worker import enqueue, send_password_reset_email, send_verification_email
 
 _EMAIL_VERIFY_TTL = 24 * 60 * 60  # 24 saat (saniye)
 _PASSWORD_RESET_TTL = 15 * 60  # 15 dakika (saniye)
 
 
 class AuthService:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, audit: AuditService | None = None) -> None:
         self._repo = UserRepository(session)
+        self._audit = audit
+
+    async def _audit_log(self, action: AuditAction, **kwargs) -> None:
+        if self._audit:
+            await self._audit.log(action, **kwargs)
 
     # ── Email/Password ────────────────────────────────────────────────────────
 
@@ -51,16 +58,20 @@ class AuthService:
         await redis.setex(f"email_verify:{token}", _EMAIL_VERIFY_TTL, str(user.id))
         await enqueue(send_verification_email, user.email, token)
 
+        await self._audit_log(AuditAction.REGISTER, user_id=user.id)
         return user
 
     async def login(self, email: str, password: str) -> TokenResponse:
         user = await self._repo.get_active_by_email(email)
         if not user or not user.hashed_password:
+            await self._audit_log(AuditAction.LOGIN_FAILED, extra={"email": email})
             raise AuthenticationError("E-posta veya şifre hatalı.")
 
         if not verify_password(password, user.hashed_password):
+            await self._audit_log(AuditAction.LOGIN_FAILED, user_id=user.id)
             raise AuthenticationError("E-posta veya şifre hatalı.")
 
+        await self._audit_log(AuditAction.LOGIN_SUCCESS, user_id=user.id)
         tokens = create_token_pair(str(user.id))
         return TokenResponse(**tokens)
 
@@ -82,10 +93,11 @@ class AuthService:
         if remaining > 0:
             await redis.setex(f"blacklist:{payload.jti}", remaining, "1")
 
+        await self._audit_log(AuditAction.TOKEN_REFRESHED, user_id=user.id)
         tokens = create_token_pair(str(user.id))
         return TokenResponse(**tokens)
 
-    async def logout(self, access_token: str, refresh_token: str | None) -> None:
+    async def logout(self, access_token: str, refresh_token: str | None, user_id=None) -> None:
         """Access ve refresh token'ları blacklist'e ekle."""
         redis = await get_redis_client()
 
@@ -105,6 +117,8 @@ class AuthService:
                         await redis.setex(f"blacklist:{refresh_payload.jti}", remaining, "1")
             except Exception:
                 pass  # Geçersiz refresh token — sessizce geç
+
+        await self._audit_log(AuditAction.LOGOUT, user_id=user_id)
 
     # ── Google OAuth ──────────────────────────────────────────────────────────
 
@@ -220,6 +234,8 @@ class AuthService:
         if not user.is_verified:
             await self._repo.update(user.id, is_verified=True)
 
+        await self._audit_log(AuditAction.EMAIL_VERIFIED, user_id=user.id)
+
     async def resend_verification(self, email: str) -> None:
         """Doğrulama e-postasını yeniden gönder. Kullanıcı yoksa sessizce döner."""
         user = await self._repo.get_active_by_email(email)
@@ -244,6 +260,8 @@ class AuthService:
         await redis.setex(f"password_reset:{token}", _PASSWORD_RESET_TTL, str(user.id))
         await enqueue(send_password_reset_email, user.email, token)
 
+        await self._audit_log(AuditAction.PASSWORD_RESET_REQUESTED, user_id=user.id)
+
     async def reset_password(self, token: str, new_password: str) -> None:
         """Token geçerliyse şifreyi güncelle."""
         redis = await get_redis_client()
@@ -258,6 +276,7 @@ class AuthService:
             raise InvalidTokenError("Kullanıcı bulunamadı.")
 
         await self._repo.update(user.id, hashed_password=hash_password(new_password))
+        await self._audit_log(AuditAction.PASSWORD_RESET, user_id=user.id)
 
     # ── Internal ──────────────────────────────────────────────────────────────
 

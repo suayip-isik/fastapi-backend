@@ -16,13 +16,21 @@ from app.db.models.user import UserRole
 from app.db.session import get_db
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.user import UpdateUserRequest, UserResponse
+from app.services.audit import AuditService
 from app.services.user import UserService
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
-def get_user_service(db: Annotated[AsyncSession, Depends(get_db)]) -> UserService:
-    return UserService(db)
+def get_audit_service() -> AuditService:
+    return AuditService()
+
+
+def get_user_service(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    audit: Annotated[AuditService, Depends(get_audit_service)],
+) -> UserService:
+    return UserService(db, audit)
 
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
