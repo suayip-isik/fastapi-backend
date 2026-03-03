@@ -5,6 +5,19 @@ from __future__ import annotations
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
+def validate_password_strength(v: str) -> str:
+    errors = []
+    if not any(c.isupper() for c in v):
+        errors.append("büyük harf")
+    if not any(c.islower() for c in v):
+        errors.append("küçük harf")
+    if not any(c.isdigit() for c in v):
+        errors.append("rakam")
+    if errors:
+        raise ValueError(f"Şifre şunları içermeli: {', '.join(errors)}")
+    return v
+
+
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
@@ -12,17 +25,8 @@ class RegisterRequest(BaseModel):
 
     @field_validator("password")
     @classmethod
-    def validate_password_strength(cls, v: str) -> str:
-        errors = []
-        if not any(c.isupper() for c in v):
-            errors.append("büyük harf")
-        if not any(c.islower() for c in v):
-            errors.append("küçük harf")
-        if not any(c.isdigit() for c in v):
-            errors.append("rakam")
-        if errors:
-            raise ValueError(f"Şifre şunları içermeli: {', '.join(errors)}")
-        return v
+    def _validate_password(cls, v: str) -> str:
+        return validate_password_strength(v)
 
 
 class LoginRequest(BaseModel):
@@ -63,17 +67,8 @@ class ResetPasswordRequest(BaseModel):
 
     @field_validator("new_password")
     @classmethod
-    def validate_password_strength(cls, v: str) -> str:
-        errors = []
-        if not any(c.isupper() for c in v):
-            errors.append("büyük harf")
-        if not any(c.islower() for c in v):
-            errors.append("küçük harf")
-        if not any(c.isdigit() for c in v):
-            errors.append("rakam")
-        if errors:
-            raise ValueError(f"Şifre şunları içermeli: {', '.join(errors)}")
-        return v
+    def _validate_password(cls, v: str) -> str:
+        return validate_password_strength(v)
 
 
 class LogoutRequest(BaseModel):
