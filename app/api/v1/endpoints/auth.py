@@ -2,19 +2,22 @@
 Auth endpoint'leri — sadece HTTP katmanı.
 Business logic AuthService'te.
 """
+
 from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Security
 from fastapi.responses import RedirectResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies.auth import CurrentUserDep
+from app.api.dependencies.auth import CurrentUserDep, bearer_scheme
 from app.db.session import get_db
 from app.schemas.auth import (
     ForgotPasswordRequest,
     LoginRequest,
+    LogoutRequest,
     OAuthCallbackRequest,
     RefreshRequest,
     RegisterRequest,
@@ -39,6 +42,7 @@ AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 
 # ── Email/Password ────────────────────────────────────────────────────────────
 
+
 @router.post("/register", response_model=UserResponse, status_code=201)
 async def register(data: RegisterRequest, service: AuthServiceDep):
     """Yeni kullanıcı kaydı."""
@@ -54,11 +58,24 @@ async def login(data: LoginRequest, service: AuthServiceDep):
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(data: RefreshRequest, service: AuthServiceDep):
-    """Refresh token ile yeni access token al."""
+    """Refresh token ile yeni access token al. Eski refresh token geçersiz kılınır (rotation)."""
     return await service.refresh(data.refresh_token)
 
 
+@router.post("/logout", response_model=MessageResponse)
+async def logout(
+    data: LogoutRequest,
+    current_user: CurrentUserDep,
+    credentials: Annotated[HTTPAuthorizationCredentials, Security(bearer_scheme)],
+    service: AuthServiceDep,
+):
+    """Oturumu kapat. Access ve refresh token'ları blacklist'e ekler."""
+    await service.logout(credentials.credentials, data.refresh_token)
+    return MessageResponse(message="Başarıyla çıkış yapıldı.")
+
+
 # ── Google OAuth ──────────────────────────────────────────────────────────────
+
 
 @router.get("/google")
 async def google_login(service: AuthServiceDep):
@@ -75,6 +92,7 @@ async def google_callback(code: str, service: AuthServiceDep):
 
 # ── GitHub OAuth ──────────────────────────────────────────────────────────────
 
+
 @router.get("/github")
 async def github_login(service: AuthServiceDep):
     """GitHub OAuth akışını başlat."""
@@ -89,6 +107,7 @@ async def github_callback(code: str, service: AuthServiceDep):
 
 
 # ── Email Verification ────────────────────────────────────────────────────────
+
 
 @router.post("/verify-email", response_model=MessageResponse)
 async def verify_email(data: VerifyEmailRequest, service: AuthServiceDep):
@@ -106,6 +125,7 @@ async def resend_verification(data: ResendVerificationRequest, service: AuthServ
 
 # ── Password Reset ────────────────────────────────────────────────────────────
 
+
 @router.post("/forgot-password", response_model=MessageResponse)
 async def forgot_password(data: ForgotPasswordRequest, service: AuthServiceDep):
     """Şifre sıfırlama e-postası gönder. Kullanıcı varlığını açıklamaz."""
@@ -121,6 +141,7 @@ async def reset_password(data: ResetPasswordRequest, service: AuthServiceDep):
 
 
 # ── Me ────────────────────────────────────────────────────────────────────────
+
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: CurrentUserDep):

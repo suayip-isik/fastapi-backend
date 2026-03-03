@@ -2,6 +2,7 @@
 FastAPI Dependency Injection katmanı.
 Tüm ortak bağımlılıklar burada tanımlanır.
 """
+
 from __future__ import annotations
 
 from typing import Annotated
@@ -15,6 +16,7 @@ from app.core.exceptions import (
     InsufficientPermissionsError,
     InvalidTokenError,
 )
+from app.core.redis import get_redis_client
 from app.core.security import TokenType, decode_token
 from app.db.models.user import User, UserRole
 from app.db.repositories.user import UserRepository
@@ -30,12 +32,15 @@ DBDep = Annotated[AsyncSession, Depends(get_db)]
 
 # ── Repository Dependencies ───────────────────────────────────────────────────
 
+
 def get_user_repository(db: DBDep) -> UserRepository:
     return UserRepository(db)
+
 
 UserRepoDep = Annotated[UserRepository, Depends(get_user_repository)]
 
 # ── Auth Dependencies ─────────────────────────────────────────────────────────
+
 
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Security(bearer_scheme)],
@@ -49,6 +54,10 @@ async def get_current_user(
 
     if payload.type != TokenType.ACCESS:
         raise InvalidTokenError("Yanlış token türü.")
+
+    redis = await get_redis_client()
+    if await redis.exists(f"blacklist:{payload.jti}"):
+        raise InvalidTokenError("Token geçersiz kılınmış.")
 
     user = await user_repo.get_by_id(payload.sub)
     if not user or not user.is_active:
