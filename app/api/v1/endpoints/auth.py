@@ -3,16 +3,16 @@ Auth endpoint'leri — sadece HTTP katmanı.
 Business logic AuthService'te.
 """
 
-from __future__ import annotations
-
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Security
+from fastapi import APIRouter, Depends, Request, Security
 from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import CurrentUserDep, bearer_scheme
+from app.core.config import settings
+from app.core.limiter import limiter
 from app.db.session import get_db
 from app.schemas.auth import (
     ForgotPasswordRequest,
@@ -44,14 +44,16 @@ AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 
 
 @router.post("/register", response_model=UserResponse, status_code=201)
-async def register(data: RegisterRequest, service: AuthServiceDep):
+@limiter.limit(settings.RATE_LIMIT_REGISTER)
+async def register(request: Request, data: RegisterRequest, service: AuthServiceDep):
     """Yeni kullanıcı kaydı."""
     user = await service.register(data)
     return user
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(data: LoginRequest, service: AuthServiceDep):
+@limiter.limit(settings.RATE_LIMIT_AUTH)
+async def login(request: Request, data: LoginRequest, service: AuthServiceDep):
     """Email/password ile giriş."""
     return await service.login(data.email, data.password)
 
@@ -110,14 +112,18 @@ async def github_callback(code: str, service: AuthServiceDep):
 
 
 @router.post("/verify-email", response_model=MessageResponse)
-async def verify_email(data: VerifyEmailRequest, service: AuthServiceDep):
+@limiter.limit(settings.RATE_LIMIT_AUTH)
+async def verify_email(request: Request, data: VerifyEmailRequest, service: AuthServiceDep):
     """E-posta adresini doğrula."""
     await service.verify_email(data.token)
     return MessageResponse(message="E-posta adresiniz başarıyla doğrulandı.")
 
 
 @router.post("/resend-verification", response_model=MessageResponse)
-async def resend_verification(data: ResendVerificationRequest, service: AuthServiceDep):
+@limiter.limit(settings.RATE_LIMIT_AUTH_EMAIL)
+async def resend_verification(
+    request: Request, data: ResendVerificationRequest, service: AuthServiceDep
+):
     """Doğrulama e-postasını yeniden gönder."""
     await service.resend_verification(data.email)
     return MessageResponse(message="Doğrulama e-postası gönderildi.")
@@ -127,14 +133,16 @@ async def resend_verification(data: ResendVerificationRequest, service: AuthServ
 
 
 @router.post("/forgot-password", response_model=MessageResponse)
-async def forgot_password(data: ForgotPasswordRequest, service: AuthServiceDep):
+@limiter.limit(settings.RATE_LIMIT_AUTH_EMAIL)
+async def forgot_password(request: Request, data: ForgotPasswordRequest, service: AuthServiceDep):
     """Şifre sıfırlama e-postası gönder. Kullanıcı varlığını açıklamaz."""
     await service.forgot_password(data.email)
     return MessageResponse(message="Şifre sıfırlama talimatları e-posta adresinize gönderildi.")
 
 
 @router.post("/reset-password", response_model=MessageResponse)
-async def reset_password(data: ResetPasswordRequest, service: AuthServiceDep):
+@limiter.limit(settings.RATE_LIMIT_AUTH)
+async def reset_password(request: Request, data: ResetPasswordRequest, service: AuthServiceDep):
     """Token ile şifreyi sıfırla."""
     await service.reset_password(data.token, data.new_password)
     return MessageResponse(message="Şifreniz başarıyla sıfırlandı.")

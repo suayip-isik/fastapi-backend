@@ -2,14 +2,15 @@
 File upload endpoint'leri.
 """
 
-from __future__ import annotations
-
-from fastapi import APIRouter, Depends, UploadFile, File
 from typing import Annotated
 
+from fastapi import APIRouter, Depends, File, Request, UploadFile
+
 from app.api.dependencies.auth import CurrentUserDep
-from app.storage.backends import storage
+from app.core.config import settings
+from app.core.limiter import limiter
 from app.schemas.common import MessageResponse
+from app.storage.backends import storage
 
 router = APIRouter(prefix="/uploads", tags=["Uploads"])
 
@@ -20,7 +21,9 @@ class UploadResponse(MessageResponse):
 
 
 @router.post("", response_model=UploadResponse)
+@limiter.limit(settings.RATE_LIMIT_UPLOAD)
 async def upload_file(
+    request: Request,
     current_user: CurrentUserDep,
     file: UploadFile = File(...),
 ):
@@ -32,7 +35,9 @@ async def upload_file(
 
 
 @router.delete("", response_model=MessageResponse)
+@limiter.limit(settings.RATE_LIMIT_UPLOAD)
 async def delete_file(
+    request: Request,
     key: str,
     current_user: CurrentUserDep,
 ):
