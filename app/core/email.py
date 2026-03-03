@@ -1,11 +1,12 @@
 """
 E-posta gönderim utility.
-SMTP_HOST yapılandırılmamışsa token'ı stdout'a loglar (dev fallback).
+SMTP_HOST yapılandırılmamışsa dev_link'i stdout'a loglar (dev fallback).
 Hiçbir zaman exception fırlatmaz — e-posta hatası API akışını kesmemeli.
 """
 
 from __future__ import annotations
 
+import re
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -16,20 +17,25 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+# href değerlerini çekmeye yarayan pattern
+_HREF_RE = re.compile(r"""href=['"]([^'"]+)['"]""")
+
 
 async def send_email(*, to: str, subject: str, html_body: str) -> None:
     """
     E-posta gönder.
 
-    SMTP_HOST tanımlı değilse içeriği log'a yazar ve döner (dev mode).
+    SMTP_HOST tanımlı değilse linki log'a yazar ve döner (dev mode).
+    body asla loglanmaz — HTML içeriği doğrulama/sıfırlama token'ı içerebilir.
     SMTP hatasında da loglayıp devam eder — asla exception fırlatmaz.
     """
     if not settings.SMTP_HOST:
+        links = _HREF_RE.findall(html_body)
         logger.warning(
             "smtp_not_configured_dev_fallback",
             to=to,
             subject=subject,
-            body=html_body,
+            dev_link=links[0] if links else None,
         )
         return
 

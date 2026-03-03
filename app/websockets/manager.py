@@ -4,6 +4,7 @@ Connection'ları room bazlı yönetir.
 """
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 from typing import Any
 
@@ -73,21 +74,42 @@ manager = ConnectionManager()
 
 # ── Endpoint ──────────────────────────────────────────────────────────────────
 
+_WS_AUTH_TIMEOUT = 10.0  # saniye — ilk mesaj için bekleme süresi
+
+
 @router.websocket("/{room_id}")
 async def websocket_endpoint(
     websocket: WebSocket,
     room_id: str,
-    token: str,  # Query param: ws://host/ws/room?token=xxx
 ) -> None:
     """
     WebSocket bağlantısı.
-    Token query param ile kimlik doğrulama yapılır.
+    Bağlantı kurulunca ilk mesaj {"type": "auth", "token": "<access_token>"} olmalıdır.
+    Token URL'de gönderilmez — server log'larına yazılmasını önler.
 
-    Bağlantı: ws://localhost:8000/api/v1/ws/{room_id}?token={access_token}
+    Bağlantı: ws://localhost:8000/api/v1/ws/{room_id}
+    İlk mesaj: {"type": "auth", "token": "<access_token>"}
     """
-    # Token doğrulama
+    await websocket.accept()
+
+    # İlk mesaj auth olmalı (timeout içinde)
     try:
-        payload = decode_token(token)
+        raw = await asyncio.wait_for(websocket.receive_json(), timeout=_WS_AUTH_TIMEOUT)
+    except asyncio.TimeoutError:
+        await websocket.close(code=4008, reason="Auth timeout.")
+        return
+    except WebSocketDisconnect:
+        return
+    except Exception:
+        await websocket.close(code=4001, reason="Geçersiz mesaj formatı.")
+        return
+
+    if raw.get("type") != "auth" or not raw.get("token"):
+        await websocket.close(code=4001, reason="Auth mesajı gerekli: {type: 'auth', token: '...'}")
+        return
+
+    try:
+        payload = decode_token(raw["token"])
         user_id = payload.sub
     except Exception:
         await websocket.close(code=4001, reason="Geçersiz token.")
