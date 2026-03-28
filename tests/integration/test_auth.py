@@ -485,6 +485,26 @@ async def test_logout_without_refresh_token(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_login_invalid_email_format(client: AsyncClient):
+    """Geçersiz email formatı ile login → 422."""
+    res = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "not-an-email", "password": "StrongPass1"},
+    )
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_refresh_garbage_token(client: AsyncClient):
+    """Rastgele string ile /refresh → 401."""
+    res = await client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": "garbage.token.string"},
+    )
+    assert res.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_resend_verification_already_verified_sends_no_email(
     client: AsyncClient,
     fake_redis: fakeredis_aioredis.FakeRedis,

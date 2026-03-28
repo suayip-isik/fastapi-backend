@@ -297,3 +297,23 @@ async def test_deactivate_user_as_non_admin(client: AsyncClient):
 async def test_deactivate_user_unauthorized(client: AsyncClient):
     res = await client.delete("/api/v1/users/00000000-0000-0000-0000-000000000000")
     assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_deactivate_nonexistent_user(client: AsyncClient, db_session: AsyncSession):
+    """Admin ile var olmayan UUID → 404."""
+    admin_email = "admin_404del@example.com"
+    headers = await _auth_headers(client, admin_email)
+    await _promote_to_admin(db_session, admin_email)
+
+    fake_id = "00000000-0000-0000-0000-000000000001"
+    res = await client.delete(f"/api/v1/users/{fake_id}", headers=headers)
+    assert res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_me_password_too_short(client: AsyncClient):
+    """8 karakterden kısa şifre ile PATCH /users/me → 422."""
+    headers = await _auth_headers(client, "shortpw_update@example.com")
+    res = await client.patch("/api/v1/users/me", json={"password": "Sh0rt"}, headers=headers)
+    assert res.status_code == 422
