@@ -10,9 +10,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import HTMLResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from sqladmin import Admin
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -29,6 +28,7 @@ from app.core.middleware import (
 from app.db.session import engine
 from app.admin import get_all_views
 from app.admin.seed import create_default_admin
+from app.core.limiter import limiter
 from app.core.redis import close_redis
 
 
@@ -60,11 +60,6 @@ def create_app() -> FastAPI:
     app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
 
     # Rate Limiting
-    limiter = Limiter(
-        key_func=get_remote_address,
-        storage_uri=settings.REDIS_URL,
-        default_limits=[settings.RATE_LIMIT_DEFAULT],
-    )
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 

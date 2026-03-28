@@ -13,6 +13,8 @@ import structlog
 
 request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
 user_id_var: ContextVar[str] = ContextVar("user_id", default="-")
+ip_address_var: ContextVar[str] = ContextVar("ip_address", default="-")
+user_agent_var: ContextVar[str] = ContextVar("user_agent", default="-")
 
 
 def _add_request_context(logger, method: str, event_dict: dict) -> dict:

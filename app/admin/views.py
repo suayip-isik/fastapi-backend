@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from sqladmin import ModelView
 
+from app.db.models.audit_log import AuditLog
 from app.db.models.oauth_account import OAuthAccount
 from app.db.models.user import User
 
@@ -113,3 +114,40 @@ class OAuthAccountAdmin(ModelView, model=OAuthAccount):
     can_delete = True
     can_view_details = True
     can_export = False  # Token bilgileri export edilmesin
+
+
+class AuditLogAdmin(ModelView, model=AuditLog):
+    name = "Audit Log"
+    name_plural = "Audit Loglar"
+    icon = "fa-solid fa-shield-halved"
+
+    column_list = [
+        AuditLog.created_at,
+        AuditLog.action,
+        AuditLog.user_id,
+        AuditLog.ip_address,
+        AuditLog.user_agent,
+    ]
+
+    column_searchable_list = [AuditLog.ip_address]
+    column_filters = [AuditLog.action, AuditLog.user_id]
+    column_sortable_list = [AuditLog.created_at, AuditLog.action]
+
+    column_details_list = [
+        AuditLog.id,
+        AuditLog.created_at,
+        AuditLog.action,
+        AuditLog.user_id,
+        AuditLog.ip_address,
+        AuditLog.user_agent,
+        AuditLog.extra,
+    ]
+
+    page_size = 50
+    page_size_options = [50, 100, 200]
+
+    can_create = False
+    can_edit = False
+    can_delete = False
+    can_view_details = True
+    can_export = True

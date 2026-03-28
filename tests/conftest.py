@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import app.core.redis as redis_module
 from app.core.config import settings
+from app.core.limiter import limiter
 from app.db.models.base import Base
 from app.db.session import get_db
 from app.main import app
@@ -60,12 +61,23 @@ async def fake_redis():
 
 
 @pytest.fixture(autouse=True)
+def disable_rate_limits():
+    """Test süresince rate limiting'i devre dışı bırak."""
+    limiter.enabled = False
+    yield
+    limiter.enabled = True
+
+
+@pytest.fixture(autouse=True)
 def mock_enqueue():
     """
     Tüm testlerde ARQ enqueue'yu mock'la.
-    app.services.auth.enqueue patch'lenir (kullanıldığı yer).
+    register → app.services.auth.enqueue
+    resend_verification / forgot_password → app.services.account.enqueue
+    İki modül de aynı mock'a yönlendirilir.
     """
-    with patch("app.services.auth.enqueue", new_callable=AsyncMock) as mock:
+    mock = AsyncMock()
+    with patch("app.services.auth.enqueue", mock), patch("app.services.account.enqueue", mock):
         yield mock
 
 

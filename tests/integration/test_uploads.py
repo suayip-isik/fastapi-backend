@@ -205,3 +205,14 @@ async def test_delete_file_missing_key_param(client: AsyncClient):
         res = await client.delete("/api/v1/uploads", headers=headers)
 
     assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_upload_no_file_field(client: AsyncClient):
+    """file field'ı olmadan POST /uploads → 422."""
+    headers = await _auth_headers(client, "nofile@example.com")
+
+    with patch("app.api.v1.endpoints.uploads.storage", _mock_storage()):
+        res = await client.post("/api/v1/uploads", headers=headers)
+
+    assert res.status_code == 422
