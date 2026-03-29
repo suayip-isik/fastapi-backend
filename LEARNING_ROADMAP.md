@@ -670,6 +670,8 @@ async def test_login_audited(client, mock_audit):
 - `tests/integration/test_websocket.py` — lifespan patch'i
 - `tests/integration/test_audit_log.py` — `_audit_log` mock pattern'ı
 - `tests/unit/test_health.py` — `aioboto3.Session` context manager mock'u
+- `tests/integration/test_new_features.py` — `_push_to_websocket` mock'u (notification test izolasyonu)
+- `tests/e2e/` — mock'suz tam akış testleri (sadece FakeRedis ve mock_enqueue autouse fixture'ları aktif)
 
 ### 10.4 Integration Test
 
@@ -689,6 +691,101 @@ Her test kendi transaction'ında çalışır; test sonunda rollback yapılır.
 Testler birbirini etkilemez.
 
 **Bu projede:** `tests/conftest.py` — `db_session` fixture'ı
+
+### 10.8 E2E (Uçtan Uca) Test
+
+Birden fazla adımı zincirleme test eder; gerçek bir kullanıcı yolculuğunu simüle eder.
+Integration testlerinden farkı: tek endpoint'i değil, tam bir akışı doğrular.
+
+```python
+async def test_full_auth_journey(client, fake_redis, mock_enqueue):
+    # Adım 1: Kayıt
+    await client.post("/api/v1/auth/register", json={...})
+    # Adım 2: E-posta doğrulama
+    token = mock_enqueue.call_args.args[2]
+    await client.post("/api/v1/auth/verify-email", json={"token": token})
+    # Adım 3: Giriş
+    login = await client.post("/api/v1/auth/login", json={...})
+    # Adım 4: Token yenileme
+    refresh = await client.post("/api/v1/auth/refresh", ...)
+    # Adım 5: Çıkış + blacklist kontrolü
+    await client.post("/api/v1/auth/logout", ...)
+    me = await client.get("/api/v1/users/me", ...)
+    assert me.status_code == 401  # token blacklist'te
+```
+
+**Ne zaman E2E test yazılır?**
+
+- Birden fazla servisi birlikte kapsayan kritik iş akışları
+- Birinci adım başarısız olursa sonraki adımların anlamsız olduğu senaryolar (kayıt olmadan giriş yapılamaz)
+- Güvenlik flow'ları: token rotation, backup code tek kullanımlık doğrulama, API key iptal + reddedilme
+
+**Bu projede:** `tests/e2e/`
+
+| Dosya                             | Test Edilen Yolculuk                                                     |
+| --------------------------------- | ------------------------------------------------------------------------ |
+| `test_auth_journey.py`            | Kayıt → e-posta doğrulama → giriş → refresh → çıkış → blacklist (9 adım) |
+| `test_2fa_journey.py`             | TOTP kurulum → etkinleştirme → backup codes → logout → TOTP ile giriş    |
+| `test_api_key_journey.py`         | Key oluşturma → kullanım → iptal → reddedilme                            |
+| `test_user_management_journey.py` | Admin: kullanıcı yönetimi → deaktif etme → deaktif kullanıcı giriş reddi |
+
+### 10.9 Unit Test — Pure Function Testi
+
+I/O bağımlılığı olmayan (DB, HTTP, Redis gerektirmeyen) saf fonksiyonlar en kolay test edilebilir birimlerdir. Şema validator'ları, şifreleme yardımcıları ve exception hiyerarşisi bu kategoriye girer.
+
+**Exception sınıfı testi:**
+
+```python
+from app.core.exceptions import NotFoundError, AppError
+
+def test_not_found_inherits_app_error():
+    assert issubclass(NotFoundError, AppError)
+    assert NotFoundError.status_code == 404
+    assert NotFoundError.code == "NOT_FOUND"
+
+def test_to_dict_without_details():
+    err = NotFoundError("Kayıt bulunamadı.")
+    d = err.to_dict()
+    assert d == {"error": {"code": "NOT_FOUND", "message": "Kayıt bulunamadı."}}
+    assert "details" not in d["error"]
+```
+
+**Pydantic validator testi:**
+
+```python
+from pydantic import ValidationError as PydanticValidationError
+from app.schemas.auth import RegisterRequest, validate_password_strength
+
+def test_missing_uppercase_raises():
+    with pytest.raises(ValueError, match="büyük harf"):
+        validate_password_strength("weakpass1")
+
+def test_register_request_invalid_email():
+    with pytest.raises(PydanticValidationError):
+        RegisterRequest(email="not-an-email", password="StrongPass1")
+```
+
+> **Not:** Pydantic'in `ValidationError`'u `app.core.exceptions.ValidationError` ile çakışır. Her zaman `from pydantic import ValidationError as PydanticValidationError` şeklinde alias kullan.
+
+**Fernet şifreleme testi:**
+
+```python
+from app.services.totp import _encrypt, _decrypt
+from app.core.exceptions import AuthenticationError
+
+def test_roundtrip():
+    assert _decrypt(_encrypt("secret")) == "secret"
+
+def test_invalid_ciphertext_raises():
+    with pytest.raises(AuthenticationError):
+        _decrypt("invalid-ciphertext")
+```
+
+**Bu projede:**
+
+- `tests/unit/test_exceptions.py` — `AppError` hiyerarşisi, `to_dict()`, `_serialize_validation_errors()`, `_error_response()`
+- `tests/unit/test_schemas.py` — `validate_password_strength()`, `RegisterRequest`, `ResetPasswordRequest`
+- `tests/unit/test_totp_helpers.py` — `_encrypt`/`_decrypt`/`_generate_backup_codes` (totp.py), `_generate_raw_key`/`_split_key` (api_key.py)
 
 ### 10.6 Middleware Test Pattern'ı
 
@@ -1040,7 +1137,11 @@ Hafta 13+:   Mimari prensipleri okuyarak projeyi incele (Seviye 11-12)
 16. `app/tasks/worker.py` — ARQ background task'ları nasıl tanımlanır?
 17. `app/admin/views.py` — SQLAdmin view'ları nasıl kayıt edilir?
 18. `tests/conftest.py` — Test fixture'ları ve izolasyon nasıl sağlanır?
-19. `tests/integration/test_auth.py` — Uçtan uca akış nasıl test edilir?
+19. `tests/unit/test_exceptions.py` — Pure Python unit test nasıl yazılır?
+20. `tests/unit/test_schemas.py` — Pydantic validator'ları nasıl izole test edilir?
+21. `tests/unit/test_totp_helpers.py` — Fernet şifreleme ve format yardımcıları
+22. `tests/integration/test_auth.py` — Uçtan uca HTTP akışı nasıl test edilir?
+23. `tests/e2e/test_auth_journey.py` — Çok adımlı kullanıcı yolculuğu nasıl test edilir?
 
 ---
 

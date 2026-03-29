@@ -140,8 +140,29 @@ fastapi-backend/
 │   └── env.py                          # Migration ortam konfigürasyonu
 ├── tests/
 │   ├── conftest.py                     # pytest fixture'ları (client, db_session, fake_redis)
-│   ├── unit/                           # Unit testler (DB gerektirmez)
-│   └── integration/                    # Integration testler (gerçek DB kullanır)
+│   ├── unit/                           # Unit testler (DB/HTTP gerektirmez)
+│   │   ├── test_security.py            # JWT + bcrypt
+│   │   ├── test_exceptions.py          # Exception hiyerarşisi, to_dict(), error handler'lar
+│   │   ├── test_schemas.py             # Pydantic validator'ları (şifre güçlük kuralları vb.)
+│   │   ├── test_totp_helpers.py        # Fernet şifreleme, backup code, API key format yardımcıları
+│   │   ├── test_helpers.py             # Genel yardımcı fonksiyonlar
+│   │   ├── test_middleware.py          # RequestID, Timing, SecurityHeaders
+│   │   ├── test_repository_base.py     # BaseRepository.get_page() pagination
+│   │   └── test_health.py             # check_redis, check_storage fonksiyonları
+│   ├── integration/                    # Integration testler (gerçek DB kullanır)
+│   │   ├── test_auth.py               # Kayıt, giriş, çıkış, token, e-posta, şifre sıfırlama
+│   │   ├── test_users.py              # Profil, şifre değiştirme, admin yönetimi
+│   │   ├── test_oauth.py              # Google ve GitHub OAuth akışları
+│   │   ├── test_new_features.py       # TOTP/2FA, API keys, bildirimler
+│   │   ├── test_uploads.py            # Dosya yükleme/silme, sahiplik kontrolü
+│   │   ├── test_websocket.py          # WebSocket auth, ping/pong, broadcast
+│   │   ├── test_audit_log.py          # Audit log aksiyonları
+│   │   └── test_admin.py              # Admin panel erişim kontrolü
+│   └── e2e/                            # Uçtan uca yolculuk testleri (çok adımlı akışlar)
+│       ├── test_auth_journey.py        # Kayıt→doğrulama→giriş→refresh→çıkış→blacklist
+│       ├── test_2fa_journey.py         # TOTP kurulum→etkinleştirme→giriş→devre dışı bırakma
+│       ├── test_api_key_journey.py     # Key oluşturma→kullanım→iptal→reddedilme
+│       └── test_user_management_journey.py  # Admin yönetimi→deaktif etme→giriş reddi
 ├── scripts/
 │   └── create_buckets.py               # S3/MinIO bucket oluşturma scripti
 ├── docker/
@@ -814,20 +835,30 @@ make test-k k=test_login               # İsim desenine göre
 
 ### Test Matrisi
 
-| Dosya                                 | Kategori    | Kapsadığı Senaryolar                                                                                      |
-| ------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------- |
-| `tests/unit/test_security.py`         | Unit        | JWT oluşturma/decode, süresi dolmuş/değiştirilmiş token, bcrypt hash/verify                               |
-| `tests/unit/test_helpers.py`          | Unit        | Yardımcı fonksiyonlar                                                                                     |
-| `tests/unit/test_middleware.py`       | Unit        | RequestIDMiddleware (UUID üretim, header koruma), TimingMiddleware, SecurityHeadersMiddleware (CSP, HSTS) |
-| `tests/unit/test_repository_base.py`  | Unit        | `BaseRepository.get_page()` sayfalama: boş tablo, ilk/son sayfa, limit > toplam                           |
-| `tests/unit/test_health.py`           | Unit        | `check_redis`, `check_storage` — başarılı ve hatalı senaryolar; degraded/503 endpoint                     |
-| `tests/integration/test_auth.py`      | Integration | Kayıt, giriş, çıkış, token refresh, e-posta doğrulama, şifre sıfırlama                                    |
-| `tests/integration/test_oauth.py`     | Integration | Google ve GitHub OAuth akışları, state CSRF koruması, geçersiz/eksik state                                |
-| `tests/integration/test_users.py`     | Integration | Profil güncelleme, şifre değiştirme, yetki kontrolleri                                                    |
-| `tests/integration/test_uploads.py`   | Integration | Dosya yükleme, silme, sahiplik kontrolü                                                                   |
-| `tests/integration/test_websocket.py` | Integration | Auth hata senaryoları, ping/pong, broadcast, echo kontrolü                                                |
-| `tests/integration/test_audit_log.py` | Integration | REGISTER, LOGIN_SUCCESS/FAILED, LOGOUT, TOKEN_REFRESHED aksiyonları audit edilmeli                        |
-| `tests/integration/test_admin.py`     | Integration | Admin panel erişim kontrolü: yetkisiz redirect, login sayfası, mocked auth                                |
+| Dosya                                       | Kategori    | Kapsadığı Senaryolar                                                                                                     |
+| ------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `tests/unit/test_security.py`               | Unit        | JWT oluşturma/decode, süresi dolmuş/değiştirilmiş token, bcrypt hash/verify                                              |
+| `tests/unit/test_exceptions.py`             | Unit        | `AppError` hiyerarşisi, `to_dict()`, HTTP durum kodları, `_serialize_validation_errors()`, `_error_response()`           |
+| `tests/unit/test_schemas.py`                | Unit        | `validate_password_strength()`, `RegisterRequest` ve `ResetPasswordRequest` validator'ları                               |
+| `tests/unit/test_totp_helpers.py`           | Unit        | Fernet `_encrypt`/`_decrypt` roundtrip, `_generate_backup_codes()` (8 adet, hex, uppercase), API key format yardımcıları |
+| `tests/unit/test_helpers.py`                | Unit        | Genel yardımcı fonksiyonlar                                                                                              |
+| `tests/unit/test_middleware.py`             | Unit        | RequestIDMiddleware (UUID üretim, header koruma), TimingMiddleware, SecurityHeadersMiddleware (CSP, HSTS)                |
+| `tests/unit/test_repository_base.py`        | Unit        | `BaseRepository.get_page()` sayfalama: boş tablo, ilk/son sayfa, limit > toplam                                          |
+| `tests/unit/test_health.py`                 | Unit        | `check_redis`, `check_storage` — başarılı ve hatalı senaryolar; degraded/503 endpoint                                    |
+| `tests/integration/test_auth.py`            | Integration | Kayıt, giriş, çıkış, token refresh, e-posta doğrulama, şifre sıfırlama, zaten-doğrulanmış senaryosu                      |
+| `tests/integration/test_oauth.py`           | Integration | Google ve GitHub OAuth akışları, state CSRF koruması, geçersiz/eksik state                                               |
+| `tests/integration/test_users.py`           | Integration | Profil güncelleme, şifre değiştirme, yetki kontrolleri                                                                   |
+| `tests/integration/test_new_features.py`    | Integration | TOTP/2FA (setup/verify/disable/backup code), API key (CRUD, expiry), bildirimler (sahiplik kontrolü dahil)               |
+| `tests/integration/test_uploads.py`         | Integration | Dosya yükleme, silme, sahiplik kontrolü                                                                                  |
+| `tests/integration/test_websocket.py`       | Integration | Auth hata senaryoları, ping/pong, broadcast, echo kontrolü                                                               |
+| `tests/integration/test_audit_log.py`       | Integration | REGISTER, LOGIN_SUCCESS/FAILED, LOGOUT, TOKEN_REFRESHED aksiyonları audit edilmeli                                       |
+| `tests/integration/test_admin.py`           | Integration | Admin panel erişim kontrolü: yetkisiz redirect, login sayfası, mocked auth                                               |
+| `tests/e2e/test_auth_journey.py`            | E2E         | Kayıt → e-posta doğrulama → giriş → profil → token yenileme → çıkış → blacklist (9 adım)                                 |
+| `tests/e2e/test_2fa_journey.py`             | E2E         | TOTP kurulum → etkinleştirme → backup codes → logout → TOTP ile giriş → devre dışı bırakma                               |
+| `tests/e2e/test_api_key_journey.py`         | E2E         | Key oluşturma → X-API-Key ile erişim → ikinci key → iptal → reddedilme → kalan key listesi                               |
+| `tests/e2e/test_user_management_journey.py` | E2E         | Admin: kullanıcı listeleme → getirme → deaktif etme → deaktif kullanıcı giriş reddi → yetki kontrolü                     |
+
+**Toplam: 257 test — tüm testler geçiyor, coverage: ~83%**
 
 **Kurallar:**
 
@@ -836,6 +867,8 @@ make test-k k=test_login               # İsim desenine göre
 - Coverage eşiği: `--cov-fail-under=80`
 - `AuditService` test izolasyonu: bağımsız `AsyncSessionFactory` kullandığından `_audit_log` mock'lanır
 - `fake_redis` fixture'ı autouse — tüm testlerde gerçek Redis gerekmez
+- Unit testler `app.*` modüllerini doğrudan import eder — HTTP client veya DB gerekmez
+- E2E testler integration ile aynı fixture'ları kullanır; çok adımlı kullanıcı yolculuklarını test eder
 
 ---
 
@@ -1113,6 +1146,8 @@ docs: CHANGELOG güncelle
 - [ ] `make test` geçiyor (coverage ≥ %80)
 - [ ] `make check` geçiyor (lint + mypy temiz)
 - [ ] Yeni özellikler için integration test yazıldı
+- [ ] Yeni pure helper fonksiyonlar için unit test yazıldı (`tests/unit/`)
+- [ ] Kritik kullanıcı akışları için e2e test yazıldı (`tests/e2e/`)
 - [ ] Yeni servisler için `AuditableMixin` kullanıldı
 - [ ] Servislerden doğrudan SQLAlchemy çağrısı yok (repository kullan)
 - [ ] Endpoint'lerde iş mantığı yok (service'e delege et)

@@ -534,3 +534,69 @@ async def test_resend_verification_already_verified_sends_no_email(
     )
     assert res.status_code == 200
     mock_enqueue.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_verify_email_already_verified_user_still_succeeds(
+    client: AsyncClient,
+    fake_redis: fakeredis_aioredis.FakeRedis,
+    mock_enqueue: AsyncMock,
+):
+    """
+    Zaten doğrulanmış kullanıcıya ait geçerli token ile doğrulama yapıldığında
+    200 dönmeli ve token tüketilmeli.
+
+    AccountService.verify_email() token'ı koşulsuz siler, is_verified kontrolü
+    güncellemeyi atlar — ancak hata fırlatmaz.
+    """
+    from app.services._keys import EMAIL_VERIFY_KEY
+
+    await client.post(
+        "/api/v1/auth/register",
+        json={"email": "already_ver2@example.com", "password": "StrongPass1"},
+    )
+    # İlk doğrulama token'ını al ve doğrula
+    first_token = mock_enqueue.call_args.args[2]
+    await client.post("/api/v1/auth/verify-email", json={"token": first_token})
+
+    # Kullanıcının ID'sini al
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "already_ver2@example.com", "password": "StrongPass1"},
+    )
+    access_token = login.json()["access_token"]
+    me = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {access_token}"})
+    user_id = me.json()["id"]
+
+    # Zaten doğrulanmış kullanıcı için Redis'e ikinci bir token ekle
+    second_token = "second-verify-token-xyz"
+    await fake_redis.setex(EMAIL_VERIFY_KEY.format(second_token), 86400, user_id)
+
+    # Zaten doğrulanmış kullanıcıyla ikinci doğrulama → 200, token silinmeli
+    res = await client.post("/api/v1/auth/verify-email", json={"token": second_token})
+    assert res.status_code == 200
+    assert await fake_redis.get(EMAIL_VERIFY_KEY.format(second_token)) is None
+
+
+@pytest.mark.asyncio
+async def test_login_with_wrong_totp_backup_code(client: AsyncClient) -> None:
+    """Geçersiz backup kod ile login → 401."""
+    import pyotp
+
+    email = "totp_bad_backup@example.com"
+    password = "StrongPass1"
+    tokens = await _register_and_login(client, email)
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    # 2FA kur ve etkinleştir
+    setup_res = await client.post("/api/v1/auth/totp/setup", headers=headers)
+    secret = setup_res.json()["secret"]
+    valid_code = pyotp.TOTP(secret).now()
+    await client.post("/api/v1/auth/totp/verify", json={"code": valid_code}, headers=headers)
+
+    # Geçersiz backup kod ile giriş → 401
+    res = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": password, "totp_code": "INVALID1"},
+    )
+    assert res.status_code == 401
