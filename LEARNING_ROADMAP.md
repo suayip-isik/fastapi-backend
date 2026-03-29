@@ -410,7 +410,7 @@ Anahtarlar: `keys/private.pem`, `keys/public.pem`
 
 Brute-force ve DDoS saldırılarını yavaşlatır.
 
-**Bu projede:** `app/core/limiter.py` — slowapi ile IP bazlı limit
+**Bu projede:** `app/core/limiter.py` — slowapi ile IP/kullanıcı bazlı limit
 
 ### 7.6 TOTP / İki Faktörlü Kimlik Doğrulama (2FA)
 
@@ -802,6 +802,7 @@ await s3_client.delete_object(Bucket=bucket_name, Key=object_key)
 ```
 
 **Bu projede:**
+
 - `app/storage/backends.py` — MinIO/S3 backend soyutlaması
 - `app/api/v1/endpoints/uploads.py` — dosya yükleme ve silme endpoint'leri
 - `scripts/create_buckets.py` — uygulama başlangıcında bucket oluşturur
@@ -822,6 +823,7 @@ class UserAdmin(ModelView, model=User):
 ```
 
 **Bu projede:**
+
 - `app/admin/views.py` — `UserAdmin`, `OAuthAccountAdmin` view'ları
 - `app/admin/auth.py` — JWT doğrulamalı authentication backend
 - `app/admin/seed.py` — `ADMIN_EMAIL`/`ADMIN_PASSWORD` ile ilk admin oluşturur
@@ -839,6 +841,7 @@ Prometheus, zaman serisi metrik toplama sistemidir. `prometheus-fastapi-instrume
 Otomatik üretilen metrikler: `http_requests_total`, `http_request_duration_seconds`, `http_request_size_bytes` vb.
 
 **Bu projede:**
+
 - `app/core/metrics.py` — instrumentator kurulumu
 - `GET /metrics` — Prometheus scrape endpoint'i
 
@@ -860,6 +863,7 @@ sentry_sdk.init(
 ```
 
 **Bu projede:**
+
 - `app/main.py` — uygulama başlangıcında Sentry init (DSN boşsa atlanır)
 - `.env` — `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE`
 
@@ -881,6 +885,7 @@ AuditService.log(LOGIN_FAILED) bağımsız session ile yazar → kayıt korunur
 ```
 
 **Bu projede:**
+
 - `app/services/audit.py` — `AuditService` (bağımsız session factory kullanır)
 - `app/services/base.py` — `AuditableMixin._audit_log()` tüm servislere miras
 - `app/db/models/audit_log.py` — `AuditLog` modeli (action enum, ip_address, user_agent, JSONB extra)
@@ -931,23 +936,23 @@ Hafta 13+:   Mimari prensipleri okuyarak projeyi incele (Seviye 11-12)
 
 ## Faydalı Kaynaklar
 
-| Konu           | Kaynak                                                                    |
-| -------------- | ------------------------------------------------------------------------- |
-| Python         | [docs.python.org/3/tutorial](https://docs.python.org/3/tutorial/)         |
-| Async Python   | [realpython.com/async-io-python](https://realpython.com/async-io-python/) |
-| FastAPI        | [fastapi.tiangolo.com](https://fastapi.tiangolo.com/)                     |
-| SQLAlchemy 2.0 | [docs.sqlalchemy.org/en/20/](https://docs.sqlalchemy.org/en/20/)          |
-| Pydantic v2    | [docs.pydantic.dev](https://docs.pydantic.dev/)                           |
-| JWT            | [jwt.io/introduction](https://jwt.io/introduction/)                       |
-| TOTP / RFC6238 | [rfc-editor.org/rfc/rfc6238](https://www.rfc-editor.org/rfc/rfc6238)      |
-| Docker         | [docs.docker.com/get-started](https://docs.docker.com/get-started/)       |
-| MinIO          | [min.io/docs/minio/linux/index.html](https://min.io/docs/minio/linux/index.html) |
-| pytest         | [docs.pytest.org](https://docs.pytest.org/)                               |
-| Ruff           | [docs.astral.sh/ruff](https://docs.astral.sh/ruff/)                       |
-| mypy           | [mypy.readthedocs.io](https://mypy.readthedocs.io/)                       |
-| pre-commit     | [pre-commit.com](https://pre-commit.com/)                                 |
-| SQLAdmin       | [aminalaee.dev/sqladmin](https://aminalaee.dev/sqladmin/)                 |
+| Konu           | Kaynak                                                                                        |
+| -------------- | --------------------------------------------------------------------------------------------- |
+| Python         | [docs.python.org/3/tutorial](https://docs.python.org/3/tutorial/)                             |
+| Async Python   | [realpython.com/async-io-python](https://realpython.com/async-io-python/)                     |
+| FastAPI        | [fastapi.tiangolo.com](https://fastapi.tiangolo.com/)                                         |
+| SQLAlchemy 2.0 | [docs.sqlalchemy.org/en/20/](https://docs.sqlalchemy.org/en/20/)                              |
+| Pydantic v2    | [docs.pydantic.dev](https://docs.pydantic.dev/)                                               |
+| JWT            | [jwt.io/introduction](https://jwt.io/introduction/)                                           |
+| TOTP / RFC6238 | [rfc-editor.org/rfc/rfc6238](https://www.rfc-editor.org/rfc/rfc6238)                          |
+| Docker         | [docs.docker.com/get-started](https://docs.docker.com/get-started/)                           |
+| MinIO          | [min.io/docs/minio/linux/index.html](https://min.io/docs/minio/linux/index.html)              |
+| pytest         | [docs.pytest.org](https://docs.pytest.org/)                                                   |
+| Ruff           | [docs.astral.sh/ruff](https://docs.astral.sh/ruff/)                                           |
+| mypy           | [mypy.readthedocs.io](https://mypy.readthedocs.io/)                                           |
+| pre-commit     | [pre-commit.com](https://pre-commit.com/)                                                     |
+| SQLAdmin       | [aminalaee.dev/sqladmin](https://aminalaee.dev/sqladmin/)                                     |
 | Prometheus     | [prometheus.io/docs/introduction/overview](https://prometheus.io/docs/introduction/overview/) |
-| structlog      | [structlog.readthedocs.io](https://structlog.readthedocs.io/)             |
-| 12-Factor App  | [12factor.net](https://12factor.net/)                                     |
-| OWASP Top 10   | [owasp.org/Top10](https://owasp.org/www-project-top-ten/)                 |
+| structlog      | [structlog.readthedocs.io](https://structlog.readthedocs.io/)                                 |
+| 12-Factor App  | [12factor.net](https://12factor.net/)                                                         |
+| OWASP Top 10   | [owasp.org/Top10](https://owasp.org/www-project-top-ten/)                                     |
