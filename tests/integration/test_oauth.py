@@ -9,6 +9,8 @@ from httpx import AsyncClient, HTTPStatusError
 
 # ── Mock Helpers ──────────────────────────────────────────────────────────────
 
+_STATE = "test_oauth_state_value"
+
 
 def _make_response(data: dict | list, status_code: int = 200) -> MagicMock:
     """Fake httpx response oluştur."""
@@ -67,18 +69,22 @@ def _patch_httpx(mock_client: AsyncMock):
 
 @pytest.mark.asyncio
 async def test_google_redirect(client: AsyncClient):
-    """GET /auth/google → 307 redirect, Location Google URL içermeli."""
+    """GET /auth/google → 307 redirect, Location Google URL ve state içermeli."""
     res = await client.get("/api/v1/auth/google", follow_redirects=False)
     assert res.status_code == 307
-    assert "accounts.google.com" in res.headers["location"]
+    location = res.headers["location"]
+    assert "accounts.google.com" in location
+    assert "state=" in location
 
 
 @pytest.mark.asyncio
 async def test_github_redirect(client: AsyncClient):
-    """GET /auth/github → 307 redirect, Location GitHub URL içermeli."""
+    """GET /auth/github → 307 redirect, Location GitHub URL ve state içermeli."""
     res = await client.get("/api/v1/auth/github", follow_redirects=False)
     assert res.status_code == 307
-    assert "github.com" in res.headers["location"]
+    location = res.headers["location"]
+    assert "github.com" in location
+    assert "state=" in location
 
 
 # ── Google Callback ───────────────────────────────────────────────────────────
@@ -86,18 +92,33 @@ async def test_github_redirect(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_google_callback_missing_code(client: AsyncClient):
-    """code query param olmadan GET → 422."""
+    """code ve state query param olmadan GET → 422."""
     res = await client.get("/api/v1/auth/google/callback")
     assert res.status_code == 422
 
 
 @pytest.mark.asyncio
-async def test_google_callback_success(client: AsyncClient):
-    """Geçerli code ile Google callback → TokenResponse döner."""
+async def test_google_callback_invalid_state(client: AsyncClient):
+    """Redis'te olmayan state ile callback → 401 InvalidTokenError (AuthenticationError)."""
     mock_client = _mock_httpx_google()
-
     with _patch_httpx(mock_client):
-        res = await client.get("/api/v1/auth/google/callback?code=valid_code")
+        res = await client.get(
+            "/api/v1/auth/google/callback?code=valid_code&state=nonexistent_state"
+        )
+    assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_google_callback_success(client: AsyncClient, fake_redis: object):
+    """Geçerli code ve state ile Google callback → TokenResponse döner."""
+    import fakeredis.aioredis as fakeredis_aioredis
+
+    assert isinstance(fake_redis, fakeredis_aioredis.FakeRedis)
+    await fake_redis.setex(f"oauth_state:{_STATE}", 600, "1")
+
+    mock_client = _mock_httpx_google()
+    with _patch_httpx(mock_client):
+        res = await client.get(f"/api/v1/auth/google/callback?code=valid_code&state={_STATE}")
 
     assert res.status_code == 200
     data = res.json()
@@ -107,12 +128,17 @@ async def test_google_callback_success(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_google_callback_creates_verified_user(client: AsyncClient):
+async def test_google_callback_creates_verified_user(client: AsyncClient, fake_redis: object):
     """İlk Google girişinde yeni kullanıcı oluşturulur ve is_verified=True olur."""
-    mock_client = _mock_httpx_google(email="newgoogle@example.com")
+    import fakeredis.aioredis as fakeredis_aioredis
 
+    assert isinstance(fake_redis, fakeredis_aioredis.FakeRedis)
+    state = "state_for_new_user"
+    await fake_redis.setex(f"oauth_state:{state}", 600, "1")
+
+    mock_client = _mock_httpx_google(email="newgoogle@example.com")
     with _patch_httpx(mock_client):
-        res = await client.get("/api/v1/auth/google/callback?code=new_code")
+        res = await client.get(f"/api/v1/auth/google/callback?code=new_code&state={state}")
 
     assert res.status_code == 200
     tokens = res.json()
@@ -127,16 +153,24 @@ async def test_google_callback_creates_verified_user(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_google_callback_existing_user_same_id(client: AsyncClient):
+async def test_google_callback_existing_user_same_id(client: AsyncClient, fake_redis: object):
     """Aynı Google hesabıyla ikinci giriş aynı kullanıcıyı döner."""
+    import fakeredis.aioredis as fakeredis_aioredis
+
+    assert isinstance(fake_redis, fakeredis_aioredis.FakeRedis)
+
+    state1 = "state_repeat_1"
+    await fake_redis.setex(f"oauth_state:{state1}", 600, "1")
     mock1 = _mock_httpx_google(user_id="same_google_id", email="repeat_google@example.com")
     with _patch_httpx(mock1):
-        res1 = await client.get("/api/v1/auth/google/callback?code=code1")
+        res1 = await client.get(f"/api/v1/auth/google/callback?code=code1&state={state1}")
     assert res1.status_code == 200
 
+    state2 = "state_repeat_2"
+    await fake_redis.setex(f"oauth_state:{state2}", 600, "1")
     mock2 = _mock_httpx_google(user_id="same_google_id", email="repeat_google@example.com")
     with _patch_httpx(mock2):
-        res2 = await client.get("/api/v1/auth/google/callback?code=code2")
+        res2 = await client.get(f"/api/v1/auth/google/callback?code=code2&state={state2}")
     assert res2.status_code == 200
 
     # Her iki token da aynı kullanıcıyı döndürmeli
@@ -154,18 +188,32 @@ async def test_google_callback_existing_user_same_id(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_github_callback_missing_code(client: AsyncClient):
-    """code query param olmadan GET → 422."""
+    """code ve state query param olmadan GET → 422."""
     res = await client.get("/api/v1/auth/github/callback")
     assert res.status_code == 422
 
 
 @pytest.mark.asyncio
-async def test_github_callback_success(client: AsyncClient):
-    """Geçerli code ile GitHub callback → TokenResponse döner."""
+async def test_github_callback_invalid_state(client: AsyncClient):
+    """Redis'te olmayan state ile callback → 401 InvalidTokenError (AuthenticationError)."""
     mock_client = _mock_httpx_github()
-
     with _patch_httpx(mock_client):
-        res = await client.get("/api/v1/auth/github/callback?code=gh_code")
+        res = await client.get("/api/v1/auth/github/callback?code=gh_code&state=nonexistent_state")
+    assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_github_callback_success(client: AsyncClient, fake_redis: object):
+    """Geçerli code ve state ile GitHub callback → TokenResponse döner."""
+    import fakeredis.aioredis as fakeredis_aioredis
+
+    assert isinstance(fake_redis, fakeredis_aioredis.FakeRedis)
+    state = "gh_state_success"
+    await fake_redis.setex(f"oauth_state:{state}", 600, "1")
+
+    mock_client = _mock_httpx_github()
+    with _patch_httpx(mock_client):
+        res = await client.get(f"/api/v1/auth/github/callback?code=gh_code&state={state}")
 
     assert res.status_code == 200
     data = res.json()
@@ -175,12 +223,17 @@ async def test_github_callback_success(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_github_callback_creates_user(client: AsyncClient):
+async def test_github_callback_creates_user(client: AsyncClient, fake_redis: object):
     """İlk GitHub girişinde yeni kullanıcı oluşturulur."""
-    mock_client = _mock_httpx_github(email="newgithub@example.com", user_id=111111)
+    import fakeredis.aioredis as fakeredis_aioredis
 
+    assert isinstance(fake_redis, fakeredis_aioredis.FakeRedis)
+    state = "gh_state_new_user"
+    await fake_redis.setex(f"oauth_state:{state}", 600, "1")
+
+    mock_client = _mock_httpx_github(email="newgithub@example.com", user_id=111111)
     with _patch_httpx(mock_client):
-        res = await client.get("/api/v1/auth/github/callback?code=gh_new")
+        res = await client.get(f"/api/v1/auth/github/callback?code=gh_new&state={state}")
 
     assert res.status_code == 200
     tokens = res.json()

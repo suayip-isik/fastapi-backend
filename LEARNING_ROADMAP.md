@@ -388,14 +388,42 @@ Anahtarlar: `keys/private.pem`, `keys/public.pem`
 
 ```
 1. Kullanıcı "Google ile giriş"e tıklar
-2. Google'ın login sayfasına yönlendirilir
-3. Kullanıcı izin verir, Google bir "code" gönderir
-4. Backend, code ile Google'dan kullanıcı bilgisi alır
-5. Backend kendi JWT'sini oluşturur ve döner
+2. Google'ın login sayfasına yönlendirilir (URL'de state parametresi var)
+3. Kullanıcı izin verir, Google code + state ile callback'e yönlendirir
+4. Backend state'i doğrular (Redis'teki ile karşılaştırır), sonra siler
+5. Backend, code ile Google'dan kullanıcı bilgisi alır
+6. Backend kendi JWT'sini oluşturur ve döner
 ```
 
-**Bu projede:** `app/services/oauth.py` — Google ve GitHub akışları
-`app/db/repositories/oauth_account.py` — provider hesabı kaydı
+**CSRF Koruması — State Parametresi:**
+
+OAuth callback'i sahte bir siteden tetiklenebilir (CSRF saldırısı). Bunu önlemek için:
+
+```python
+from urllib.parse import urlencode
+
+# 1. Yönlendirme sırasında: rastgele state üret, Redis'e kaydet
+state = secrets.token_urlsafe(32)
+await redis.setex(f"oauth_state:{state}", 600, "1")  # 10 dk TTL
+
+# URL parametreleri urlencode ile oluşturulur — redirect_uri içindeki
+# ":", "/" gibi karakterlerin OAuth URL'ini bozmaması için zorunludur
+params = {"client_id": "...", "redirect_uri": "...", "state": state, ...}
+redirect_url = f"https://accounts.google.com/o/oauth2/auth?{urlencode(params)}"
+
+# 2. Callback sırasında: state'i atomik GETDEL ile doğrula ve tüket
+# GET + DELETE yerine GETDEL kullanmak kritiktir:
+# İki ayrı komut arasındaki sürede iki eş zamanlı istek aynı state'i
+# kullanabilir (race condition → replay saldırısı). GETDEL atomiktir.
+if not await redis.getdel(f"oauth_state:{state}"):
+    raise InvalidTokenError("Geçersiz OAuth state.")
+```
+
+**Bu projede:**
+
+- `app/services/oauth.py` — Google ve GitHub akışları (state üretim + doğrulama)
+- `app/services/_keys.py` — `OAUTH_STATE_KEY = "oauth_state:{}"` sabiti
+- `app/db/repositories/oauth_account.py` — provider hesabı kaydı
 
 ### 7.4 Güvenlik Başlıkları
 
@@ -491,7 +519,26 @@ await redis.enqueue_job("send_verification_email", user_id=user.id)
 arq app.tasks.worker.WorkerSettings
 ```
 
-**Bu projede:** `app/tasks/` — worker tanımları ve görev fonksiyonları
+**Cron Job Tanımı:**
+
+Belirli zamanlarda otomatik çalışan görevler `cron()` ile tanımlanır:
+
+```python
+from arq import cron
+
+class WorkerSettings:
+    functions = [cleanup_expired_tokens, ...]
+    cron_jobs = [
+        cron(cleanup_expired_tokens, hour=0, minute=0),  # Her gece yarısı
+    ]
+```
+
+**Bu projede:**
+
+- `app/tasks/worker.py` — worker tanımları ve görev fonksiyonları
+- `send_welcome_email` — kayıt sonrası hoşgeldiniz e-postası (SMTP)
+- `send_verification_email` / `send_password_reset_email` — hesap doğrulama e-postaları
+- `cleanup_expired_tokens` — her gece yarısı çalışır, TTL'siz orphaned Redis key'lerini temizler (`blacklist:*`, `email_verify:*`, `password_reset:*`, `oauth_state:*`); log event: `cleaning_orphaned_redis_keys`
 
 ### 8.4 Bildirimler ve WebSocket Push
 
@@ -597,10 +644,32 @@ with patch("app.tasks.email.send_email", new=AsyncMock()) as mock_send:
     mock_send.assert_called_once()
 ```
 
+**Audit Log Mock Pattern:**
+
+`AuditService` bağımsız `AsyncSessionFactory` kullandığından test DB'sine yazamaz.
+Bunun yerine `_audit_log` metodu mock'lanır; doğru aksiyon ve `user_id` ile çağrıldığı assert edilir:
+
+```python
+@pytest.fixture
+def mock_audit() -> AsyncMock:
+    with patch(
+        "app.services.base.AuditableMixin._audit_log",
+        new_callable=AsyncMock,
+    ) as m:
+        yield m
+
+async def test_login_audited(client, mock_audit):
+    await client.post("/api/v1/auth/login", json={...})
+    actions = [c.kwargs.get("action") for c in mock_audit.call_args_list]
+    assert AuditAction.LOGIN_SUCCESS in actions
+```
+
 **Bu projede:**
 
 - `tests/conftest.py` — FakeRedis, S3 mock, async DB session
 - `tests/integration/test_websocket.py` — lifespan patch'i
+- `tests/integration/test_audit_log.py` — `_audit_log` mock pattern'ı
+- `tests/unit/test_health.py` — `aioboto3.Session` context manager mock'u
 
 ### 10.4 Integration Test
 
@@ -620,6 +689,47 @@ Her test kendi transaction'ında çalışır; test sonunda rollback yapılır.
 Testler birbirini etkilemez.
 
 **Bu projede:** `tests/conftest.py` — `db_session` fixture'ı
+
+### 10.6 Middleware Test Pattern'ı
+
+Middleware davranışı endpoint'e istek atılarak dolaylı test edilir; response header'ları kontrol edilir:
+
+```python
+async def test_security_headers(client: AsyncClient) -> None:
+    res = await client.get("/health/live")
+    assert res.headers["x-content-type-options"] == "nosniff"
+    assert res.headers["x-frame-options"] == "DENY"
+    csp = res.headers.get("content-security-policy", "")
+    assert "default-src 'self'" in csp
+    assert "'unsafe-inline'" not in csp  # API için strict CSP
+```
+
+**Bu projede:** `tests/unit/test_middleware.py` — RequestID, Timing, SecurityHeaders
+
+### 10.7 Repository Pagination Testi
+
+`BaseRepository.get_page()` window function'ı döndürdüğü `(items, total)` tuple'ı ile test edilir; farklı offset/limit kombinasyonları denenir:
+
+```python
+async def test_pagination(db_session: AsyncSession) -> None:
+    repo = UserRepository(db_session)
+    # 25 kullanıcı oluştur
+    items, total = await repo.get_page(offset=0, limit=10)
+    assert len(items) == 10
+    assert total == 25  # Her sayfada toplam tutarlı
+```
+
+> **Test performansı — Precomputed Hash:** Bu testler şifre doğrulaması **yapmaz**, sadece pagination mantığını test eder. Bu nedenle `hash_password()` çağrısı yerine önceden hesaplanmış bir bcrypt hash sabiti kullanılır. Modül import edildiğinde `rounds=12` ile bcrypt çalıştırmak test collection süresini gereksiz uzatır.
+>
+> ```python
+> # ✗ Yavaş — import anında bcrypt çalışır
+> _PWD = hash_password("TestPass123!")
+>
+> # ✓ Hızlı — sabit string, bcrypt çalışmaz
+> _PWD = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewKxcQFBhkc5HxEe"
+> ```
+
+**Bu projede:** `tests/unit/test_repository_base.py`
 
 ---
 

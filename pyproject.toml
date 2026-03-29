@@ -30,10 +30,12 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
-    "S101",  # assert: pytest idiom
-    "S105",  # hardcoded password string: test fixture'ları
-    "S106",  # hardcoded password func arg: test fixture'ları
-    "S107",  # hardcoded password default arg: test fixture'ları
+    "S101",   # assert: pytest idiom
+    "S105",   # hardcoded password string: test fixture'ları
+    "S106",   # hardcoded password func arg: test fixture'ları
+    "S107",   # hardcoded password default arg: test fixture'ları
+    "TCH002", # httpx.AsyncClient, AsyncSession vb. fixture type hints — TYPE_CHECKING'e taşımak okunabilirliği düşürür
+    "TCH003", # stdlib type hints (UUID vb.) — aynı gerekçe
 ]
 "scripts/*.py" = [
     "S603",  # subprocess call: operasyonel scriptler
