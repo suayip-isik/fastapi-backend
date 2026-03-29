@@ -279,7 +279,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str):
     data = await websocket.receive_json()
 ```
 
-**Bu projede:** `app/websockets/manager.py` ve `app/api/v1/endpoints/websockets.py`
+**Bu projede:** `app/websockets/manager.py` — `ConnectionManager` singleton (oda tabanlı broadcast, `send_to_user_all_rooms` ile bildirim push)
 
 **Kaynak:** [fastapi.tiangolo.com](https://fastapi.tiangolo.com/)
 
@@ -412,6 +412,51 @@ Brute-force ve DDoS saldırılarını yavaşlatır.
 
 **Bu projede:** `app/core/limiter.py` — slowapi ile IP/kullanıcı bazlı limit
 
+### 7.6 TOTP / İki Faktörlü Kimlik Doğrulama (2FA)
+
+Şifreye ek olarak zamanla değişen 6 haneli kod zorunluluğu. RFC 6238 standardı.
+
+- **TOTP nasıl çalışır?** Shared secret + mevcut zaman → 30 saniyede bir yeni kod
+- **TOTP uygulamaları:** Google Authenticator, Authy vb.
+- **QR kodu:** Secret, `otpauth://` URI formatında encode edilir
+- **Yedek kodlar:** 2FA cihazı kaybolursa tek kullanımlık kodlar
+- **Fernet şifreleme:** TOTP secret'ı DB'de düz metin saklamak güvensizdir; `cryptography.fernet` ile şifrelenir
+
+```python
+# Basit TOTP doğrulama mantığı
+import pyotp
+totp = pyotp.TOTP(secret)
+totp.verify(user_provided_code)  # True / False
+```
+
+**Bu projede:**
+
+- `app/services/totp.py` — `TOTPService` (setup, verify_and_enable, disable)
+- `app/db/models/user.py` — `totp_secret` (Fernet encrypted), `totp_enabled`
+- `app/core/security.py` — Fernet şifreleme (SECRET_KEY'den türetilir)
+- `app/services/_keys.py` — Yedek kodlar Redis'te saklanır (`totp_backup:{}`)
+
+### 7.7 API Key Kimlik Doğrulama
+
+Kullanıcı adı/şifre veya JWT yerine uzun ömürlü anahtar ile kimlik doğrulama. Servisler arası iletişimde veya CLI araçlarında kullanılır.
+
+- **Format:** `sk_live_<80 rastgele hex>` — okunabilir prefix + rastgele gövde
+- **Saklama:** Tam key bir kez gösterilir, sonra yalnızca bcrypt hash'i saklanır
+- **Lookup:** `key_prefix` (ilk 12 karakter) ile DB'de aday key'ler bulunur, bcrypt ile doğrulanır
+- **Scopes:** `read write admin` gibi boşlukla ayrılmış izin listeleri
+
+```python
+# İstemci kullanımı
+headers = {"X-API-Key": "sk_live_abc123..."}
+response = requests.get("/api/v1/users/me", headers=headers)
+```
+
+**Bu projede:**
+
+- `app/services/api_key.py` — `APIKeyService` (create, authenticate, revoke)
+- `app/db/models/api_key.py` — `APIKey` modeli (key_prefix, key_hash, scopes, expires_at)
+- `app/api/dependencies/auth.py` — `get_current_user` hem Bearer token hem X-API-Key kabul eder
+
 ---
 
 ## Seviye 8 — Redis
@@ -423,14 +468,15 @@ In-memory anahtar-değer deposu. PostgreSQL'den çok daha hızlı ama kalıcı d
 ### 8.2 Kullanım Alanları
 
 - **Cache:** Sık okunan veriyi bellekte tut
-- **Session store:** Token blacklist
+- **Session store:** Token blacklist, TOTP yedek kodlar
 - **Task queue:** Arka plan görevleri için kuyruk
 - **Rate limit counter:** slowapi'nin sayacları burada
+- **Pub/Sub:** Bildirim push için WebSocket manager ile koordinasyon
 
 **Bu projede:**
 
 - `app/core/redis.py` — singleton Redis client
-- `app/services/_keys.py` — `email_verify:{}`, `password_reset:{}`, `blacklist:{}`
+- `app/services/_keys.py` — tüm Redis key formatları (`email_verify:{}`, `password_reset:{}`, `blacklist:{}`, `totp_backup:{}` vb.)
 - ARQ worker kuyrukları (email gönderme, dosya işleme)
 
 ### 8.3 ARQ — Async Task Queue
@@ -446,6 +492,33 @@ arq app.tasks.worker.WorkerSettings
 ```
 
 **Bu projede:** `app/tasks/` — worker tanımları ve görev fonksiyonları
+
+### 8.4 Bildirimler ve WebSocket Push
+
+Bildirim sistemi iki kanalı birleştirir: kalıcı kayıt (DB) + anlık iletim (WebSocket).
+
+```
+NotificationService.create() çağrılır
+    ↓
+Bildirim PostgreSQL'e yazılır (kalıcı)
+    ↓
+ConnectionManager.send_to_user_all_rooms() çağrılır
+    ↓
+Kullanıcı WebSocket'e bağlıysa anlık iletilir
+    ↓
+Bağlı değilse → sadece DB'de bekler, GET /notifications ile alınır
+```
+
+- **Bildirim tipleri:** `INFO`, `SUCCESS`, `WARNING`, `ERROR`, `SYSTEM`, `MENTION`, `FILE_PROCESSED`
+- **JSONB payload:** `data` alanı ile her bildirime özel ek veri saklanabilir
+- **Okundu takibi:** `is_read` flag'i, `PATCH /notifications/read-all` ile toplu güncelleme
+
+**Bu projede:**
+
+- `app/services/notification.py` — `NotificationService` (create, list, mark_read, count_unread)
+- `app/db/models/notification.py` — `Notification` modeli (type enum, JSONB data, is_read)
+- `app/db/repositories/notification.py` — `NotificationRepository`
+- `app/websockets/manager.py` — `send_to_user_all_rooms()` ile push
 
 ---
 
@@ -672,16 +745,29 @@ pre-commit run --all-files  # tüm dosyalarda manuel çalıştır
 
 ### 12.5 GitHub Actions — CI/CD
 
-Her `push` ve `pull_request`'te otomatik çalışan iki paralel job:
+Her `push` ve `pull_request`'te (master, dev) otomatik çalışan üç paralel job:
+
+**`.github/workflows/lint.yml` — Lint & Type Check:**
 
 ```
 lint job      → pip install ruff → ruff check + ruff format --check
 typecheck job → pip install -r requirements.txt -r requirements-dev.txt → mypy app/
 ```
 
-PR merge edilebilmesi için her iki job'ın da geçmesi zorunludur.
+**`.github/workflows/test.yml` — Tests:**
 
-**Bu projede:** `.github/workflows/lint.yml`
+```
+test job  → PostgreSQL 16 service container ayağa kalkar
+          → pip install bağımlılıklar
+          → openssl ile JWT key'leri üretilir
+          → alembic upgrade head
+          → pytest --cov=app (fakeredis ile, gerçek Redis gerekmez)
+          → coverage.xml artifact olarak yüklenir (7 gün)
+```
+
+PR merge edilebilmesi için üç job'ın da (`lint`, `typecheck`, `test`) geçmesi zorunludur.
+
+**Bu projede:** `.github/workflows/lint.yml`, `.github/workflows/test.yml`
 
 ### 12.6 structlog — Yapılandırılmış Loglama
 
@@ -696,6 +782,116 @@ logger.info("user_created", user_id=str(user.id), email=user.email)
 
 ---
 
+## Seviye 13 — Altyapı Servisleri ve Gözlemlenebilirlik
+
+### 13.1 Dosya Depolama — S3 / MinIO
+
+S3 (Simple Storage Service), dosyaları nesne olarak depolayan bir AWS servisidir. MinIO, S3 API'siyle uyumlu açık kaynaklı bir alternatiftir — yerel geliştirme için kullanılır.
+
+- **Bucket:** Dosyaların saklandığı kap (klasör benzeri)
+- **Object key:** Dosyanın benzersiz yolu (örn. `uploads/user-123/avatar.png`)
+- **Presigned URL:** Geçici erişim bağlantısı — dosyayı herkese açmadan paylaşmak için
+- **MinIO Console:** http://localhost:9001 — tarayıcıdan bucket ve dosya yönetimi
+
+```python
+# Dosya yükleme
+await s3_client.upload_fileobj(file, bucket_name, object_key)
+
+# Dosya silme
+await s3_client.delete_object(Bucket=bucket_name, Key=object_key)
+```
+
+**Bu projede:**
+
+- `app/storage/backends.py` — MinIO/S3 backend soyutlaması
+- `app/api/v1/endpoints/uploads.py` — dosya yükleme ve silme endpoint'leri
+- `scripts/create_buckets.py` — uygulama başlangıcında bucket oluşturur
+- `.env` — `STORAGE_BACKEND`, `S3_ENDPOINT_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET_NAME`
+
+### 13.2 SQLAdmin — Admin Panel
+
+SQLAlchemy modelleri üzerinde otomatik CRUD arayüzü oluşturan FastAPI uyumlu bir kütüphane.
+
+- **Model View:** `ModelView` subclass'ı ile her model için yönetim ekranı
+- **Authentication Backend:** Mevcut JWT sistemiyle entegre — ayrı hesap gerekmez
+- **Session yönetimi:** `SessionMiddleware` + `itsdangerous` ile imzalı cookie
+
+```python
+class UserAdmin(ModelView, model=User):
+    column_list = [User.id, User.email, User.role, User.is_active]
+    can_delete = True
+```
+
+**Bu projede:**
+
+- `app/admin/views.py` — `UserAdmin`, `OAuthAccountAdmin` view'ları
+- `app/admin/auth.py` — JWT doğrulamalı authentication backend
+- `app/admin/seed.py` — `ADMIN_EMAIL`/`ADMIN_PASSWORD` ile ilk admin oluşturur
+- Erişim: http://localhost:8000/admin (yalnızca `ADMIN` rolü)
+
+### 13.3 Prometheus Metrikleri
+
+Prometheus, zaman serisi metrik toplama sistemidir. `prometheus-fastapi-instrumentator` kütüphanesi FastAPI için otomatik HTTP metriklerini sağlar.
+
+- **Counter:** Yalnızca artan sayaç (toplam istek sayısı)
+- **Histogram:** Değer dağılımı (yanıt süresi yüzdelik dilimleri)
+- **Gauge:** Anlık değer (aktif bağlantı sayısı)
+- **Scraping:** Prometheus, `/metrics` endpoint'ini periyodik olarak çekerek veri toplar
+
+Otomatik üretilen metrikler: `http_requests_total`, `http_request_duration_seconds`, `http_request_size_bytes` vb.
+
+**Bu projede:**
+
+- `app/core/metrics.py` — instrumentator kurulumu
+- `GET /metrics` — Prometheus scrape endpoint'i
+
+### 13.4 Sentry — Hata Takibi
+
+Sentry, üretim ortamında oluşan hataları gerçek zamanlı olarak yakalar, gruplandırır ve raporlar.
+
+- **DSN (Data Source Name):** Sentry projesine bağlantı adresi
+- **Tracing:** Her HTTP isteğini uçtan uca izler (performance profiling)
+- **PII Filtreleme:** Kişisel veri (cookie, auth header) otomatik temizlenir
+- **Sample Rate:** `SENTRY_TRACES_SAMPLE_RATE=0.1` → trafiğin %10'u izlenir
+
+```python
+import sentry_sdk
+sentry_sdk.init(
+    dsn=settings.SENTRY_DSN,
+    traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
+)
+```
+
+**Bu projede:**
+
+- `app/main.py` — uygulama başlangıcında Sentry init (DSN boşsa atlanır)
+- `.env` — `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE`
+
+### 13.5 Audit Logging — Denetim Kayıtları
+
+Kimin ne zaman ne yaptığını izleyen kayıt sistemi. Güvenlik denetimi ve olay soruşturması için kritiktir.
+
+- **Bağımsız session:** Audit kayıtları, işlem rollback'inden bağımsız `AsyncSessionFactory` ile yazılır — bir işlem başarısız olsa bile audit kaydı kaybolmaz
+- **Opsiyonel bağımlılık:** `audit: AuditService | None = None` — testlerde geçirilmesi gerekmez
+
+```
+Kullanıcı login yapar
+    ↓
+AuthService.login() başarısız olursa
+    ↓
+DB transaction rollback olur
+    ↓
+AuditService.log(LOGIN_FAILED) bağımsız session ile yazar → kayıt korunur
+```
+
+**Bu projede:**
+
+- `app/services/audit.py` — `AuditService` (bağımsız session factory kullanır)
+- `app/services/base.py` — `AuditableMixin._audit_log()` tüm servislere miras
+- `app/db/models/audit_log.py` — `AuditLog` modeli (action enum, ip_address, user_agent, JSONB extra)
+
+---
+
 ## Önerilen Öğrenme Sırası
 
 ```
@@ -704,44 +900,59 @@ Hafta 3:     Async programlama (Seviye 2)
 Hafta 4:     HTTP ve REST (Seviye 3)
 Hafta 5:     Pydantic + FastAPI (Seviye 4-5)
 Hafta 6-7:   Veritabanı — SQL + SQLAlchemy (Seviye 6)
-Hafta 8:     Güvenlik — JWT + OAuth2 + bcrypt (Seviye 7)
-Hafta 9:     Redis + ARQ (Seviye 8)
-Hafta 10:    Docker (Seviye 9)
+Hafta 8:     Güvenlik — JWT + OAuth2 + bcrypt + TOTP + API Key (Seviye 7)
+Hafta 9:     Redis + ARQ + Bildirimler (Seviye 8)
+Hafta 10:    Docker + Dosya Depolama S3/MinIO (Seviye 9, 13.1)
 Hafta 11:    Test yazımı (Seviye 10)
-Hafta 12+:   Mimari prensipleri okuyarak projeyi incele (Seviye 11-12)
+Hafta 12:    Admin Panel + Prometheus + Sentry + Audit Log (Seviye 13.2-13.5)
+Hafta 13+:   Mimari prensipleri okuyarak projeyi incele (Seviye 11-12)
 ```
 
 ---
 
 ## Bu Projeyi İncelerken Önerilen Dosya Sırası
 
-1. `app/core/config.py` — Ne ayarlanır, neden?
-2. `app/db/models/user.py` — Veri nasıl modellenir?
-3. `app/db/repositories/user.py` — DB'den nasıl okunur/yazılır?
-4. `app/services/auth.py` — Login iş akışı nasıl çalışır?
-5. `app/api/v1/endpoints/auth.py` — HTTP katmanı ne kadar ince?
-6. `app/api/dependencies/auth.py` — Token nasıl doğrulanır?
-7. `tests/integration/test_auth.py` — Uçtan uca akış nasıl test edilir?
-8. `app/websockets/manager.py` — WebSocket yönetimi nasıl yapılır?
-9. `app/tasks/worker.py` — Arka plan işleri nasıl çalışır?
-10. `app/core/security.py` — JWT nasıl oluşturulur ve doğrulanır?
+1. `app/core/config.py` — Ne ayarlanır, neden? Production validator nasıl çalışır?
+2. `app/db/models/user.py` — Veri nasıl modellenir? TOTP alanları nerede?
+3. `app/db/repositories/base.py` — Generic `BaseRepository[T]` nasıl çalışır?
+4. `app/db/repositories/user.py` — Domain-specific sorgular nasıl eklenir?
+5. `app/services/base.py` — `AuditableMixin` nedir, neden tüm servisler miras alır?
+6. `app/services/auth.py` — Login iş akışı nasıl çalışır? TOTP kontrolü nerede?
+7. `app/api/v1/endpoints/auth.py` — HTTP katmanı ne kadar ince?
+8. `app/api/dependencies/auth.py` — JWT ve API Key nasıl birlikte doğrulanır?
+9. `app/core/security.py` — JWT RS256 nasıl oluşturulur ve doğrulanır?
+10. `app/services/totp.py` — 2FA kurulumu ve Fernet şifreleme nasıl çalışır?
+11. `app/services/api_key.py` — `sk_live_` prefix'li key'ler nasıl oluşturulur ve doğrulanır?
+12. `app/services/notification.py` — Bildirim oluşturma ve WebSocket push akışı
+13. `app/websockets/manager.py` — Oda tabanlı bağlantı yönetimi nasıl çalışır?
+14. `app/services/audit.py` — Neden bağımsız session kullanılır?
+15. `app/storage/backends.py` — S3/MinIO soyutlaması nasıl yapılmış?
+16. `app/tasks/worker.py` — ARQ background task'ları nasıl tanımlanır?
+17. `app/admin/views.py` — SQLAdmin view'ları nasıl kayıt edilir?
+18. `tests/conftest.py` — Test fixture'ları ve izolasyon nasıl sağlanır?
+19. `tests/integration/test_auth.py` — Uçtan uca akış nasıl test edilir?
 
 ---
 
 ## Faydalı Kaynaklar
 
-| Konu           | Kaynak                                                                    |
-| -------------- | ------------------------------------------------------------------------- |
-| Python         | [docs.python.org/3/tutorial](https://docs.python.org/3/tutorial/)         |
-| Async Python   | [realpython.com/async-io-python](https://realpython.com/async-io-python/) |
-| FastAPI        | [fastapi.tiangolo.com](https://fastapi.tiangolo.com/)                     |
-| SQLAlchemy 2.0 | [docs.sqlalchemy.org/en/20/](https://docs.sqlalchemy.org/en/20/)          |
-| Pydantic v2    | [docs.pydantic.dev](https://docs.pydantic.dev/)                           |
-| JWT            | [jwt.io/introduction](https://jwt.io/introduction/)                       |
-| Docker         | [docs.docker.com/get-started](https://docs.docker.com/get-started/)       |
-| pytest         | [docs.pytest.org](https://docs.pytest.org/)                               |
-| Ruff           | [docs.astral.sh/ruff](https://docs.astral.sh/ruff/)                       |
-| mypy           | [mypy.readthedocs.io](https://mypy.readthedocs.io/)                       |
-| pre-commit     | [pre-commit.com](https://pre-commit.com/)                                 |
-| 12-Factor App  | [12factor.net](https://12factor.net/)                                     |
-| OWASP Top 10   | [owasp.org/Top10](https://owasp.org/www-project-top-ten/)                 |
+| Konu           | Kaynak                                                                                        |
+| -------------- | --------------------------------------------------------------------------------------------- |
+| Python         | [docs.python.org/3/tutorial](https://docs.python.org/3/tutorial/)                             |
+| Async Python   | [realpython.com/async-io-python](https://realpython.com/async-io-python/)                     |
+| FastAPI        | [fastapi.tiangolo.com](https://fastapi.tiangolo.com/)                                         |
+| SQLAlchemy 2.0 | [docs.sqlalchemy.org/en/20/](https://docs.sqlalchemy.org/en/20/)                              |
+| Pydantic v2    | [docs.pydantic.dev](https://docs.pydantic.dev/)                                               |
+| JWT            | [jwt.io/introduction](https://jwt.io/introduction/)                                           |
+| TOTP / RFC6238 | [rfc-editor.org/rfc/rfc6238](https://www.rfc-editor.org/rfc/rfc6238)                          |
+| Docker         | [docs.docker.com/get-started](https://docs.docker.com/get-started/)                           |
+| MinIO          | [min.io/docs/minio/linux/index.html](https://min.io/docs/minio/linux/index.html)              |
+| pytest         | [docs.pytest.org](https://docs.pytest.org/)                                                   |
+| Ruff           | [docs.astral.sh/ruff](https://docs.astral.sh/ruff/)                                           |
+| mypy           | [mypy.readthedocs.io](https://mypy.readthedocs.io/)                                           |
+| pre-commit     | [pre-commit.com](https://pre-commit.com/)                                                     |
+| SQLAdmin       | [aminalaee.dev/sqladmin](https://aminalaee.dev/sqladmin/)                                     |
+| Prometheus     | [prometheus.io/docs/introduction/overview](https://prometheus.io/docs/introduction/overview/) |
+| structlog      | [structlog.readthedocs.io](https://structlog.readthedocs.io/)                                 |
+| 12-Factor App  | [12factor.net](https://12factor.net/)                                                         |
+| OWASP Top 10   | [owasp.org/Top10](https://owasp.org/www-project-top-ten/)                                     |

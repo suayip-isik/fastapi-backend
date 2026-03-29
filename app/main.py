@@ -35,7 +35,8 @@ from app.db.session import engine
 
 def _setup_sentry() -> None:
     """Sentry SDK'yı başlat (SENTRY_DSN tanımlıysa)."""
-    if not settings.SENTRY_DSN:
+    dsn = settings.SENTRY_DSN.strip()
+    if not dsn or not dsn.startswith("http"):
         return
 
     import sentry_sdk
@@ -55,7 +56,7 @@ def _setup_sentry() -> None:
         return event
 
     sentry_sdk.init(
-        dsn=settings.SENTRY_DSN,
+        dsn=dsn,
         integrations=[FastApiIntegration(), SqlalchemyIntegration()],
         traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
         environment=settings.APP_ENV,

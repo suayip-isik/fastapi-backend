@@ -126,6 +126,16 @@ class Settings(BaseSettings):
     SENTRY_DSN: str = ""
     SENTRY_TRACES_SAMPLE_RATE: float = 0.1  # production için 0.1, dev için 1.0
 
+    @field_validator("SENTRY_DSN", mode="before")
+    @classmethod
+    def _strip_sentry_dsn(cls, v: object) -> str:
+        """Inline comment ve boşlukları temizle; geçersiz DSN'i boş stringe çevir."""
+        if not isinstance(v, str):
+            return ""
+        # dotenv inline comment desteği olmadığında '#' sonrasını at
+        cleaned = v.split("#")[0].strip()
+        return cleaned if cleaned.startswith("http") else ""
+
     # ── Logging ───────────────────────────────────────────────────────────────
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "json"  # json | text
