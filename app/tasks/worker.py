@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from arq import create_pool
+from arq import create_pool, cron
 from arq.connections import ArqRedis, RedisSettings
 
 from app.core.config import settings
@@ -38,8 +38,17 @@ async def send_welcome_email(ctx: dict[str, Any], user_id: str, email: str) -> d
     ctx: ARQ tarafından inject edilen context (DB, Redis vs.)
     """
     logger.info("sending_welcome_email", user_id=user_id, email=email)
-    # TODO: SMTP entegrasyonu
-    await asyncio.sleep(0.1)  # Simulate email send
+    login_url = settings.APP_URL
+    await send_email(
+        to=email,
+        subject=f"{settings.APP_NAME}'a hoş geldiniz!",
+        html_body=(
+            f"<p>Merhaba,</p>"
+            f"<p><strong>{settings.APP_NAME}</strong>'a hoş geldiniz! "
+            f"Hesabınız başarıyla oluşturuldu.</p>"
+            f"<p>Giriş yapmak için <a href='{login_url}'>tıklayın</a>.</p>"
+        ),
+    )
     logger.info("welcome_email_sent", user_id=user_id)
     return {"status": "sent", "user_id": user_id}
 
@@ -90,12 +99,28 @@ async def send_password_reset_email(ctx: dict[str, Any], email: str, token: str)
 
 async def cleanup_expired_tokens(ctx: dict[str, Any]) -> dict[str, Any]:
     """
-    Süresi dolmuş refresh token'ları temizle.
-    Cron job olarak çalışır.
+    TTL'siz kalan orphaned Redis key'lerini temizle.
+    Cron job olarak her gece yarısı çalışır.
     """
     logger.info("cleaning_expired_tokens")
-    # TODO: DB'den süresi dolmuş token'ları sil
-    return {"status": "cleaned"}
+    from app.core.redis import get_redis_client
+
+    redis = await get_redis_client()
+    prefixes = ["blacklist:*", "email_verify:*", "password_reset:*", "oauth_state:*"]
+    cleaned = 0
+    for pattern in prefixes:
+        cursor: int = 0
+        while True:
+            cursor, keys = await redis.scan(cursor, match=pattern, count=100)
+            for key in keys:
+                ttl = await redis.ttl(key)
+                if ttl == -1:  # TTL yok — orphaned key
+                    await redis.delete(key)
+                    cleaned += 1
+            if cursor == 0:
+                break
+    logger.info("expired_tokens_cleaned", count=cleaned)
+    return {"status": "cleaned", "count": cleaned}
 
 
 # ── Worker Config ─────────────────────────────────────────────────────────────
@@ -114,8 +139,7 @@ class WorkerSettings:
 
     # Cron jobs
     cron_jobs: list[Any] = [
-        # Her gece yarısı token temizliği
-        # cron(cleanup_expired_tokens, hour=0, minute=0),
+        cron(cleanup_expired_tokens, hour=0, minute=0),  # Her gece yarısı token temizliği
     ]
 
     redis_settings = get_redis_settings()

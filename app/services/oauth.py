@@ -6,16 +6,20 @@ Sorumluluklar: OAuth URL oluşturma · callback işleme · kullanıcı upsert
 
 from __future__ import annotations
 
+import secrets
 from typing import TYPE_CHECKING
 
 import httpx
 
 from app.core.config import settings
+from app.core.exceptions import InvalidTokenError
+from app.core.redis import get_redis_client
 from app.core.security import create_token_pair
 from app.db.models.audit_log import AuditAction
 from app.db.repositories.oauth_account import OAuthAccountRepository
 from app.db.repositories.user import UserRepository
 from app.schemas.auth import TokenResponse
+from app.services._keys import OAUTH_STATE_KEY
 from app.services.base import AuditableMixin
 
 if TYPE_CHECKING:
@@ -32,18 +36,27 @@ class OAuthService(AuditableMixin):
 
     # ── Google ────────────────────────────────────────────────────────────────
 
-    def get_google_auth_url(self) -> str:
+    async def get_google_auth_url(self) -> str:
+        state = secrets.token_urlsafe(32)
+        redis = await get_redis_client()
+        await redis.setex(OAUTH_STATE_KEY.format(state), 600, "1")
         params = {
             "client_id": settings.GOOGLE_CLIENT_ID,
             "redirect_uri": settings.GOOGLE_REDIRECT_URI,
             "response_type": "code",
             "scope": "openid email profile",
             "access_type": "offline",
+            "state": state,
         }
         query = "&".join(f"{k}={v}" for k, v in params.items())
         return f"https://accounts.google.com/o/oauth2/auth?{query}"
 
-    async def google_callback(self, code: str) -> TokenResponse:
+    async def google_callback(self, code: str, state: str) -> TokenResponse:
+        redis = await get_redis_client()
+        if not await redis.get(OAUTH_STATE_KEY.format(state)):
+            raise InvalidTokenError("Geçersiz OAuth state parametresi.")
+        await redis.delete(OAUTH_STATE_KEY.format(state))
+
         async with httpx.AsyncClient() as client:
             token_res = await client.post(
                 "https://oauth2.googleapis.com/token",
@@ -76,15 +89,24 @@ class OAuthService(AuditableMixin):
 
     # ── GitHub ────────────────────────────────────────────────────────────────
 
-    def get_github_auth_url(self) -> str:
+    async def get_github_auth_url(self) -> str:
+        state = secrets.token_urlsafe(32)
+        redis = await get_redis_client()
+        await redis.setex(OAUTH_STATE_KEY.format(state), 600, "1")
         return (
             f"https://github.com/login/oauth/authorize"
             f"?client_id={settings.GITHUB_CLIENT_ID}"
             f"&redirect_uri={settings.GITHUB_REDIRECT_URI}"
             f"&scope=user:email"
+            f"&state={state}"
         )
 
-    async def github_callback(self, code: str) -> TokenResponse:
+    async def github_callback(self, code: str, state: str) -> TokenResponse:
+        redis = await get_redis_client()
+        if not await redis.get(OAUTH_STATE_KEY.format(state)):
+            raise InvalidTokenError("Geçersiz OAuth state parametresi.")
+        await redis.delete(OAUTH_STATE_KEY.format(state))
+
         async with httpx.AsyncClient() as client:
             token_res = await client.post(
                 "https://github.com/login/oauth/access_token",

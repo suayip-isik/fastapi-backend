@@ -113,13 +113,13 @@ async def logout(
 @router.get("/google")
 async def google_login(service: OAuthServiceDep) -> RedirectResponse:
     """Google OAuth akisini baslat."""
-    return RedirectResponse(service.get_google_auth_url())
+    return RedirectResponse(await service.get_google_auth_url())
 
 
 @router.get("/google/callback", response_model=TokenResponse)
-async def google_callback(code: str, service: OAuthServiceDep) -> TokenResponse:
+async def google_callback(code: str, state: str, service: OAuthServiceDep) -> TokenResponse:
     """Google OAuth callback."""
-    return await service.google_callback(code)
+    return await service.google_callback(code, state)
 
 
 # ── GitHub OAuth ──────────────────────────────────────────────────────────────
@@ -128,13 +128,13 @@ async def google_callback(code: str, service: OAuthServiceDep) -> TokenResponse:
 @router.get("/github")
 async def github_login(service: OAuthServiceDep) -> RedirectResponse:
     """GitHub OAuth akisini baslat."""
-    return RedirectResponse(service.get_github_auth_url())
+    return RedirectResponse(await service.get_github_auth_url())
 
 
 @router.get("/github/callback", response_model=TokenResponse)
-async def github_callback(code: str, service: OAuthServiceDep) -> TokenResponse:
+async def github_callback(code: str, state: str, service: OAuthServiceDep) -> TokenResponse:
     """GitHub OAuth callback."""
-    return await service.github_callback(code)
+    return await service.github_callback(code, state)
 
 
 # ── Email Verification ────────────────────────────────────────────────────────

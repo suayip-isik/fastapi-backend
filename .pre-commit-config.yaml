@@ -21,3 +21,15 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        additional_dependencies:
+          - "pydantic>=2.8.2"
+          - "pydantic-settings>=2.5.2"
+          - "sqlalchemy[mypy]>=2.0.35"
+          - "types-redis"
+        args: [--strict, --ignore-missing-imports]
+        exclude: ^(alembic/versions/|tests/)

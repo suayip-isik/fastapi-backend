@@ -558,9 +558,10 @@ Yalnızca `ADMIN` rolüne sahip kullanıcılar giriş yapabilir. Giriş bilgiler
 - **TOTP / 2FA** — TOTP doğrulaması + yedek kodlar. Secret Fernet şifreleme ile DB'de saklanır
 - **API Key Auth** — `sk_live_` prefix'li key'ler bcrypt ile hash'lenerek saklanır; `X-API-Key` header'ı ile kimlik doğrulama
 - **OAuth2** — Google ve GitHub; `OAuthAccount` tablosuna kaydedilir, sağlayıcı izolasyonu sağlanır
+- **OAuth CSRF Koruması** — State parametresi: her OAuth isteğinde kriptografik rastgele bir `state` üretilir, Redis'te 10 dakika TTL ile saklanır; callback'te doğrulanıp silinir (replay saldırılarına karşı koruma)
 - **Rate Limiting** — Redis-backed, endpoint bazlı (login, kayıt, yükleme için farklı limitler)
 - **WebSocket Token Güvenliği** — Token URL query param'ında değil, bağlandıktan sonra ilk mesajla iletilir (Nginx log sızıntısı riski yok)
-- **Production Validator** — `APP_ENV=production`'da `SECRET_KEY`, `ADMIN_PASSWORD`, `ALLOWED_HOSTS`, `CORS_ORIGINS`, `APP_DEBUG` güvensiz değerler için uygulama başlamaz
+- **Production Validator** — `APP_ENV=production`'da `SECRET_KEY`, `ALLOWED_HOSTS`, `CORS_ORIGINS`, `APP_DEBUG` güvensiz değerler için uygulama başlamaz; `ADMIN_PASSWORD` zayıf değerler (`changeme`, `admin`, `password`, `123456`) için de reddedilir
 - **CORS** — Konfigüre edilmiş origin listesi ile kısıtlı
 - **SQL Injection Koruması** — ORM + parameterized query
 - **Request ID Tracking** — Her isteğe benzersiz ID atanır, loglar ve response header'larında taşınır
@@ -813,21 +814,28 @@ make test-k k=test_login               # İsim desenine göre
 
 ### Test Matrisi
 
-| Dosya                                 | Kategori    | Kapsadığı Senaryolar                                                          |
-| ------------------------------------- | ----------- | ----------------------------------------------------------------------------- |
-| `tests/unit/test_security.py`         | Unit        | JWT oluşturma/decode, süresi dolmuş/değiştirilmiş token, bcrypt hash/verify   |
-| `tests/unit/test_helpers.py`          | Unit        | Yardımcı fonksiyonlar                                                         |
-| `tests/integration/test_auth.py`      | Integration | Kayıt, giriş, çıkış, token refresh, e-posta doğrulama, şifre sıfırlama, OAuth |
-| `tests/integration/test_oauth.py`     | Integration | Google ve GitHub OAuth akışları                                               |
-| `tests/integration/test_users.py`     | Integration | Profil güncelleme, şifre değiştirme, yetki kontrolleri                        |
-| `tests/integration/test_uploads.py`   | Integration | Dosya yükleme, silme, sahiplik kontrolü                                       |
-| `tests/integration/test_websocket.py` | Integration | Auth hata senaryoları, ping/pong, broadcast, echo kontrolü                    |
+| Dosya                                 | Kategori    | Kapsadığı Senaryolar                                                                                      |
+| ------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------- |
+| `tests/unit/test_security.py`         | Unit        | JWT oluşturma/decode, süresi dolmuş/değiştirilmiş token, bcrypt hash/verify                               |
+| `tests/unit/test_helpers.py`          | Unit        | Yardımcı fonksiyonlar                                                                                     |
+| `tests/unit/test_middleware.py`       | Unit        | RequestIDMiddleware (UUID üretim, header koruma), TimingMiddleware, SecurityHeadersMiddleware (CSP, HSTS) |
+| `tests/unit/test_repository_base.py`  | Unit        | `BaseRepository.get_page()` sayfalama: boş tablo, ilk/son sayfa, limit > toplam                           |
+| `tests/unit/test_health.py`           | Unit        | `check_redis`, `check_storage` — başarılı ve hatalı senaryolar; degraded/503 endpoint                     |
+| `tests/integration/test_auth.py`      | Integration | Kayıt, giriş, çıkış, token refresh, e-posta doğrulama, şifre sıfırlama                                    |
+| `tests/integration/test_oauth.py`     | Integration | Google ve GitHub OAuth akışları, state CSRF koruması, geçersiz/eksik state                                |
+| `tests/integration/test_users.py`     | Integration | Profil güncelleme, şifre değiştirme, yetki kontrolleri                                                    |
+| `tests/integration/test_uploads.py`   | Integration | Dosya yükleme, silme, sahiplik kontrolü                                                                   |
+| `tests/integration/test_websocket.py` | Integration | Auth hata senaryoları, ping/pong, broadcast, echo kontrolü                                                |
+| `tests/integration/test_audit_log.py` | Integration | REGISTER, LOGIN_SUCCESS/FAILED, LOGOUT, TOKEN_REFRESHED aksiyonları audit edilmeli                        |
+| `tests/integration/test_admin.py`     | Integration | Admin panel erişim kontrolü: yetkisiz redirect, login sayfası, mocked auth                                |
 
 **Kurallar:**
 
 - `asyncio_mode = "auto"` — tüm testler async
 - Her test transaction rollback ile izole çalışır
 - Coverage eşiği: `--cov-fail-under=80`
+- `AuditService` test izolasyonu: bağımsız `AsyncSessionFactory` kullandığından `_audit_log` mock'lanır
+- `fake_redis` fixture'ı autouse — tüm testlerde gerçek Redis gerekmez
 
 ---
 
@@ -849,6 +857,25 @@ make typecheck
 make check
 
 # Pre-commit hook'larını kur (bir kez)
+pip install pre-commit
+pre-commit install
+
+# Tüm dosyalarda çalıştır
+pre-commit run --all-files
+```
+
+### Pre-commit Hook'ları
+
+`.pre-commit-config.yaml` üç hook içerir:
+
+| Hook          | Ne Yapar                                                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------------------------ |
+| `ruff`        | Lint kontrolü — `ruff check --fix`                                                                           |
+| `ruff-format` | Format kontrolü — `ruff format`                                                                              |
+| `mypy`        | Tip kontrolü — `mypy --strict --ignore-missing-imports` (strict mode, `alembic/versions/` ve `tests/` hariç) |
+
+```bash
+# Hook'ları kur (bir kez)
 pip install pre-commit
 pre-commit install
 
