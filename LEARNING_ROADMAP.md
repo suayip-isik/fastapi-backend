@@ -442,7 +442,7 @@ Kullanıcı adı/şifre veya JWT yerine uzun ömürlü anahtar ile kimlik doğru
 
 - **Format:** `sk_live_<80 rastgele hex>` — okunabilir prefix + rastgele gövde
 - **Saklama:** Tam key bir kez gösterilir, sonra yalnızca bcrypt hash'i saklanır
-- **Lookup:** `key_prefix` (ilk 8 karakter) ile DB'de aday key'ler bulunur, bcrypt ile doğrulanır
+- **Lookup:** `key_prefix` (ilk 12 karakter) ile DB'de aday key'ler bulunur, bcrypt ile doğrulanır
 - **Scopes:** `read write admin` gibi boşlukla ayrılmış izin listeleri
 
 ```python
