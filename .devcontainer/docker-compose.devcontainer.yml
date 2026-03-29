@@ -1,0 +1,10 @@
+services:
+  api:
+    # Dev container'da sleep ile container'ı canlı tut
+    # VS Code extension kendi komutunu çalıştırır
+    command: sleep infinity
+    volumes:
+      - ..:/app:cached
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1

@@ -36,6 +36,10 @@ class User(BaseModel):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # 2FA / TOTP
+    totp_secret: Mapped[str | None] = mapped_column(Text, nullable=True)  # Fernet şifreli
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     # Relationships
     oauth_accounts: Mapped[list[OAuthAccount]] = relationship(
         "OAuthAccount", back_populates="user", cascade="all, delete-orphan"

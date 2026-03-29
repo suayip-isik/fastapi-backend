@@ -6,3 +6,4 @@ Format: KEY.format(token_or_jti)
 EMAIL_VERIFY_KEY = "email_verify:{}"
 PASSWORD_RESET_KEY = "password_reset:{}"
 BLACKLIST_KEY = "blacklist:{}"
+TOTP_BACKUP_KEY = "totp_backup:{}"  # {user_id} → set of backup codes

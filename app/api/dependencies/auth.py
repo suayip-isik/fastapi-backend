@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import Depends, Security
+from fastapi import Depends, Header, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,10 +46,23 @@ UserRepoDep = Annotated[UserRepository, Depends(get_user_repository)]
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Security(bearer_scheme)],
     user_repo: UserRepoDep,
+    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
 ) -> User:
-    """Bearer token'dan aktif kullanıcıyı çözer."""
+    """Bearer token veya X-API-Key header'ından aktif kullanıcıyı çözer."""
+    # API Key auth
+    if x_api_key:
+        from app.services.api_key import APIKeyService
+
+        svc = APIKeyService(user_repo._session)
+        api_key_obj = await svc.authenticate(x_api_key)
+        user = await user_repo.get_by_id(api_key_obj.user_id)
+        if not user or not user.is_active:
+            raise AuthenticationError("Kullanıcı bulunamadı veya pasif.")
+        return user
+
+    # Bearer token auth
     if not credentials:
-        raise AuthenticationError("Authorization header eksik.")
+        raise AuthenticationError("Authorization header veya X-API-Key gerekli.")
 
     payload = decode_token(credentials.credentials)
 

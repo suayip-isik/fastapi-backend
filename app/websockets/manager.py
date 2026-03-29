@@ -70,6 +70,16 @@ class ConnectionManager:
     def get_room_users(self, room_id: str) -> list[str]:
         return list(self._rooms.get(room_id, {}).keys())
 
+    async def send_to_user_all_rooms(self, user_id: str, message: dict[str, object]) -> None:
+        """Kullanıcının bağlı olduğu tüm room'lara mesaj gönderir (bildirimler için)."""
+        for room_id, room in list(self._rooms.items()):
+            if user_id in room:
+                ws = room[user_id]
+                try:
+                    await ws.send_json(message)
+                except Exception:
+                    self.disconnect(room_id, user_id)
+
 
 # Singleton
 manager = ConnectionManager()

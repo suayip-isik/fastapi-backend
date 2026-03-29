@@ -1,0 +1,125 @@
+name: Tests
+
+on:
+  push:
+    branches: [master, dev]
+  pull_request:
+    branches: [master, dev]
+
+jobs:
+  test:
+    name: pytest (Python 3.12)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: appdb
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # App
+      APP_NAME: "FastAPI Backend"
+      APP_ENV: testing
+      APP_DEBUG: "false"
+      APP_VERSION: "1.0.0"
+      APP_URL: "http://localhost:8000"
+      SECRET_KEY: "ci-secret-key-for-testing-only-not-for-production"
+      ALLOWED_HOSTS: '["*"]'
+      CORS_ORIGINS: '["http://localhost:3000"]'
+      # Database
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: appdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      DATABASE_POOL_SIZE: 5
+      DATABASE_MAX_OVERFLOW: 10
+      # Redis (fakeredis kullanılır, değer önemsiz)
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      REDIS_DB: 0
+      # JWT (test keys — CI ortamı için)
+      JWT_PRIVATE_KEY_PATH: keys/private.pem
+      JWT_PUBLIC_KEY_PATH: keys/public.pem
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      REFRESH_TOKEN_EXPIRE_DAYS: 30
+      # OAuth (boş bırakılabilir — test mock'lar)
+      GOOGLE_CLIENT_ID: ""
+      GOOGLE_CLIENT_SECRET: ""
+      GOOGLE_REDIRECT_URI: "http://localhost:8000/api/v1/auth/google/callback"
+      GITHUB_CLIENT_ID: ""
+      GITHUB_CLIENT_SECRET: ""
+      GITHUB_REDIRECT_URI: "http://localhost:8000/api/v1/auth/github/callback"
+      # Storage (mock'lanır)
+      STORAGE_BACKEND: minio
+      S3_ENDPOINT_URL: "http://localhost:9000"
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_BUCKET_NAME: uploads
+      S3_REGION: us-east-1
+      MAX_UPLOAD_SIZE_MB: 10
+      ALLOWED_UPLOAD_TYPES: '["image/jpeg","image/png","application/pdf"]'
+      # Email
+      SMTP_HOST: ""
+      SMTP_PORT: 587
+      SMTP_USER: ""
+      SMTP_PASSWORD: ""
+      EMAILS_FROM_EMAIL: "noreply@example.com"
+      # Admin
+      ADMIN_EMAIL: "admin@example.com"
+      ADMIN_PASSWORD: "AdminPass123!"
+      # Logging
+      LOG_LEVEL: WARNING
+      LOG_FORMAT: text
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt', 'requirements-dev.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Generate JWT keys
+        run: |
+          mkdir -p keys
+          openssl genrsa -out keys/private.pem 2048
+          openssl rsa -in keys/private.pem -pubout -out keys/public.pem
+
+      - name: Create test database
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE test_db;"
+
+      - name: Run migrations
+        run: alembic upgrade head
+
+      - name: Run tests
+        run: pytest tests/ -v --cov=app --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 7

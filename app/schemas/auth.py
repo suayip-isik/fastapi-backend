@@ -32,6 +32,7 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    totp_code: str | None = Field(default=None, description="2FA aktifse zorunlu")
 
 
 class TokenResponse(BaseModel):
