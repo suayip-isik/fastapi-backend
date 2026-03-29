@@ -62,7 +62,7 @@ async def delete_file(
     from app.db.models.user import UserRole
 
     is_admin = current_user.role == UserRole.ADMIN
-    is_owner = key.startswith(f"users/{str(current_user.id)}/")
+    is_owner = key.startswith(f"users/{current_user.id!s}/")
 
     if not is_admin and not is_owner:
         raise InsufficientPermissionsError("Bu dosyayı silme yetkiniz yok.")

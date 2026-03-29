@@ -6,10 +6,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from app.db.models.audit_log import AuditAction
-
 if TYPE_CHECKING:
-    from app.services.audit import AuditService
+    from app.db.models.audit_log import AuditAction
 
 
 class AuditableMixin:

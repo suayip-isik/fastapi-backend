@@ -10,7 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from pydantic import AnyHttpUrl, PostgresDsn, RedisDsn, field_validator, model_validator
+from pydantic import AnyHttpUrl, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -117,9 +117,9 @@ class Settings(BaseSettings):
 
     # ── Rate Limiting ─────────────────────────────────────────────────────────
     RATE_LIMIT_DEFAULT: str = "100/minute"
-    RATE_LIMIT_AUTH: str = "5/minute"         # login, reset-password
-    RATE_LIMIT_AUTH_EMAIL: str = "3/hour"     # forgot-password, resend-verification
-    RATE_LIMIT_REGISTER: str = "3/hour"       # register
+    RATE_LIMIT_AUTH: str = "5/minute"  # login, reset-password
+    RATE_LIMIT_AUTH_EMAIL: str = "3/hour"  # forgot-password, resend-verification
+    RATE_LIMIT_REGISTER: str = "3/hour"  # register
     RATE_LIMIT_UPLOAD: str = "20/hour"
 
     # ── Logging ───────────────────────────────────────────────────────────────
@@ -142,12 +142,12 @@ class Settings(BaseSettings):
         return v
 
     @model_validator(mode="after")
-    def validate_production_settings(self) -> "Settings":
+    def validate_production_settings(self) -> Settings:
         if self.APP_ENV == "production":
-            assert self.SECRET_KEY != "change-this-to-a-random-secret-key-in-production", (
-                "Production'da SECRET_KEY değiştirilmeli!"
-            )
-            assert not self.APP_DEBUG, "Production'da DEBUG kapalı olmalı!"
+            if self.SECRET_KEY == "change-this-to-a-random-secret-key-in-production":  # noqa: S105
+                raise ValueError("Production'da SECRET_KEY değiştirilmeli!")
+            if self.APP_DEBUG:
+                raise ValueError("Production'da DEBUG kapalı olmalı!")
         return self
 
     @property

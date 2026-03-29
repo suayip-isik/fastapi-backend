@@ -130,16 +130,14 @@ class RateLimitError(AppError):
 
 def _serialize_validation_errors(errors: list) -> list:
     """Pydantic validation hatalarını JSON-serializable formata çevirir."""
-    result = []
-    for error in errors:
-        result.append(
-            {
-                "field": " -> ".join(str(loc) for loc in error.get("loc", [])),
-                "message": str(error.get("msg", "")),
-                "type": str(error.get("type", "")),
-            }
-        )
-    return result
+    return [
+        {
+            "field": " -> ".join(str(loc) for loc in error.get("loc", [])),
+            "message": str(error.get("msg", "")),
+            "type": str(error.get("type", "")),
+        }
+        for error in errors
+    ]
 
 
 def _error_response(
@@ -158,7 +156,6 @@ def _error_response(
 
 
 def register_exception_handlers(app: FastAPI) -> None:
-
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content=exc.to_dict())

@@ -5,19 +5,22 @@ Kullanıcı listeleme, güncelleme, silme işlemleri.
 
 from __future__ import annotations
 
-from typing import Annotated
-from uuid import UUID
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies.auth import AdminDep, CurrentUserDep
-from app.db.models.user import UserRole
-from app.db.session import get_db
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.user import UpdateUserRequest, UserResponse
 from app.services.audit import AuditService
 from app.services.user import UserService
+
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.api.dependencies.auth import AdminDep, CurrentUserDep
+    from app.db.session import get_db
 
 router = APIRouter(prefix="/users", tags=["Users"])
 

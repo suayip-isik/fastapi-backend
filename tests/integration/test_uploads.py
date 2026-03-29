@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from httpx import AsyncClient
 from sqlalchemy import update as sa_update
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import FileTooLargeError, InvalidFileTypeError
 from app.db.models.user import User, UserRole
+
+if TYPE_CHECKING:
+    from httpx import AsyncClient
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -33,9 +36,7 @@ async def _get_user_id(client: AsyncClient, headers: dict) -> str:
 
 
 async def _promote_to_admin(db_session: AsyncSession, email: str) -> None:
-    await db_session.execute(
-        sa_update(User).where(User.email == email).values(role=UserRole.ADMIN)
-    )
+    await db_session.execute(sa_update(User).where(User.email == email).values(role=UserRole.ADMIN))
     db_session.expire_all()
 
 

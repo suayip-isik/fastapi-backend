@@ -15,8 +15,8 @@ import argparse
 import asyncio
 import sys
 
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 sys.path.insert(0, "/app")
 

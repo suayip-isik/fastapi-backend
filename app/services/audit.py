@@ -5,12 +5,16 @@ Bağımsız session kullanır: ana işlem rollback yapsa bile audit yazılır.
 
 from __future__ import annotations
 
-from uuid import UUID
+from typing import TYPE_CHECKING
 
 from app.core.logging import get_logger, ip_address_var, user_agent_var
-from app.db.models.audit_log import AuditAction
 from app.db.repositories.audit_log import AuditLogRepository
 from app.db.session import AsyncSessionFactory
+
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from app.db.models.audit_log import AuditAction
 
 _logger = get_logger(__name__)
 

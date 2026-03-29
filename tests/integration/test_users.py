@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
-from httpx import AsyncClient
 from sqlalchemy import update as sa_update
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.user import User, UserRole
+
+if TYPE_CHECKING:
+    from httpx import AsyncClient
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

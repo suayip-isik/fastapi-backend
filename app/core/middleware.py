@@ -8,13 +8,16 @@ Custom middleware'ler:
 from __future__ import annotations
 
 import time
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.requests import Request
-from starlette.responses import Response
 
-from app.core.logging import get_logger, ip_address_var, request_id_var, user_agent_var, user_id_var
+from app.core.logging import get_logger, ip_address_var, request_id_var, user_agent_var
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
+    from starlette.responses import Response
 
 logger = get_logger(__name__)
 

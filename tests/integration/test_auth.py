@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from typing import TYPE_CHECKING
 
-import fakeredis.aioredis as fakeredis_aioredis
 import pytest
-from httpx import AsyncClient
 from sqlalchemy import update as sa_update
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.user import User
+
+if TYPE_CHECKING:
+    from unittest.mock import AsyncMock
+
+    import fakeredis.aioredis as fakeredis_aioredis
+    from httpx import AsyncClient
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio

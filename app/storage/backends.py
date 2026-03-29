@@ -3,24 +3,28 @@ Storage abstraction layer.
 Interface Segregation Principle: StorageBackend abstract class ile kontrat tanımı.
 Yeni storage provider eklemek için sadece yeni bir class yazılır.
 """
+
 from __future__ import annotations
 
-import mimetypes
 import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import aioboto3
-from fastapi import UploadFile
 
 from app.core.config import settings
 from app.core.exceptions import FileTooLargeError, InvalidFileTypeError, StorageError
 from app.core.logging import get_logger
 
+if TYPE_CHECKING:
+    from fastapi import UploadFile
+
 logger = get_logger(__name__)
 
 
 # ── Interface ─────────────────────────────────────────────────────────────────
+
 
 class StorageBackend(ABC):
     @abstractmethod
@@ -41,14 +45,13 @@ class StorageBackend(ABC):
 
 # ── Validators ────────────────────────────────────────────────────────────────
 
+
 async def validate_upload(file: UploadFile) -> bytes:
     """Boyut ve MIME type doğrula, bytes döndür."""
     content = await file.read()
 
     if len(content) > settings.MAX_UPLOAD_SIZE_BYTES:
-        raise FileTooLargeError(
-            f"Maksimum dosya boyutu {settings.MAX_UPLOAD_SIZE_MB}MB."
-        )
+        raise FileTooLargeError(f"Maksimum dosya boyutu {settings.MAX_UPLOAD_SIZE_MB}MB.")
 
     content_type = file.content_type or ""
     if content_type not in settings.ALLOWED_UPLOAD_TYPES:
@@ -68,6 +71,7 @@ def _generate_key(folder: str, filename: str) -> str:
 
 
 # ── S3 / MinIO Backend ────────────────────────────────────────────────────────
+
 
 class S3StorageBackend(StorageBackend):
     """AWS S3 ve MinIO için ortak implementasyon."""
@@ -97,7 +101,7 @@ class S3StorageBackend(StorageBackend):
             return key
         except Exception as e:
             logger.error("upload_failed", error=str(e))
-            raise StorageError(f"Yükleme başarısız: {e}")
+            raise StorageError(f"Yükleme başarısız: {e}") from e
 
     async def delete(self, key: str) -> None:
         try:
@@ -106,7 +110,7 @@ class S3StorageBackend(StorageBackend):
             logger.info("file_deleted", key=key)
         except Exception as e:
             logger.error("delete_failed", key=key, error=str(e))
-            raise StorageError(f"Silme başarısız: {e}")
+            raise StorageError(f"Silme başarısız: {e}") from e
 
     async def get_url(self, key: str, expires_in: int = 3600) -> str:
         try:
@@ -118,10 +122,11 @@ class S3StorageBackend(StorageBackend):
                 )
             return url
         except Exception as e:
-            raise StorageError(f"URL üretimi başarısız: {e}")
+            raise StorageError(f"URL üretimi başarısız: {e}") from e
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────
+
 
 def get_storage() -> StorageBackend:
     """Storage backend'i config'e göre döndür."""

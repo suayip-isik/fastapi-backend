@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -99,7 +98,7 @@ async def websocket_endpoint(
     # İlk mesaj auth olmalı (timeout içinde)
     try:
         raw = await asyncio.wait_for(websocket.receive_json(), timeout=_WS_AUTH_TIMEOUT)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         await websocket.close(code=4008, reason="Auth timeout.")
         return
     except WebSocketDisconnect:

@@ -1,4 +1,5 @@
 """Genel yardımcı fonksiyonlar."""
+
 from __future__ import annotations
 
 import re

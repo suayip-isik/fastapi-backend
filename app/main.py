@@ -5,31 +5,34 @@ FastAPI uygulama fabrikasi.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
-from fastapi.responses import HTMLResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqladmin import Admin
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.admin import get_all_views
 from app.admin.auth import AdminAuthBackend
+from app.admin.seed import create_default_admin
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
+from app.core.limiter import limiter
 from app.core.logging import setup_logging
 from app.core.middleware import (
     RequestIDMiddleware,
     SecurityHeadersMiddleware,
     TimingMiddleware,
 )
-from app.db.session import engine
-from app.admin import get_all_views
-from app.admin.seed import create_default_admin
-from app.core.limiter import limiter
 from app.core.redis import close_redis
+from app.db.session import engine
+
+if TYPE_CHECKING:
+    from fastapi.responses import HTMLResponse
 
 
 @asynccontextmanager

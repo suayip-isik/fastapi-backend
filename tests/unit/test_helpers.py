@@ -1,8 +1,8 @@
 """Helpers modülü unit testleri."""
+
 from __future__ import annotations
 
-import pytest
-from app.utils.helpers import slugify, mask_email, paginate
+from app.utils.helpers import mask_email, paginate, slugify
 
 
 def test_slugify_basic():

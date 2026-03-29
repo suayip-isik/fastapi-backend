@@ -2,6 +2,7 @@
 ARQ background task'ları.
 Redis-based, async, lightweight — Celery'ye göre daha sade.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -18,6 +19,7 @@ logger = get_logger(__name__)
 
 # ── Redis Settings ────────────────────────────────────────────────────────────
 
+
 def get_redis_settings() -> RedisSettings:
     return RedisSettings(
         host=settings.REDIS_HOST,
@@ -28,6 +30,7 @@ def get_redis_settings() -> RedisSettings:
 
 
 # ── Task Functions ────────────────────────────────────────────────────────────
+
 
 async def send_welcome_email(ctx: dict, user_id: str, email: str) -> dict:
     """
@@ -96,6 +99,7 @@ async def cleanup_expired_tokens(ctx: dict) -> dict:
 
 
 # ── Worker Config ─────────────────────────────────────────────────────────────
+
 
 class WorkerSettings:
     """ARQ worker ayarları."""

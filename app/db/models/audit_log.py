@@ -5,13 +5,17 @@ Audit log modeli — kim, ne zaman, ne yaptı.
 from __future__ import annotations
 
 from enum import Enum as PyEnum
-from uuid import UUID
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Enum, ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.models.base import BaseModel
+
+if TYPE_CHECKING:
+    from uuid import UUID
 
 
 class AuditAction(str, PyEnum):

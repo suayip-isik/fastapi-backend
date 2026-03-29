@@ -6,8 +6,9 @@ Sorumluluklar: OAuth URL oluşturma · callback işleme · kullanıcı upsert
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import httpx
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import create_token_pair
@@ -15,8 +16,12 @@ from app.db.models.audit_log import AuditAction
 from app.db.repositories.oauth_account import OAuthAccountRepository
 from app.db.repositories.user import UserRepository
 from app.schemas.auth import TokenResponse
-from app.services.audit import AuditService
 from app.services.base import AuditableMixin
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.services.audit import AuditService
 
 
 class OAuthService(AuditableMixin):

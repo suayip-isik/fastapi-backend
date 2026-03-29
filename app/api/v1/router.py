@@ -1,9 +1,10 @@
 """API v1 router — tüm endpoint'leri toplar."""
+
 from fastapi import APIRouter
 
 from app.api.v1.endpoints.auth import router as auth_router
-from app.api.v1.endpoints.users import router as users_router
 from app.api.v1.endpoints.uploads import router as uploads_router
+from app.api.v1.endpoints.users import router as users_router
 from app.websockets.manager import router as ws_router
 
 api_router = APIRouter(prefix="/api/v1")
