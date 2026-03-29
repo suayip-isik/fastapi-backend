@@ -122,6 +122,10 @@ class Settings(BaseSettings):
     RATE_LIMIT_REGISTER: str = "3/hour"  # register
     RATE_LIMIT_UPLOAD: str = "20/hour"
 
+    # ── Sentry ────────────────────────────────────────────────────────────────
+    SENTRY_DSN: str = ""
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.1  # production için 0.1, dev için 1.0
+
     # ── Logging ───────────────────────────────────────────────────────────────
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "json"  # json | text

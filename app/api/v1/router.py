@@ -2,7 +2,10 @@
 
 from fastapi import APIRouter
 
+from app.api.v1.endpoints.api_keys import router as api_keys_router
 from app.api.v1.endpoints.auth import router as auth_router
+from app.api.v1.endpoints.notifications import router as notifications_router
+from app.api.v1.endpoints.totp import router as totp_router
 from app.api.v1.endpoints.uploads import router as uploads_router
 from app.api.v1.endpoints.users import router as users_router
 from app.websockets.manager import router as ws_router
@@ -10,6 +13,9 @@ from app.websockets.manager import router as ws_router
 api_router = APIRouter(prefix="/api/v1")
 
 api_router.include_router(auth_router)
+api_router.include_router(totp_router)
+api_router.include_router(api_keys_router)
+api_router.include_router(notifications_router)
 api_router.include_router(users_router)
 api_router.include_router(uploads_router)
 api_router.include_router(ws_router)

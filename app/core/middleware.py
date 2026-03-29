@@ -24,6 +24,10 @@ logger = get_logger(__name__)
 # /docs ve /redoc için CSP gevşetilir
 DOCS_PATHS = {"/docs", "/redoc", "/openapi.json"}
 
+# HSTS sadece production'da anlamlı; diğer ortamlarda da eklenir ama tarayıcılar
+# localhost için zaten görmezden gelir.
+_HSTS_VALUE = "max-age=31536000; includeSubDomains"
+
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -78,5 +82,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Strict-Transport-Security"] = _HSTS_VALUE
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
 
         return response

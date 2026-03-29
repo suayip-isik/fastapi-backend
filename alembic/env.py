@@ -13,8 +13,10 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # Tüm modelleri import et — autogenerate için şart
+from app.db.models.api_key import APIKey  # noqa: F401
 from app.db.models.audit_log import AuditLog  # noqa: F401
 from app.db.models.base import Base
+from app.db.models.notification import Notification  # noqa: F401
 from app.db.models.oauth_account import OAuthAccount  # noqa: F401
 from app.db.models.user import User  # noqa: F401
 from app.core.config import settings

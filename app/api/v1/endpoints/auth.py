@@ -85,8 +85,8 @@ async def register(request: Request, data: RegisterRequest, service: AuthService
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit(settings.RATE_LIMIT_AUTH)
 async def login(request: Request, data: LoginRequest, service: AuthServiceDep) -> TokenResponse:
-    """Email/password ile giris."""
-    return await service.login(data.email, data.password)
+    """Email/password ile giris. 2FA aktifse totp_code zorunludur."""
+    return await service.login(data.email, data.password, data.totp_code)
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -147,7 +147,7 @@ async def verify_email(
 ) -> MessageResponse:
     """E-posta adresini dogrula."""
     await service.verify_email(data.token)
-    return MessageResponse(message="E-posta adresiniz basariyla dogrulandi.")
+    return MessageResponse(message="E-posta adresiniz başarıyla doğrulandı.")
 
 
 @router.post("/resend-verification", response_model=MessageResponse)

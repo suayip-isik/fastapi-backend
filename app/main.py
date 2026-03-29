@@ -33,9 +33,43 @@ from app.core.redis import close_redis
 from app.db.session import engine
 
 
+def _setup_sentry() -> None:
+    """Sentry SDK'yı başlat (SENTRY_DSN tanımlıysa)."""
+    if not settings.SENTRY_DSN:
+        return
+
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+
+    from sentry_sdk.types import Event as SentryEvent
+
+    def _before_send(event: SentryEvent, hint: dict[str, object]) -> SentryEvent | None:
+        """PII içeren alanları temizle."""
+        request = event.get("request")
+        if isinstance(request, dict):
+            request.pop("cookies", None)
+            headers = request.get("headers")
+            if isinstance(headers, dict):
+                headers.pop("authorization", None)
+                headers.pop("x-api-key", None)
+        return event
+
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        integrations=[FastApiIntegration(), SqlalchemyIntegration()],
+        traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
+        environment=settings.APP_ENV,
+        release=settings.APP_VERSION,
+        before_send=_before_send,
+        send_default_pii=False,
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging()
+    _setup_sentry()
     from app.core.logging import get_logger
 
     logger = get_logger(__name__)
@@ -82,6 +116,11 @@ def create_app() -> FastAPI:
     # Exception Handlers
     register_exception_handlers(app)
 
+    # Prometheus Metrics
+    from app.core.metrics import setup_metrics
+
+    setup_metrics(app)
+
     # Routers
     app.include_router(api_router)
 
@@ -116,9 +155,51 @@ def create_app() -> FastAPI:
         )
 
     # Health Check
-    @app.get("/health", tags=["System"])
-    async def health() -> dict[str, str]:
-        return {"status": "ok", "version": settings.APP_VERSION, "env": settings.APP_ENV}
+    @app.get("/health/live", tags=["System"], summary="Liveness probe")
+    async def health_live() -> dict[str, str]:
+        """Uygulama ayakta mı? (Kubernetes liveness probe)"""
+        return {"status": "ok"}
+
+    @app.get("/health/ready", tags=["System"], summary="Readiness probe")
+    async def health_ready() -> dict[str, str | bool]:
+        """Tüm bağımlılıklar hazır mı? (Kubernetes readiness probe)"""
+        from fastapi import HTTPException
+
+        from app.core.health import check_database, check_redis, check_storage
+
+        db_ok, db_msg = await check_database()
+        redis_ok, redis_msg = await check_redis()
+        storage_ok, storage_msg = await check_storage()
+
+        all_ok = db_ok and redis_ok and storage_ok
+        body: dict[str, str | bool] = {
+            "status": "ok" if all_ok else "degraded",
+            "db": db_msg if db_ok else f"error: {db_msg}",
+            "redis": redis_msg if redis_ok else f"error: {redis_msg}",
+            "storage": storage_msg if storage_ok else f"error: {storage_msg}",
+        }
+        if not all_ok:
+            raise HTTPException(status_code=503, detail=body)
+        return body
+
+    @app.get("/health", tags=["System"], summary="Full health check")
+    async def health() -> dict[str, str | bool]:
+        """Uygulama ve bağımlılık durumunu döndür."""
+        from app.core.health import check_database, check_redis, check_storage
+
+        db_ok, db_msg = await check_database()
+        redis_ok, redis_msg = await check_redis()
+        storage_ok, storage_msg = await check_storage()
+
+        all_ok = db_ok and redis_ok and storage_ok
+        return {
+            "status": "ok" if all_ok else "degraded",
+            "version": settings.APP_VERSION,
+            "env": settings.APP_ENV,
+            "db": db_msg if db_ok else f"error: {db_msg}",
+            "redis": redis_msg if redis_ok else f"error: {redis_msg}",
+            "storage": storage_msg if storage_ok else f"error: {storage_msg}",
+        }
 
     return app
 

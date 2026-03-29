@@ -40,6 +40,7 @@ _EMAIL_VERIFY_TTL = 24 * 60 * 60  # 24 saat
 
 class AuthService(AuditableMixin):
     def __init__(self, session: AsyncSession, audit: AuditService | None = None) -> None:
+        self._session = session
         self._repo = UserRepository(session)
         self._audit = audit
 
@@ -61,7 +62,9 @@ class AuthService(AuditableMixin):
         await self._audit_log(AuditAction.REGISTER, user_id=user.id)
         return user
 
-    async def login(self, email: str, password: str) -> TokenResponse:
+    async def login(
+        self, email: str, password: str, totp_code: str | None = None
+    ) -> TokenResponse:
         user = await self._repo.get_active_by_email(email)
         if not user or not user.hashed_password:
             await self._audit_log(AuditAction.LOGIN_FAILED, extra={"email": email})
@@ -70,6 +73,15 @@ class AuthService(AuditableMixin):
         if not verify_password(password, user.hashed_password):
             await self._audit_log(AuditAction.LOGIN_FAILED, user_id=user.id)
             raise AuthenticationError("E-posta veya şifre hatalı.")
+
+        # 2FA kontrolü
+        if user.totp_enabled:
+            if not totp_code:
+                raise AuthenticationError("Bu hesap için 2FA kodu gerekli.")
+            from app.services.totp import TOTPService
+
+            totp_svc = TOTPService(self._session)
+            await totp_svc.check_login(user, totp_code)
 
         await self._audit_log(AuditAction.LOGIN_SUCCESS, user_id=user.id)
         tokens = create_token_pair(str(user.id))
