@@ -224,6 +224,9 @@ make seed         # .env'deki ADMIN_EMAIL ve ADMIN_PASSWORD ile admin oluşturur
 
 # 7. API dokümantasyonunu aç
 open http://localhost:8000/docs
+
+# 5. Admin Panel
+open http://localhost:8000/admin
 ```
 
 ### `make` olmadan (Docker komutları ile)
@@ -538,6 +541,14 @@ Yalnızca `ADMIN` rolüne sahip kullanıcılar giriş yapabilir. Giriş bilgiler
 **Yeni view eklemek:** `app/admin/views.py`'e `ModelView` subclass'ı ekle — otomatik kaydedilir.
 
 ---
+
+## API Dokümantasyonu
+
+| Arayüz       | URL                                  | Açıklama                           |
+| ------------ | ------------------------------------ | ---------------------------------- |
+| Swagger UI   | `http://localhost:8000/docs`         | Etkileşimli API explorer           |
+| ReDoc        | `http://localhost:8000/redoc`        | Okunabilir referans dokümantasyonu |
+| OpenAPI JSON | `http://localhost:8000/openapi.json` | Ham şema (CI/SDK üretimi için)     |
 
 ## Güvenlik Özellikleri
 
