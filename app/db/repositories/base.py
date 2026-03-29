@@ -9,15 +9,18 @@ Bu base class, generic CRUD işlemlerini tek yerden sağlar.
 from __future__ import annotations
 
 from abc import ABC
-from typing import Any, Generic, TypeVar
-from uuid import UUID
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from sqlalchemy import delete, func, select, update
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.base import Base
+from app.db.models.base import BaseModel
 
-ModelType = TypeVar("ModelType", bound=Base)
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+ModelType = TypeVar("ModelType", bound=BaseModel)
 
 
 class BaseRepository(Generic[ModelType], ABC):

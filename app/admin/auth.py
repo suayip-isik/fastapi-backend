@@ -5,15 +5,19 @@ Mevcut JWT sistemi ve UserRole.ADMIN kontrolü kullanılır.
 
 from __future__ import annotations
 
-from sqladmin.authentication import AuthenticationBackend
-from starlette.requests import Request
-from starlette.responses import RedirectResponse
+from typing import TYPE_CHECKING
+from uuid import UUID
 
-from app.core.security import TokenType, decode_token
+from sqladmin.authentication import AuthenticationBackend
+
 from app.core.exceptions import AppError
+from app.core.security import TokenType, decode_token
 from app.db.models.user import UserRole
 from app.db.repositories.user import UserRepository
 from app.db.session import AsyncSessionFactory
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
 
 
 class AdminAuthBackend(AuthenticationBackend):
@@ -30,7 +34,7 @@ class AdminAuthBackend(AuthenticationBackend):
             return False
 
         try:
-            from app.core.security import verify_password, create_access_token
+            from app.core.security import create_access_token, verify_password
 
             async with AsyncSessionFactory() as session:
                 repo = UserRepository(session)
@@ -76,7 +80,7 @@ class AdminAuthBackend(AuthenticationBackend):
 
             async with AsyncSessionFactory() as session:
                 repo = UserRepository(session)
-                user = await repo.get_by_id(payload.sub)
+                user = await repo.get_by_id(UUID(payload.sub))
 
                 if not user or not user.is_active:
                     return False

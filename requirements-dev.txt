@@ -9,6 +9,7 @@ fakeredis==2.25.1      # In-memory Redis (test'ler için)
 # ── Code Quality ──────────────────────────────────────────────────────────────
 ruff==0.6.9            # Linter + formatter (flake8 + black + isort yerini alır)
 mypy==1.11.2           # Static type checking
+types-redis==4.6.0.20241004  # Redis type stubs
 pre-commit==3.8.0
 
 # ── Dev Tools ─────────────────────────────────────────────────────────────────

@@ -7,8 +7,8 @@ Sorumluluklar: verify_email · resend_verification · forgot_password · reset_p
 from __future__ import annotations
 
 import secrets
-
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import TYPE_CHECKING
+from uuid import UUID
 
 from app.core.exceptions import InvalidTokenError
 from app.core.redis import get_redis_client
@@ -16,9 +16,13 @@ from app.core.security import hash_password
 from app.db.models.audit_log import AuditAction
 from app.db.repositories.user import UserRepository
 from app.services._keys import EMAIL_VERIFY_KEY, PASSWORD_RESET_KEY
-from app.services.audit import AuditService
 from app.services.base import AuditableMixin
 from app.tasks.worker import enqueue, send_password_reset_email, send_verification_email
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.services.audit import AuditService
 
 _EMAIL_VERIFY_TTL = 24 * 60 * 60  # 24 saat
 _PASSWORD_RESET_TTL = 15 * 60  # 15 dakika
@@ -40,7 +44,7 @@ class AccountService(AuditableMixin):
 
         await redis.delete(EMAIL_VERIFY_KEY.format(token))
 
-        user = await self._repo.get_by_id(user_id)
+        user = await self._repo.get_by_id(UUID(user_id))
         if not user:
             raise InvalidTokenError("Kullanıcı bulunamadı.")
 
@@ -84,7 +88,7 @@ class AccountService(AuditableMixin):
 
         await redis.delete(PASSWORD_RESET_KEY.format(token))
 
-        user = await self._repo.get_by_id(user_id)
+        user = await self._repo.get_by_id(UUID(user_id))
         if not user or not user.is_active:
             raise InvalidTokenError("Kullanıcı bulunamadı.")
 

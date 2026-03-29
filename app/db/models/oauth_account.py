@@ -1,4 +1,5 @@
 """OAuth hesap modeli — social login provider bilgilerini saklar."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -23,14 +24,14 @@ class OAuthAccount(BaseModel):
         nullable=False,
         index=True,
     )
-    provider: Mapped[str] = mapped_column(String(50), nullable=False)   # google, github
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)  # google, github
     provider_user_id: Mapped[str] = mapped_column(String(255), nullable=False)
     access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="oauth_accounts")
+    user: Mapped[User] = relationship("User", back_populates="oauth_accounts")
 
     def __repr__(self) -> str:
         return f"<OAuthAccount {self.provider}:{self.provider_user_id}>"

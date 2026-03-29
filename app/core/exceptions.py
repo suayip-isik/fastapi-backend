@@ -30,7 +30,7 @@ class AppError(Exception):
         self.details = details
         super().__init__(self.message)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "error": {
                 "code": self.code,
@@ -128,18 +128,16 @@ class RateLimitError(AppError):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _serialize_validation_errors(errors: list) -> list:
+def _serialize_validation_errors(errors: list[Any]) -> list[dict[str, Any]]:
     """Pydantic validation hatalarını JSON-serializable formata çevirir."""
-    result = []
-    for error in errors:
-        result.append(
-            {
-                "field": " -> ".join(str(loc) for loc in error.get("loc", [])),
-                "message": str(error.get("msg", "")),
-                "type": str(error.get("type", "")),
-            }
-        )
-    return result
+    return [
+        {
+            "field": " -> ".join(str(loc) for loc in error.get("loc", [])),
+            "message": str(error.get("msg", "")),
+            "type": str(error.get("type", "")),
+        }
+        for error in errors
+    ]
 
 
 def _error_response(
@@ -148,7 +146,7 @@ def _error_response(
     message: str,
     details: Any = None,
 ) -> JSONResponse:
-    content: dict = {"error": {"code": code, "message": message}}
+    content: dict[str, Any] = {"error": {"code": code, "message": message}}
     if details is not None:
         content["error"]["details"] = details
     return JSONResponse(status_code=status_code, content=content)
@@ -158,7 +156,6 @@ def _error_response(
 
 
 def register_exception_handlers(app: FastAPI) -> None:
-
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content=exc.to_dict())
@@ -175,7 +172,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             "VALIDATION_ERROR",
             "İstek doğrulama hatası.",
-            details=_serialize_validation_errors(exc.errors()),
+            details=_serialize_validation_errors(list(exc.errors())),
         )
 
     @app.exception_handler(Exception)

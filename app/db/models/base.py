@@ -2,9 +2,10 @@
 SQLAlchemy declarative base + ortak alanlar.
 Tüm modeller Base'den miras alır.
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, func
@@ -14,6 +15,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 class Base(DeclarativeBase):
     """Tüm modellerin base class'ı."""
+
     pass
 
 
@@ -49,4 +51,5 @@ class BaseModel(UUIDMixin, TimestampMixin, Base):
     UUIDMixin + TimestampMixin — genel amaçlı model base'i.
     Abstract olarak işaretlenmiştir, tablo oluşturmaz.
     """
+
     __abstract__ = True

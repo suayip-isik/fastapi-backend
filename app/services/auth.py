@@ -9,9 +9,9 @@ Email doğrulama ve şifre sıfırlama → AccountService
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timezone
-
-from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+from uuid import UUID
 
 from app.core.exceptions import AlreadyExistsError, AuthenticationError, InvalidTokenError
 from app.core.redis import get_redis_client
@@ -23,13 +23,17 @@ from app.core.security import (
     verify_password,
 )
 from app.db.models.audit_log import AuditAction
-from app.db.models.user import User
 from app.db.repositories.user import UserRepository
 from app.schemas.auth import RegisterRequest, TokenResponse
 from app.services._keys import BLACKLIST_KEY, EMAIL_VERIFY_KEY
-from app.services.audit import AuditService
 from app.services.base import AuditableMixin
 from app.tasks.worker import enqueue, send_verification_email
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.db.models.user import User
+    from app.services.audit import AuditService
 
 _EMAIL_VERIFY_TTL = 24 * 60 * 60  # 24 saat
 
@@ -80,12 +84,12 @@ class AuthService(AuditableMixin):
         if await redis.exists(BLACKLIST_KEY.format(payload.jti)):
             raise InvalidTokenError("Refresh token geçersiz kılınmış.")
 
-        user = await self._repo.get_by_id(payload.sub)
+        user = await self._repo.get_by_id(UUID(payload.sub))
         if not user or not user.is_active:
             raise AuthenticationError("Kullanıcı bulunamadı.")
 
         # Eski refresh token'ı blacklist'e ekle (rotation)
-        remaining = int((payload.exp - datetime.now(timezone.utc)).total_seconds())
+        remaining = int((payload.exp - datetime.now(UTC)).total_seconds())
         if remaining > 0:
             await redis.setex(BLACKLIST_KEY.format(payload.jti), remaining, "1")
 
@@ -93,12 +97,14 @@ class AuthService(AuditableMixin):
         tokens = create_token_pair(str(user.id))
         return TokenResponse(**tokens)
 
-    async def logout(self, access_token: str, refresh_token: str | None, user_id=None) -> None:
+    async def logout(
+        self, access_token: str, refresh_token: str | None, user_id: UUID | None = None
+    ) -> None:
         """Access ve refresh token'ları blacklist'e ekle."""
         redis = await get_redis_client()
 
         access_payload = decode_token(access_token)
-        remaining = int((access_payload.exp - datetime.now(timezone.utc)).total_seconds())
+        remaining = int((access_payload.exp - datetime.now(UTC)).total_seconds())
         if remaining > 0:
             await redis.setex(BLACKLIST_KEY.format(access_payload.jti), remaining, "1")
 
@@ -106,12 +112,10 @@ class AuthService(AuditableMixin):
             try:
                 refresh_payload = decode_token(refresh_token)
                 if refresh_payload.type == TokenType.REFRESH:
-                    remaining = int(
-                        (refresh_payload.exp - datetime.now(timezone.utc)).total_seconds()
-                    )
+                    remaining = int((refresh_payload.exp - datetime.now(UTC)).total_seconds())
                     if remaining > 0:
                         await redis.setex(BLACKLIST_KEY.format(refresh_payload.jti), remaining, "1")
-            except Exception:
-                pass  # Geçersiz refresh token — sessizce geç
+            except Exception:  # noqa: S110 - geçersiz refresh token logout'u engellememeli
+                pass
 
         await self._audit_log(AuditAction.LOGOUT, user_id=user_id)

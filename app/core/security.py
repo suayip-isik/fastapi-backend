@@ -2,11 +2,11 @@
 Security utilities — JWT (RS256), password hashing, token management.
 RS256 kullanımı: private key ile imzala, public key ile doğrula.
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import Enum
-from typing import Any
 from uuid import uuid4
 
 import bcrypt
@@ -23,15 +23,16 @@ class TokenType(str, Enum):
 
 
 class TokenPayload(BaseModel):
-    sub: str           # user ID
+    sub: str  # user ID
     type: TokenType
-    jti: str           # JWT ID (revocation için)
+    jti: str  # JWT ID (revocation için)
     iat: datetime
     exp: datetime
     scopes: list[str] = []
 
 
 # ── Password Hashing ──────────────────────────────────────────────────────────
+
 
 def hash_password(plain: str) -> str:
     """bcrypt ile password hash'le."""
@@ -46,35 +47,36 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 # ── JWT Token ─────────────────────────────────────────────────────────────────
 
+
 def create_access_token(
     user_id: str,
     scopes: list[str] | None = None,
     expires_delta: timedelta | None = None,
 ) -> str:
     """RS256 ile imzalı access token oluştur."""
-    expire = datetime.now(timezone.utc) + (
+    expire = datetime.now(UTC) + (
         expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     payload = {
         "sub": str(user_id),
         "type": TokenType.ACCESS,
         "jti": str(uuid4()),
-        "iat": datetime.now(timezone.utc),
+        "iat": datetime.now(UTC),
         "exp": expire,
         "scopes": scopes or [],
     }
-    return jwt.encode(payload, settings.JWT_PRIVATE_KEY, algorithm="RS256")
+    return str(jwt.encode(payload, settings.JWT_PRIVATE_KEY, algorithm="RS256"))
 
 
 def create_refresh_token(user_id: str) -> tuple[str, str]:
     """Refresh token oluştur. (token, jti) döner — jti DB'ye kaydedilir."""
     jti = str(uuid4())
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    expire = datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {
         "sub": str(user_id),
         "type": TokenType.REFRESH,
         "jti": jti,
-        "iat": datetime.now(timezone.utc),
+        "iat": datetime.now(UTC),
         "exp": expire,
         "scopes": [],
     }
@@ -93,9 +95,9 @@ def decode_token(token: str) -> TokenPayload:
         )
         return TokenPayload(**payload)
     except jwt.ExpiredSignatureError:
-        raise TokenExpiredError()
+        raise TokenExpiredError() from None
     except JWTError:
-        raise InvalidTokenError()
+        raise InvalidTokenError() from None
 
 
 def create_token_pair(user_id: str, scopes: list[str] | None = None) -> dict[str, str]:

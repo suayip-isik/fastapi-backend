@@ -1,4 +1,5 @@
 """Security modülü unit testleri."""
+
 from __future__ import annotations
 
 from datetime import timedelta
@@ -15,7 +16,6 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-
 
 # ── Password Hashing ──────────────────────────────────────────────────────────
 

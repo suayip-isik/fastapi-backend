@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from uuid import UUID
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
 from app.db.models.oauth_account import OAuthAccount
 from app.db.repositories.base import BaseRepository
+
+if TYPE_CHECKING:
+    from uuid import UUID
 
 
 class OAuthAccountRepository(BaseRepository[OAuthAccount]):

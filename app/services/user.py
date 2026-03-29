@@ -4,18 +4,22 @@ UserService — kullanıcı yönetimi business logic.
 
 from __future__ import annotations
 
-from uuid import UUID
-
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import TYPE_CHECKING
 
 from app.core.exceptions import AlreadyExistsError, NotFoundError
 from app.core.security import hash_password
 from app.db.models.audit_log import AuditAction
-from app.db.models.user import User, UserRole
 from app.db.repositories.user import UserRepository
-from app.schemas.user import UpdateUserRequest
-from app.services.audit import AuditService
 from app.services.base import AuditableMixin
+
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.db.models.user import User, UserRole
+    from app.schemas.user import UpdateUserRequest
+    from app.services.audit import AuditService
 
 
 class UserService(AuditableMixin):
@@ -37,9 +41,12 @@ class UserService(AuditableMixin):
 
         update_data = data.model_dump(exclude_unset=True)
 
-        if "email" in update_data and update_data["email"] != user.email:
-            if await self._repo.email_exists(update_data["email"]):
-                raise AlreadyExistsError("Bu e-posta adresi zaten kullanılıyor.")
+        if (
+            "email" in update_data
+            and update_data["email"] != user.email
+            and await self._repo.email_exists(update_data["email"])
+        ):
+            raise AlreadyExistsError("Bu e-posta adresi zaten kullanılıyor.")
 
         if "password" in update_data:
             update_data["hashed_password"] = hash_password(update_data.pop("password"))

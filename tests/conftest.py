@@ -1,10 +1,11 @@
 """
 Pytest fixtures — async test altyapısı.
 """
+
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
 import fakeredis.aioredis as fakeredis_aioredis
@@ -20,10 +21,11 @@ from app.db.models.base import Base
 from app.db.session import get_db
 from app.main import app
 
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+
 # Test DB — ayrı bir DB kullan
-TEST_DATABASE_URL = settings.DATABASE_URL.replace(
-    f"/{settings.POSTGRES_DB}", "/test_db"
-)
+TEST_DATABASE_URL = settings.DATABASE_URL.replace(f"/{settings.POSTGRES_DB}", "/test_db")
 
 
 @pytest.fixture(scope="session", autouse=True)

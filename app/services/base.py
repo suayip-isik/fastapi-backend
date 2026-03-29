@@ -4,12 +4,10 @@ Service katmanı için ortak base sınıflar.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-from app.db.models.audit_log import AuditAction
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from app.services.audit import AuditService
+    from app.db.models.audit_log import AuditAction
 
 
 class AuditableMixin:
@@ -20,7 +18,7 @@ class AuditableMixin:
         self._audit: AuditService | None = audit
     """
 
-    async def _audit_log(self, action: AuditAction, **kwargs) -> None:
+    async def _audit_log(self, action: AuditAction, **kwargs: Any) -> None:
         audit = getattr(self, "_audit", None)
         if audit is not None:
             await audit.log(action, **kwargs)

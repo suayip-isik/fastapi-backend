@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import AsyncClient, HTTPStatusError
 
-
 # ── Mock Helpers ──────────────────────────────────────────────────────────────
 
 
@@ -148,7 +147,6 @@ async def test_google_callback_existing_user_same_id(client: AsyncClient):
         "/api/v1/users/me", headers={"Authorization": f"Bearer {res2.json()['access_token']}"}
     )
     assert me1.json()["id"] == me2.json()["id"]
-
 
 
 # ── GitHub Callback ───────────────────────────────────────────────────────────

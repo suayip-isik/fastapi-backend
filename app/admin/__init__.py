@@ -1,7 +1,9 @@
 """SQLAdmin panel paketi — view'lar otomatik register edilir."""
 
 import inspect
+
 from sqladmin import ModelView
+
 from app.admin import views as _views_module
 
 

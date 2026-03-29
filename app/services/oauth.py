@@ -6,8 +6,9 @@ Sorumluluklar: OAuth URL oluşturma · callback işleme · kullanıcı upsert
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import httpx
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import create_token_pair
@@ -15,8 +16,12 @@ from app.db.models.audit_log import AuditAction
 from app.db.repositories.oauth_account import OAuthAccountRepository
 from app.db.repositories.user import UserRepository
 from app.schemas.auth import TokenResponse
-from app.services.audit import AuditService
 from app.services.base import AuditableMixin
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.services.audit import AuditService
 
 
 class OAuthService(AuditableMixin):
@@ -136,19 +141,20 @@ class OAuthService(AuditableMixin):
         oauth_account = await self._oauth_repo.get_by_provider(provider, provider_user_id)
 
         if oauth_account:
-            # Bilinen provider — sadece token'ı güncelle
-            user = await self._user_repo.get_by_id(oauth_account.user_id)
+            # Bilinen provider — sadece token'i guncelle
+            user = await self._user_repo.get_by_id_or_raise(oauth_account.user_id)
             await self._oauth_repo.update(oauth_account.id, access_token=access_token)
         else:
-            # Yeni provider — kullanıcıyı email ile bul ya da oluştur
-            user = await self._user_repo.get_active_by_email(email)
-            if not user:
-                user = await self._user_repo.create(
+            # Yeni provider — kullaniciyi email ile bul ya da olustur
+            existing = await self._user_repo.get_active_by_email(email)
+            if not existing:
+                existing = await self._user_repo.create(
                     email=email.lower(),
                     full_name=full_name,
                     avatar_url=avatar_url,
-                    is_verified=True,  # OAuth ile gelen email doğrulanmış sayılır
+                    is_verified=True,
                 )
+            user = existing
             await self._oauth_repo.upsert(
                 user_id=user.id,
                 provider=provider,

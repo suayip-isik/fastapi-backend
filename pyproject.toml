@@ -1,6 +1,9 @@
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+extend-exclude = ["alembic/versions/"]
+
+[tool.ruff.lint]
 select = [
     "E", "W",   # pycodestyle
     "F",        # pyflakes
@@ -9,11 +12,73 @@ select = [
     "UP",       # pyupgrade
     "SIM",      # simplify
     "TCH",      # type-checking
+    "S",        # bandit (security)
+    "RUF",      # ruff-specific
+    "PERF",     # perflint
+    "C4",       # comprehensions
+    "N",        # pep8 naming
+    "G",        # logging format
 ]
-ignore = ["E501", "B008"]
+ignore = [
+    "E501",     # line-too-long: formatter halleder
+    "B008",     # FastAPI Depends() pattern
+    "BLE001",   # except Exception: kasıtlı kullanım (exception wrapping, güvenlik kapıları)
+    "RUF001",   # Türkçe karakter string'lerde — intentional
+    "RUF002",   # Türkçe karakter docstring'lerde — intentional
+    "RUF003",   # Türkçe karakter comment'lerde — intentional
+]
 
-[tool.ruff.isort]
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",  # assert: pytest idiom
+    "S105",  # hardcoded password string: test fixture'ları
+    "S106",  # hardcoded password func arg: test fixture'ları
+    "S107",  # hardcoded password default arg: test fixture'ları
+]
+"scripts/*.py" = [
+    "S603",  # subprocess call: operasyonel scriptler
+    "S607",  # partial path in subprocess: operasyonel scriptler
+]
+"app/core/config.py" = [
+    "N802",  # uppercase property names: Pydantic Settings convention (DATABASE_URL, REDIS_URL vb.)
+]
+"app/admin/views.py" = [
+    "RUF012",  # sqladmin ModelView class attributes: framework pattern
+]
+"app/tasks/worker.py" = [
+    "RUF012",  # ARQ WorkerSettings class attributes: framework pattern
+]
+"app/schemas/*.py" = [
+    "TCH001",  # Pydantic BaseModel field type'ları runtime'da çözümlenmeli; TYPE_CHECKING'e taşınamaz
+    "TCH003",  # aynı gerekçe — stdlib importları (UUID gibi) schema dosyalarında gerçek import olmalı
+]
+"app/api/v1/endpoints/*.py" = [
+    "TCH001",  # FastAPI get_type_hints() ile endpoint imzalarını runtime'da çözümler; TYPE_CHECKING'e taşınamaz
+    "TCH002",  # aynı gerekçe — third-party importları (AsyncSession vb.)
+    "TCH003",  # aynı gerekçe — stdlib importları (UUID vb.)
+]
+"app/main.py" = [
+    "TCH002",  # FastAPI endpoint return type'ları (HTMLResponse) runtime'da çözümlenmeli
+    "TCH003",  # lifespan return type (AsyncGenerator) runtime'da çözümlenmeli
+]
+"app/db/models/*.py" = [
+    "TCH003",  # SQLAlchemy Mapped[] anotasyonları runtime'da çözülür; stdlib importları TYPE_CHECKING'e taşınamaz
+]
+"app/db/models/audit_log.py" = [
+    "S105",  # false positive: ACTION enum değerleri (PASSWORD_RESET vb.) gerçek şifre değil
+]
+"app/services/_keys.py" = [
+    "S105",  # false positive: Redis key template isimleri (PASSWORD_RESET_KEY) gerçek şifre değil
+]
+
+[tool.ruff.lint.isort]
 known-first-party = ["app"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

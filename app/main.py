@@ -4,6 +4,7 @@ FastAPI uygulama fabrikasi.
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -15,25 +16,25 @@ from slowapi.errors import RateLimitExceeded
 from sqladmin import Admin
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.admin import get_all_views
 from app.admin.auth import AdminAuthBackend
+from app.admin.seed import create_default_admin
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
+from app.core.limiter import limiter
 from app.core.logging import setup_logging
 from app.core.middleware import (
     RequestIDMiddleware,
     SecurityHeadersMiddleware,
     TimingMiddleware,
 )
-from app.db.session import engine
-from app.admin import get_all_views
-from app.admin.seed import create_default_admin
-from app.core.limiter import limiter
 from app.core.redis import close_redis
+from app.db.session import engine
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging()
     from app.core.logging import get_logger
 
@@ -61,7 +62,7 @@ def create_app() -> FastAPI:
 
     # Rate Limiting
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
     # CORS
     app.add_middleware(
@@ -116,7 +117,7 @@ def create_app() -> FastAPI:
 
     # Health Check
     @app.get("/health", tags=["System"])
-    async def health():
+    async def health() -> dict[str, str]:
         return {"status": "ok", "version": settings.APP_VERSION, "env": settings.APP_ENV}
 
     return app
