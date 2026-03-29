@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import hash_password
 from app.db.repositories.user import UserRepository
 
-_PWD = hash_password("TestPass123!")
+# Precomputed hash — bu testler şifre doğrulaması yapmaz, pagination test eder.
+# Import anında bcrypt çalıştırmaktan kaçınmak için sabit kullanılır.
+_PWD = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewKxcQFBhkc5HxEe"
 
 
 async def _create_users(repo: UserRepository, count: int, prefix: str = "user") -> None:

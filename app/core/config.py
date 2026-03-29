@@ -165,7 +165,7 @@ class Settings(BaseSettings):
             if self.APP_DEBUG:
                 raise ValueError("Production'da DEBUG kapalı olmalı!")
             insecure_passwords = {"changeme", "admin", "password", "123456", ""}
-            if self.ADMIN_PASSWORD in insecure_passwords:
+            if (self.ADMIN_PASSWORD or "").strip().lower() in insecure_passwords:
                 raise ValueError("Production'da ADMIN_PASSWORD güvenli bir değere ayarlanmalı!")
         return self
 

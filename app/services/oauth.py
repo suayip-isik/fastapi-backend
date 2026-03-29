@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import secrets
 from typing import TYPE_CHECKING
+from urllib.parse import urlencode
 
 import httpx
 
@@ -48,14 +49,12 @@ class OAuthService(AuditableMixin):
             "access_type": "offline",
             "state": state,
         }
-        query = "&".join(f"{k}={v}" for k, v in params.items())
-        return f"https://accounts.google.com/o/oauth2/auth?{query}"
+        return f"https://accounts.google.com/o/oauth2/auth?{urlencode(params)}"
 
     async def google_callback(self, code: str, state: str) -> TokenResponse:
         redis = await get_redis_client()
-        if not await redis.get(OAUTH_STATE_KEY.format(state)):
+        if not await redis.getdel(OAUTH_STATE_KEY.format(state)):
             raise InvalidTokenError("Geçersiz OAuth state parametresi.")
-        await redis.delete(OAUTH_STATE_KEY.format(state))
 
         async with httpx.AsyncClient() as client:
             token_res = await client.post(
@@ -93,19 +92,18 @@ class OAuthService(AuditableMixin):
         state = secrets.token_urlsafe(32)
         redis = await get_redis_client()
         await redis.setex(OAUTH_STATE_KEY.format(state), 600, "1")
-        return (
-            f"https://github.com/login/oauth/authorize"
-            f"?client_id={settings.GITHUB_CLIENT_ID}"
-            f"&redirect_uri={settings.GITHUB_REDIRECT_URI}"
-            f"&scope=user:email"
-            f"&state={state}"
-        )
+        params = {
+            "client_id": settings.GITHUB_CLIENT_ID,
+            "redirect_uri": settings.GITHUB_REDIRECT_URI,
+            "scope": "user:email",
+            "state": state,
+        }
+        return f"https://github.com/login/oauth/authorize?{urlencode(params)}"
 
     async def github_callback(self, code: str, state: str) -> TokenResponse:
         redis = await get_redis_client()
-        if not await redis.get(OAUTH_STATE_KEY.format(state)):
+        if not await redis.getdel(OAUTH_STATE_KEY.format(state)):
             raise InvalidTokenError("Geçersiz OAuth state parametresi.")
-        await redis.delete(OAUTH_STATE_KEY.format(state))
 
         async with httpx.AsyncClient() as client:
             token_res = await client.post(

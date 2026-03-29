@@ -102,7 +102,7 @@ async def cleanup_expired_tokens(ctx: dict[str, Any]) -> dict[str, Any]:
     TTL'siz kalan orphaned Redis key'lerini temizle.
     Cron job olarak her gece yarısı çalışır.
     """
-    logger.info("cleaning_expired_tokens")
+    logger.info("cleaning_orphaned_redis_keys")
     from app.core.redis import get_redis_client
 
     redis = await get_redis_client()

@@ -400,15 +400,23 @@ Anahtarlar: `keys/private.pem`, `keys/public.pem`
 OAuth callback'i sahte bir siteden tetiklenebilir (CSRF saldırısı). Bunu önlemek için:
 
 ```python
+from urllib.parse import urlencode
+
 # 1. Yönlendirme sırasında: rastgele state üret, Redis'e kaydet
 state = secrets.token_urlsafe(32)
 await redis.setex(f"oauth_state:{state}", 600, "1")  # 10 dk TTL
-redirect_url = f"https://accounts.google.com/o/oauth2/auth?...&state={state}"
 
-# 2. Callback sırasında: state'i doğrula ve sil (tek kullanım)
-if not await redis.get(f"oauth_state:{state}"):
+# URL parametreleri urlencode ile oluşturulur — redirect_uri içindeki
+# ":", "/" gibi karakterlerin OAuth URL'ini bozmaması için zorunludur
+params = {"client_id": "...", "redirect_uri": "...", "state": state, ...}
+redirect_url = f"https://accounts.google.com/o/oauth2/auth?{urlencode(params)}"
+
+# 2. Callback sırasında: state'i atomik GETDEL ile doğrula ve tüket
+# GET + DELETE yerine GETDEL kullanmak kritiktir:
+# İki ayrı komut arasındaki sürede iki eş zamanlı istek aynı state'i
+# kullanabilir (race condition → replay saldırısı). GETDEL atomiktir.
+if not await redis.getdel(f"oauth_state:{state}"):
     raise InvalidTokenError("Geçersiz OAuth state.")
-await redis.delete(f"oauth_state:{state}")
 ```
 
 **Bu projede:**
@@ -530,7 +538,7 @@ class WorkerSettings:
 - `app/tasks/worker.py` — worker tanımları ve görev fonksiyonları
 - `send_welcome_email` — kayıt sonrası hoşgeldiniz e-postası (SMTP)
 - `send_verification_email` / `send_password_reset_email` — hesap doğrulama e-postaları
-- `cleanup_expired_tokens` — her gece yarısı çalışır, TTL'siz Redis key'lerini temizler (`blacklist:*`, `email_verify:*`, `password_reset:*`, `oauth_state:*`)
+- `cleanup_expired_tokens` — her gece yarısı çalışır, TTL'siz orphaned Redis key'lerini temizler (`blacklist:*`, `email_verify:*`, `password_reset:*`, `oauth_state:*`); log event: `cleaning_orphaned_redis_keys`
 
 ### 8.4 Bildirimler ve WebSocket Push
 
@@ -710,6 +718,16 @@ async def test_pagination(db_session: AsyncSession) -> None:
     assert len(items) == 10
     assert total == 25  # Her sayfada toplam tutarlı
 ```
+
+> **Test performansı — Precomputed Hash:** Bu testler şifre doğrulaması **yapmaz**, sadece pagination mantığını test eder. Bu nedenle `hash_password()` çağrısı yerine önceden hesaplanmış bir bcrypt hash sabiti kullanılır. Modül import edildiğinde `rounds=12` ile bcrypt çalıştırmak test collection süresini gereksiz uzatır.
+>
+> ```python
+> # ✗ Yavaş — import anında bcrypt çalışır
+> _PWD = hash_password("TestPass123!")
+>
+> # ✓ Hızlı — sabit string, bcrypt çalışmaz
+> _PWD = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewKxcQFBhkc5HxEe"
+> ```
 
 **Bu projede:** `tests/unit/test_repository_base.py`
 

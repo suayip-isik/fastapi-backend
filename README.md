@@ -558,10 +558,10 @@ Yalnızca `ADMIN` rolüne sahip kullanıcılar giriş yapabilir. Giriş bilgiler
 - **TOTP / 2FA** — TOTP doğrulaması + yedek kodlar. Secret Fernet şifreleme ile DB'de saklanır
 - **API Key Auth** — `sk_live_` prefix'li key'ler bcrypt ile hash'lenerek saklanır; `X-API-Key` header'ı ile kimlik doğrulama
 - **OAuth2** — Google ve GitHub; `OAuthAccount` tablosuna kaydedilir, sağlayıcı izolasyonu sağlanır
-- **OAuth CSRF Koruması** — State parametresi: her OAuth isteğinde kriptografik rastgele bir `state` üretilir, Redis'te 10 dakika TTL ile saklanır; callback'te doğrulanıp silinir (replay saldırılarına karşı koruma)
+- **OAuth CSRF Koruması** — State parametresi: her OAuth isteğinde kriptografik rastgele bir `state` üretilir, Redis'te 10 dakika TTL ile saklanır; callback'te atomik `GETDEL` ile tek seferde doğrulanıp tüketilir — race condition olmadan replay saldırılarına karşı koruma. OAuth URL parametreleri `urllib.parse.urlencode` ile encode edilir (`redirect_uri` gibi değerlerdeki `:`, `/` karakterlerinin bozmaması için)
 - **Rate Limiting** — Redis-backed, endpoint bazlı (login, kayıt, yükleme için farklı limitler)
 - **WebSocket Token Güvenliği** — Token URL query param'ında değil, bağlandıktan sonra ilk mesajla iletilir (Nginx log sızıntısı riski yok)
-- **Production Validator** — `APP_ENV=production`'da `SECRET_KEY`, `ALLOWED_HOSTS`, `CORS_ORIGINS`, `APP_DEBUG` güvensiz değerler için uygulama başlamaz; `ADMIN_PASSWORD` zayıf değerler (`changeme`, `admin`, `password`, `123456`) için de reddedilir
+- **Production Validator** — `APP_ENV=production`'da `SECRET_KEY`, `ALLOWED_HOSTS`, `CORS_ORIGINS`, `APP_DEBUG` güvensiz değerler için uygulama başlamaz; `ADMIN_PASSWORD` zayıf veya boş değerler (`""`, `changeme`, `admin`, `password`, `123456`) için de reddedilir
 - **CORS** — Konfigüre edilmiş origin listesi ile kısıtlı
 - **SQL Injection Koruması** — ORM + parameterized query
 - **Request ID Tracking** — Her isteğe benzersiz ID atanır, loglar ve response header'larında taşınır
