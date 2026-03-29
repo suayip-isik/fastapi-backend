@@ -410,7 +410,7 @@ Anahtarlar: `keys/private.pem`, `keys/public.pem`
 
 Brute-force ve DDoS saldırılarını yavaşlatır.
 
-**Bu projede:** `app/core/limiter.py` — slowapi ile IP/kullanıcı bazlı limit
+**Bu projede:** `app/core/limiter.py` — slowapi ile IP bazlı limit
 
 ### 7.6 TOTP / İki Faktörlü Kimlik Doğrulama (2FA)
 
