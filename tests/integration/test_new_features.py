@@ -52,9 +52,7 @@ async def test_totp_setup_returns_qr_and_secret(client: AsyncClient) -> None:
 async def test_totp_verify_invalid_code(client: AsyncClient) -> None:
     headers = await _register_and_login(client, "totp_verify_bad@example.com")
     await client.post("/api/v1/auth/totp/setup", headers=headers)
-    res = await client.post(
-        "/api/v1/auth/totp/verify", json={"code": "000000"}, headers=headers
-    )
+    res = await client.post("/api/v1/auth/totp/verify", json={"code": "000000"}, headers=headers)
     assert res.status_code == 401
 
 
@@ -91,9 +89,7 @@ async def test_totp_verify_and_disable_flow(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_totp_disable_when_not_enabled(client: AsyncClient) -> None:
     headers = await _register_and_login(client, "totp_disable_na@example.com")
-    res = await client.post(
-        "/api/v1/auth/totp/disable", json={"code": "123456"}, headers=headers
-    )
+    res = await client.post("/api/v1/auth/totp/disable", json={"code": "123456"}, headers=headers)
     assert res.status_code == 400  # BusinessRuleError
 
 
@@ -175,9 +171,7 @@ async def test_revoke_api_key(client: AsyncClient) -> None:
 async def test_authenticate_with_api_key(client: AsyncClient) -> None:
     """X-API-Key header ile endpoint'e erişim."""
     headers = await _register_and_login(client, "apikey_auth@example.com")
-    create_res = await client.post(
-        "/api/v1/api-keys", json={"name": "Auth Key"}, headers=headers
-    )
+    create_res = await client.post("/api/v1/api-keys", json={"name": "Auth Key"}, headers=headers)
     raw_key = create_res.json()["key"]
 
     # API Key ile /users/me erişimi
@@ -197,9 +191,7 @@ async def test_revoke_other_users_key_fails(client: AsyncClient) -> None:
     headers1 = await _register_and_login(client, "apikey_own1@example.com")
     headers2 = await _register_and_login(client, "apikey_own2@example.com")
 
-    create_res = await client.post(
-        "/api/v1/api-keys", json={"name": "User1 Key"}, headers=headers1
-    )
+    create_res = await client.post("/api/v1/api-keys", json={"name": "User1 Key"}, headers=headers1)
     key_id = create_res.json()["id"]
 
     # User2 User1'in key'ini silmeye çalışıyor
@@ -223,9 +215,7 @@ async def test_notifications_empty_by_default(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_notification_create_and_list(
-    client: AsyncClient, db_session: object
-) -> None:
+async def test_notification_create_and_list(client: AsyncClient, db_session: object) -> None:
     """Servis üzerinden bildirim oluştur, endpoint ile listele."""
     from uuid import UUID
 
@@ -236,7 +226,9 @@ async def test_notification_create_and_list(
     user_id = UUID(user_res.json()["id"])
 
     # Servis üzerinden bildirim oluştur (WS push'u mock'la)
-    with patch("app.services.notification.NotificationService._push_to_websocket", new_callable=AsyncMock):
+    with patch(
+        "app.services.notification.NotificationService._push_to_websocket", new_callable=AsyncMock
+    ):
         svc = NotificationService(db_session)  # type: ignore[arg-type]
         await svc.create(user_id, "Test Bildirimi", body="İçerik")
 
@@ -258,7 +250,9 @@ async def test_notification_mark_read(client: AsyncClient, db_session: object) -
     user_res = await client.get("/api/v1/users/me", headers=headers)
     user_id = UUID(user_res.json()["id"])
 
-    with patch("app.services.notification.NotificationService._push_to_websocket", new_callable=AsyncMock):
+    with patch(
+        "app.services.notification.NotificationService._push_to_websocket", new_callable=AsyncMock
+    ):
         svc = NotificationService(db_session)  # type: ignore[arg-type]
         notif = await svc.create(user_id, "Okunacak Bildirim")
 
@@ -278,7 +272,9 @@ async def test_notification_mark_all_read(client: AsyncClient, db_session: objec
     user_res = await client.get("/api/v1/users/me", headers=headers)
     user_id = UUID(user_res.json()["id"])
 
-    with patch("app.services.notification.NotificationService._push_to_websocket", new_callable=AsyncMock):
+    with patch(
+        "app.services.notification.NotificationService._push_to_websocket", new_callable=AsyncMock
+    ):
         svc = NotificationService(db_session)  # type: ignore[arg-type]
         await svc.create(user_id, "Bildirim 1")
         await svc.create(user_id, "Bildirim 2")
@@ -301,7 +297,9 @@ async def test_notification_delete(client: AsyncClient, db_session: object) -> N
     user_res = await client.get("/api/v1/users/me", headers=headers)
     user_id = UUID(user_res.json()["id"])
 
-    with patch("app.services.notification.NotificationService._push_to_websocket", new_callable=AsyncMock):
+    with patch(
+        "app.services.notification.NotificationService._push_to_websocket", new_callable=AsyncMock
+    ):
         svc = NotificationService(db_session)  # type: ignore[arg-type]
         notif = await svc.create(user_id, "Silinecek Bildirim")
 
@@ -323,7 +321,9 @@ async def test_notification_unread_count(client: AsyncClient, db_session: object
     user_res = await client.get("/api/v1/users/me", headers=headers)
     user_id = UUID(user_res.json()["id"])
 
-    with patch("app.services.notification.NotificationService._push_to_websocket", new_callable=AsyncMock):
+    with patch(
+        "app.services.notification.NotificationService._push_to_websocket", new_callable=AsyncMock
+    ):
         svc = NotificationService(db_session)  # type: ignore[arg-type]
         await svc.create(user_id, "A")
         await svc.create(user_id, "B")

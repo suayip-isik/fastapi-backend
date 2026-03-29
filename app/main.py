@@ -41,7 +41,6 @@ def _setup_sentry() -> None:
     import sentry_sdk
     from sentry_sdk.integrations.fastapi import FastApiIntegration
     from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
-
     from sentry_sdk.types import Event as SentryEvent
 
     def _before_send(event: SentryEvent, hint: dict[str, object]) -> SentryEvent | None:

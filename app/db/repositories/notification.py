@@ -62,7 +62,9 @@ class NotificationRepository(BaseRepository[Notification]):
         from sqlalchemy import func
 
         result = await self._session.execute(
-            select(func.count()).select_from(Notification).where(
+            select(func.count())
+            .select_from(Notification)
+            .where(
                 Notification.user_id == user_id,
                 Notification.is_read.is_(False),
             )

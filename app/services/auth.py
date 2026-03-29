@@ -62,9 +62,7 @@ class AuthService(AuditableMixin):
         await self._audit_log(AuditAction.REGISTER, user_id=user.id)
         return user
 
-    async def login(
-        self, email: str, password: str, totp_code: str | None = None
-    ) -> TokenResponse:
+    async def login(self, email: str, password: str, totp_code: str | None = None) -> TokenResponse:
         user = await self._repo.get_active_by_email(email)
         if not user or not user.hashed_password:
             await self._audit_log(AuditAction.LOGIN_FAILED, extra={"email": email})

@@ -26,7 +26,9 @@ class APIKey(BaseModel):
         index=True,
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    key_prefix: Mapped[str] = mapped_column(String(12), nullable=False)  # İlk 8 char (gösterim için)
+    key_prefix: Mapped[str] = mapped_column(
+        String(12), nullable=False
+    )  # İlk 8 char (gösterim için)
     key_hash: Mapped[str] = mapped_column(Text, nullable=False)  # bcrypt hash
     scopes: Mapped[str] = mapped_column(Text, nullable=False, default="")  # Boşlukla ayrılmış
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

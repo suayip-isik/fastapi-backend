@@ -48,7 +48,9 @@ class APIKeyCreatedResponse(BaseModel):
     scopes: str
     expires_at: datetime | None
     created_at: datetime
-    message: str = "API key oluşturuldu. Bu değeri güvenli bir yerde saklayın — bir daha gösterilmez."
+    message: str = (
+        "API key oluşturuldu. Bu değeri güvenli bir yerde saklayın — bir daha gösterilmez."
+    )
 
 
 class APIKeyResponse(BaseModel):
