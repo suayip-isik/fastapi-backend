@@ -19,6 +19,10 @@
 | Admin Panel      | SQLAdmin (role-based, JWT auth)           |
 | Containerization | Docker + Docker Compose                   |
 | Testing          | pytest + pytest-asyncio                   |
+| Linting          | ruff 0.6.9 (linter + formatter)           |
+| Type Checking    | mypy 1.11.2 (strict mode)                 |
+| Code Quality     | pre-commit hooks                          |
+| CI               | GitHub Actions                            |
 | Docs             | OpenAPI (auto)                            |
 
 ## Proje Yapısı
@@ -76,13 +80,17 @@ app/
 cp .env.example .env
 # .env dosyasını düzenle
 
-# 2. Çalıştır
+# 2. Pre-commit hook'larını kur (bir kez)
+pip install pre-commit
+pre-commit install
+
+# 3. Çalıştır
 docker compose up -d
 
-# 3. Migrations
+# 4. Migrations
 docker compose exec api alembic upgrade head
 
-# 4. API Docs
+# 5. API Docs
 open http://localhost:8000/docs
 ```
 
@@ -108,6 +116,40 @@ open http://localhost:8000/docs
 - Request ID tracking
 - Structured security audit logs
 - Admin paneli sadece `ADMIN` rolüne açık, her istekte token + rol doğrulaması yapılır
+
+## Kod Kalitesi
+
+```bash
+# Linting
+docker compose exec api ruff check app/ tests/ scripts/
+
+# Formatting kontrolü
+docker compose exec api ruff format --check app/ tests/ scripts/
+
+# Otomatik düzelt
+docker compose exec api ruff check --fix app/ tests/ scripts/
+docker compose exec api ruff format app/ tests/ scripts/
+
+# Tip kontrolü (strict mode)
+docker compose exec api mypy app/
+
+# Pre-commit — tüm dosyalarda çalıştır
+pre-commit run --all-files
+```
+
+CI (GitHub Actions) her `push` ve `pull_request`'te `ruff` + `mypy` kontrollerini paralel olarak çalıştırır. PR oluşturabilmek için her iki kontrolün de geçmesi gerekir.
+
+### Önemli: `TYPE_CHECKING` Kullanım Kuralı
+
+Bu projede `from __future__ import annotations` aktif. Bu Python'ın tüm annotation'ları lazy string yapmasını sağlar — çoğu yerde `if TYPE_CHECKING:` ile import döngüleri kırılabilir. Ancak **üç istisna** vardır:
+
+| Bağlam                                 | Neden runtime import gerekli                                 |
+| -------------------------------------- | ------------------------------------------------------------ |
+| `Pydantic BaseModel` field'ları        | Pydantic `get_type_hints()` ile runtime'da schema oluşturur  |
+| `SQLAlchemy Mapped[...]` field'ları    | SQLAlchemy mapper konfigürasyonunda annotation'ları çözümler |
+| FastAPI endpoint / dependency imzaları | FastAPI `get_type_hints()` ile bağımlılık grafiğini çözer    |
+
+Bu dosyalar için `TCH001/TCH002/TCH003` kuralları `pyproject.toml`'da per-file-ignore olarak tanımlanmıştır.
 
 ## Testler
 

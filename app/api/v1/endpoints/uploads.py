@@ -36,7 +36,7 @@ async def upload_file(
     current_user: CurrentUserDep,
     audit: AuditServiceDep,
     file: UploadFile = File(...),
-):
+) -> UploadResponse:
     """Dosya yükle. (Giriş gerekli)"""
     folder = f"users/{current_user.id}"
     key = await storage.upload(file, folder=folder)
@@ -56,7 +56,7 @@ async def delete_file(
     key: str,
     current_user: CurrentUserDep,
     audit: AuditServiceDep,
-):
+) -> MessageResponse:
     """Dosya sil. (Kullanıcı kendi dosyasını, admin herkesinkini silebilir)"""
     from app.core.exceptions import InsufficientPermissionsError
     from app.db.models.user import UserRole

@@ -4,12 +4,13 @@ FastAPI uygulama fabrikasi.
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.responses import HTMLResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqladmin import Admin
@@ -31,12 +32,9 @@ from app.core.middleware import (
 from app.core.redis import close_redis
 from app.db.session import engine
 
-if TYPE_CHECKING:
-    from fastapi.responses import HTMLResponse
-
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging()
     from app.core.logging import get_logger
 
@@ -64,7 +62,7 @@ def create_app() -> FastAPI:
 
     # Rate Limiting
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
     # CORS
     app.add_middleware(
@@ -119,7 +117,7 @@ def create_app() -> FastAPI:
 
     # Health Check
     @app.get("/health", tags=["System"])
-    async def health():
+    async def health() -> dict[str, str]:
         return {"status": "ok", "version": settings.APP_VERSION, "env": settings.APP_ENV}
 
     return app

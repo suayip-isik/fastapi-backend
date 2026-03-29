@@ -48,6 +48,22 @@ ignore = [
 "app/tasks/worker.py" = [
     "RUF012",  # ARQ WorkerSettings class attributes: framework pattern
 ]
+"app/schemas/*.py" = [
+    "TCH001",  # Pydantic BaseModel field type'ları runtime'da çözümlenmeli; TYPE_CHECKING'e taşınamaz
+    "TCH003",  # aynı gerekçe — stdlib importları (UUID gibi) schema dosyalarında gerçek import olmalı
+]
+"app/api/v1/endpoints/*.py" = [
+    "TCH001",  # FastAPI get_type_hints() ile endpoint imzalarını runtime'da çözümler; TYPE_CHECKING'e taşınamaz
+    "TCH002",  # aynı gerekçe — third-party importları (AsyncSession vb.)
+    "TCH003",  # aynı gerekçe — stdlib importları (UUID vb.)
+]
+"app/main.py" = [
+    "TCH002",  # FastAPI endpoint return type'ları (HTMLResponse) runtime'da çözümlenmeli
+    "TCH003",  # lifespan return type (AsyncGenerator) runtime'da çözümlenmeli
+]
+"app/db/models/*.py" = [
+    "TCH003",  # SQLAlchemy Mapped[] anotasyonları runtime'da çözülür; stdlib importları TYPE_CHECKING'e taşınamaz
+]
 "app/db/models/audit_log.py" = [
     "S105",  # false positive: ACTION enum değerleri (PASSWORD_RESET vb.) gerçek şifre değil
 ]

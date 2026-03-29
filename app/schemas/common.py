@@ -30,7 +30,7 @@ class ErrorDetail(BaseModel):
 
     code: str
     message: str
-    details: dict | None = None
+    details: dict[str, object] | None = None
 
 
 class ErrorResponse(BaseModel):

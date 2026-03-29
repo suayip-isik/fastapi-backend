@@ -65,7 +65,7 @@ def create_access_token(
         "exp": expire,
         "scopes": scopes or [],
     }
-    return jwt.encode(payload, settings.JWT_PRIVATE_KEY, algorithm="RS256")
+    return str(jwt.encode(payload, settings.JWT_PRIVATE_KEY, algorithm="RS256"))
 
 
 def create_refresh_token(user_id: str) -> tuple[str, str]:

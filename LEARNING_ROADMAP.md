@@ -193,6 +193,28 @@ class Settings(BaseSettings):
 
 **Bu projede:** `app/core/config.py` — tüm uygulama ayarları buradan okunur
 
+### 4.4 Pydantic ve Runtime Annotation Çözümleme
+
+Pydantic v2, `BaseModel` subclass'ı tanımlandığı anda field type'larını `get_type_hints()` ile çözümler. Bu nedenle field'larda kullanılan tipler (örn. `UUID`) modülün runtime namespace'inde mevcut olmalıdır — `if TYPE_CHECKING:` bloğuna alınamaz.
+
+```python
+# YANLIŞ — uygulama başlarken PydanticUndefinedAnnotation hatası verir
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from uuid import UUID
+
+class UserResponse(BaseModel):
+    id: UUID  # runtime'da UUID tanımsız!
+
+# DOĞRU
+from uuid import UUID  # gerçek import
+
+class UserResponse(BaseModel):
+    id: UUID  # çalışır
+```
+
+Bkz. Seviye 12.3 — `TYPE_CHECKING` ile ilgili ayrıntılı açıklama.
+
 ---
 
 ## Seviye 5 — FastAPI
@@ -586,13 +608,16 @@ Production-ready uygulama standartları:
 ### 12.1 Ruff — Linter ve Formatter
 
 ```bash
-ruff check app/   # Hata bul
-ruff format app/  # Otomatik formatla
+ruff check app/        # Hata bul
+ruff check --fix app/  # Otomatik düzelt
+ruff format app/       # Formatla
 ```
 
-Pyflakes, isort, bugbear kurallarını tek araçta birleştirir.
+Pyflakes, isort, pyupgrade, bugbear, bandit ve daha fazlasını tek araçta birleştirir. Rust ile yazıldığı için flake8 + black + isort kombinasyonundan ~100x hızlıdır.
 
-**Bu projede:** `pyproject.toml` — ruff konfigürasyonu
+Aktif kural grupları: `E/W` (pycodestyle), `F` (pyflakes), `I` (isort), `B` (bugbear), `UP` (pyupgrade), `S` (güvenlik), `TCH` (type-checking import optimizasyonu), `PERF`, `C4`, `N`, `G`.
+
+**Bu projede:** `pyproject.toml` — `[tool.ruff.lint]` ve `[tool.ruff.format]` bölümleri
 
 ### 12.2 mypy — Statik Tip Kontrolü
 
@@ -600,11 +625,65 @@ Pyflakes, isort, bugbear kurallarını tek araçta birleştirir.
 mypy app/  # Tip hatalarını bul (çalıştırmadan)
 ```
 
-`strict = true` modu — tüm fonksiyonların dönüş tipleri ve parametreleri belirtilmeli.
+`strict = true` modu: tüm fonksiyonların dönüş tipleri ve parametreleri belirtilmeli, `Any` kullanımı kısıtlı, `Optional` yerine `X | None` zorunlu.
+
+`pydantic-mypy` plugin'i aktif — Pydantic BaseModel field'larını mypy'ın anlayabileceği şekilde çözümler.
 
 **Bu projede:** `pyproject.toml` — `[tool.mypy]` bölümü
 
-### 12.3 structlog — Yapılandırılmış Loglama
+### 12.3 `from __future__ import annotations` ve TYPE_CHECKING
+
+Python 3.10+'dan önce `list[str]` gibi generic syntax hata verir. `from __future__ import annotations` tüm annotation'ları lazy string yapar — hem eski syntax uyumluluğu hem de döngüsel import sorunlarını çözer.
+
+```python
+# TYPE_CHECKING bloğu: sadece mypy çalışırken import edilir, runtime'da değil
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from app.services.user import UserService  # döngüsel importu kırar
+```
+
+**Kritik istisna:** Bazı framework'ler annotation'ları runtime'da `get_type_hints()` ile çözümler. Bu durumlarda TYPE_CHECKING bloğu kullanılırsa `NameError` fırlatılır:
+
+| Framework                              | Neden runtime import zorunlu                           |
+| -------------------------------------- | ------------------------------------------------------ |
+| Pydantic `BaseModel` field'ları        | Schema oluşturma sırasında `get_type_hints()` çağrılır |
+| SQLAlchemy `Mapped[...]` field'ları    | Mapper konfigürasyonunda annotation çözümlenir         |
+| FastAPI endpoint / dependency imzaları | Bağımlılık grafiği `get_type_hints()` ile inşa edilir  |
+
+**Bu projede:** `app/schemas/*.py`, `app/db/models/*.py`, `app/api/v1/endpoints/*.py` — bu dosyalarda TYPE_CHECKING kullanılmaz; `pyproject.toml`'da `TCH` kuralları per-file-ignore ile devre dışı bırakılmıştır.
+
+### 12.4 pre-commit — Git Hook Otomasyonu
+
+Her `git commit` öncesinde otomatik çalışan kalite kontrolleri.
+
+```bash
+pip install pre-commit
+pre-commit install          # hook'ları .git/hooks/ altına yükle
+pre-commit run --all-files  # tüm dosyalarda manuel çalıştır
+```
+
+`.pre-commit-config.yaml` tanımlı hook'lar:
+
+- `trailing-whitespace`, `end-of-file-fixer`, `check-merge-conflict` — temel dosya kalitesi
+- `detect-private-key` — gizli anahtar sızıntısı tespiti
+- `ruff` (--fix) + `ruff-format` — her commit'te linting ve formatlama
+
+**Bu projede:** `.pre-commit-config.yaml`
+
+### 12.5 GitHub Actions — CI/CD
+
+Her `push` ve `pull_request`'te otomatik çalışan iki paralel job:
+
+```
+lint job      → pip install ruff → ruff check + ruff format --check
+typecheck job → pip install -r requirements.txt -r requirements-dev.txt → mypy app/
+```
+
+PR merge edilebilmesi için her iki job'ın da geçmesi zorunludur.
+
+**Bu projede:** `.github/workflows/lint.yml`
+
+### 12.6 structlog — Yapılandırılmış Loglama
 
 JSON formatında log: her log satırı makine tarafından parse edilebilir.
 
@@ -661,5 +740,8 @@ Hafta 12+:   Mimari prensipleri okuyarak projeyi incele (Seviye 11-12)
 | JWT            | [jwt.io/introduction](https://jwt.io/introduction/)                       |
 | Docker         | [docs.docker.com/get-started](https://docs.docker.com/get-started/)       |
 | pytest         | [docs.pytest.org](https://docs.pytest.org/)                               |
+| Ruff           | [docs.astral.sh/ruff](https://docs.astral.sh/ruff/)                       |
+| mypy           | [mypy.readthedocs.io](https://mypy.readthedocs.io/)                       |
+| pre-commit     | [pre-commit.com](https://pre-commit.com/)                                 |
 | 12-Factor App  | [12factor.net](https://12factor.net/)                                     |
 | OWASP Top 10   | [owasp.org/Top10](https://owasp.org/www-project-top-ten/)                 |

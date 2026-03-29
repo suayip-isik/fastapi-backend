@@ -5,7 +5,7 @@ Bağımsız session kullanır: ana işlem rollback yapsa bile audit yazılır.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from app.core.logging import get_logger, ip_address_var, user_agent_var
 from app.db.repositories.audit_log import AuditLogRepository
@@ -24,7 +24,7 @@ class AuditService:
         self,
         action: AuditAction,
         user_id: UUID | None = None,
-        extra: dict | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> None:
         ip = ip_address_var.get()
         ua = user_agent_var.get()

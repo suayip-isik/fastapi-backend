@@ -1,6 +1,6 @@
 """
 Structured logging — structlog + JSON format.
-Request ID her log satırına otomatik eklenir.
+Request ID her log satirina otomatik eklenir.
 """
 
 from __future__ import annotations
@@ -8,8 +8,12 @@ from __future__ import annotations
 import logging
 import sys
 from contextvars import ContextVar
+from typing import TYPE_CHECKING, Any
 
 import structlog
+
+if TYPE_CHECKING:
+    from collections.abc import MutableMapping
 
 request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
 user_id_var: ContextVar[str] = ContextVar("user_id", default="-")
@@ -17,7 +21,9 @@ ip_address_var: ContextVar[str] = ContextVar("ip_address", default="-")
 user_agent_var: ContextVar[str] = ContextVar("user_agent", default="-")
 
 
-def _add_request_context(logger, method: str, event_dict: dict) -> dict:
+def _add_request_context(
+    logger: Any, method: str, event_dict: MutableMapping[str, Any]
+) -> MutableMapping[str, Any]:
     event_dict["request_id"] = request_id_var.get()
     event_dict["user_id"] = user_id_var.get()
     return event_dict
@@ -34,6 +40,7 @@ def setup_logging() -> None:
         level=log_level,
     )
 
+    renderer: structlog.processors.JSONRenderer | structlog.dev.ConsoleRenderer
     if settings.LOG_FORMAT == "json":
         renderer = structlog.processors.JSONRenderer()
     else:
@@ -58,4 +65,4 @@ def setup_logging() -> None:
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
-    return structlog.get_logger(name)
+    return structlog.get_logger(name)  # type: ignore[no-any-return]

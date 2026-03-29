@@ -13,14 +13,14 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from sqlalchemy import delete, func, select, update
 
-from app.db.models.base import Base
+from app.db.models.base import BaseModel
 
 if TYPE_CHECKING:
     from uuid import UUID
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
-ModelType = TypeVar("ModelType", bound=Base)
+ModelType = TypeVar("ModelType", bound=BaseModel)
 
 
 class BaseRepository(Generic[ModelType], ABC):

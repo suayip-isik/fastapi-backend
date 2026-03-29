@@ -6,6 +6,7 @@ Mevcut JWT sistemi ve UserRole.ADMIN kontrolü kullanılır.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from sqladmin.authentication import AuthenticationBackend
 
@@ -79,7 +80,7 @@ class AdminAuthBackend(AuthenticationBackend):
 
             async with AsyncSessionFactory() as session:
                 repo = UserRepository(session)
-                user = await repo.get_by_id(payload.sub)
+                user = await repo.get_by_id(UUID(payload.sub))
 
                 if not user or not user.is_active:
                     return False

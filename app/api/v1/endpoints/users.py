@@ -5,22 +5,19 @@ Kullanıcı listeleme, güncelleme, silme işlemleri.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies.auth import AdminDep, CurrentUserDep
+from app.db.models.user import User
+from app.db.session import get_db
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.user import UpdateUserRequest, UserResponse
 from app.services.audit import AuditService
 from app.services.user import UserService
-
-if TYPE_CHECKING:
-    from uuid import UUID
-
-    from sqlalchemy.ext.asyncio import AsyncSession
-
-    from app.api.dependencies.auth import AdminDep, CurrentUserDep
-    from app.db.session import get_db
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -40,8 +37,8 @@ UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(current_user: CurrentUserDep):
-    """Giriş yapmış kullanıcının profili."""
+async def get_me(current_user: CurrentUserDep) -> User:
+    """Giris yapmis kullanicinin profili."""
     return current_user
 
 
@@ -50,8 +47,8 @@ async def update_me(
     data: UpdateUserRequest,
     current_user: CurrentUserDep,
     service: UserServiceDep,
-):
-    """Giriş yapmış kullanıcının profilini güncelle."""
+) -> User:
+    """Giris yapmis kullanicinin profilini guncelle."""
     return await service.update(current_user.id, data)
 
 
@@ -61,21 +58,21 @@ async def list_users(
     service: UserServiceDep,
     page: int = 1,
     size: int = 20,
-):
-    """Tüm kullanıcıları listele. (Sadece Admin)"""
+) -> PaginatedResponse[UserResponse]:
+    """Tum kullanicilari listele. (Sadece Admin)"""
     users, total = await service.get_all(page=page, size=size)
     pages = (total + size - 1) // size
     return PaginatedResponse(items=users, total=total, page=page, size=size, pages=pages)
 
 
 @router.get("/{user_id}", response_model=UserResponse)
-async def get_user(user_id: UUID, _: AdminDep, service: UserServiceDep):
-    """Belirli bir kullanıcıyı getir. (Sadece Admin)"""
+async def get_user(user_id: UUID, _: AdminDep, service: UserServiceDep) -> User:
+    """Belirli bir kullaniciyi getir. (Sadece Admin)"""
     return await service.get_by_id(user_id)
 
 
 @router.delete("/{user_id}", response_model=MessageResponse)
-async def deactivate_user(user_id: UUID, _: AdminDep, service: UserServiceDep):
-    """Kullanıcıyı deaktif et. (Sadece Admin)"""
+async def deactivate_user(user_id: UUID, _: AdminDep, service: UserServiceDep) -> MessageResponse:
+    """Kullaniciyi deaktif et. (Sadece Admin)"""
     await service.deactivate(user_id)
-    return MessageResponse(message="Kullanıcı deaktif edildi.")
+    return MessageResponse(message="Kullanici deaktif edildi.")

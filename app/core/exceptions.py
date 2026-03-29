@@ -30,7 +30,7 @@ class AppError(Exception):
         self.details = details
         super().__init__(self.message)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "error": {
                 "code": self.code,
@@ -128,7 +128,7 @@ class RateLimitError(AppError):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _serialize_validation_errors(errors: list) -> list:
+def _serialize_validation_errors(errors: list[Any]) -> list[dict[str, Any]]:
     """Pydantic validation hatalarını JSON-serializable formata çevirir."""
     return [
         {
@@ -146,7 +146,7 @@ def _error_response(
     message: str,
     details: Any = None,
 ) -> JSONResponse:
-    content: dict = {"error": {"code": code, "message": message}}
+    content: dict[str, Any] = {"error": {"code": code, "message": message}}
     if details is not None:
         content["error"]["details"] = details
     return JSONResponse(status_code=status_code, content=content)
@@ -172,7 +172,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             "VALIDATION_ERROR",
             "İstek doğrulama hatası.",
-            details=_serialize_validation_errors(exc.errors()),
+            details=_serialize_validation_errors(list(exc.errors())),
         )
 
     @app.exception_handler(Exception)

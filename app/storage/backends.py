@@ -120,7 +120,7 @@ class S3StorageBackend(StorageBackend):
                     Params={"Bucket": self._bucket, "Key": key},
                     ExpiresIn=expires_in,
                 )
-            return url
+            return str(url)
         except Exception as e:
             raise StorageError(f"URL üretimi başarısız: {e}") from e
 

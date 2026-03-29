@@ -5,7 +5,7 @@ Audit log modeli — kim, ne zaman, ne yaptı.
 from __future__ import annotations
 
 from enum import Enum as PyEnum
-from typing import TYPE_CHECKING
+from uuid import UUID
 
 from sqlalchemy import Enum, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -13,9 +13,6 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.models.base import BaseModel
-
-if TYPE_CHECKING:
-    from uuid import UUID
 
 
 class AuditAction(str, PyEnum):
@@ -53,4 +50,4 @@ class AuditLog(BaseModel):
     )
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
-    extra: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    extra: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)

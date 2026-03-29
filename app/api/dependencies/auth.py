@@ -5,7 +5,8 @@ Tüm ortak bağımlılıklar burada tanımlanır.
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
+from uuid import UUID
 
 from fastapi import Depends, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -59,7 +60,7 @@ async def get_current_user(
     if await redis.exists(f"blacklist:{payload.jti}"):
         raise InvalidTokenError("Token geçersiz kılınmış.")
 
-    user = await user_repo.get_by_id(payload.sub)
+    user = await user_repo.get_by_id(UUID(payload.sub))
     if not user or not user.is_active:
         raise AuthenticationError("Kullanıcı bulunamadı veya pasif.")
 
@@ -73,7 +74,7 @@ async def get_current_active_user(
     return current_user
 
 
-def require_roles(*roles: UserRole):
+def require_roles(*roles: UserRole) -> Any:
     """Role-based access control factory."""
 
     async def check_role(

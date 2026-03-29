@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import secrets
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from app.core.exceptions import InvalidTokenError
 from app.core.redis import get_redis_client
@@ -43,7 +44,7 @@ class AccountService(AuditableMixin):
 
         await redis.delete(EMAIL_VERIFY_KEY.format(token))
 
-        user = await self._repo.get_by_id(user_id)
+        user = await self._repo.get_by_id(UUID(user_id))
         if not user:
             raise InvalidTokenError("Kullanıcı bulunamadı.")
 
@@ -87,7 +88,7 @@ class AccountService(AuditableMixin):
 
         await redis.delete(PASSWORD_RESET_KEY.format(token))
 
-        user = await self._repo.get_by_id(user_id)
+        user = await self._repo.get_by_id(UUID(user_id))
         if not user or not user.is_active:
             raise InvalidTokenError("Kullanıcı bulunamadı.")
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 import secrets
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from app.core.exceptions import AlreadyExistsError, AuthenticationError, InvalidTokenError
 from app.core.redis import get_redis_client
@@ -83,7 +84,7 @@ class AuthService(AuditableMixin):
         if await redis.exists(BLACKLIST_KEY.format(payload.jti)):
             raise InvalidTokenError("Refresh token geçersiz kılınmış.")
 
-        user = await self._repo.get_by_id(payload.sub)
+        user = await self._repo.get_by_id(UUID(payload.sub))
         if not user or not user.is_active:
             raise AuthenticationError("Kullanıcı bulunamadı.")
 
@@ -96,7 +97,9 @@ class AuthService(AuditableMixin):
         tokens = create_token_pair(str(user.id))
         return TokenResponse(**tokens)
 
-    async def logout(self, access_token: str, refresh_token: str | None, user_id=None) -> None:
+    async def logout(
+        self, access_token: str, refresh_token: str | None, user_id: UUID | None = None
+    ) -> None:
         """Access ve refresh token'ları blacklist'e ekle."""
         redis = await get_redis_client()
 

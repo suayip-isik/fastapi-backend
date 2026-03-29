@@ -129,17 +129,19 @@ class Settings(BaseSettings):
     # ── Validators ────────────────────────────────────────────────────────────
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
-    def parse_cors(cls, v: Any) -> list:
+    def parse_cors(cls, v: Any) -> list[Any]:
         if isinstance(v, str):
-            return json.loads(v)
-        return v
+            result: list[Any] = json.loads(v)
+            return result
+        return list(v)
 
     @field_validator("ALLOWED_UPLOAD_TYPES", mode="before")
     @classmethod
-    def parse_upload_types(cls, v: Any) -> list:
+    def parse_upload_types(cls, v: Any) -> list[Any]:
         if isinstance(v, str):
-            return json.loads(v)
-        return v
+            result: list[Any] = json.loads(v)
+            return result
+        return list(v)
 
     @model_validator(mode="after")
     def validate_production_settings(self) -> Settings:

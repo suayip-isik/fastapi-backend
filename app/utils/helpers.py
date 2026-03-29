@@ -9,7 +9,7 @@ from typing import TypeVar
 T = TypeVar("T")
 
 
-def paginate(items: list[T], page: int, size: int) -> dict:
+def paginate(items: list[T], page: int, size: int) -> dict[str, object]:
     """Liste verilerini sayfalara böler."""
     total = len(items)
     start = (page - 1) * size

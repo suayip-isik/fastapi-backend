@@ -5,15 +5,12 @@ Tüm modeller Base'den miras alır.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-
-if TYPE_CHECKING:
-    from datetime import datetime
 
 
 class Base(DeclarativeBase):
