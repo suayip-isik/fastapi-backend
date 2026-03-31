@@ -350,3 +350,149 @@ async def test_health_ready_returns_200_or_503(client: AsyncClient) -> None:
     """Test ortamında storage olmayabilir — 200 veya 503 kabul edilir."""
     res = await client.get("/health/ready")
     assert res.status_code in (200, 503)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# API Key — Ek Senaryolar
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.asyncio
+async def test_api_key_with_past_expiry_rejected(client: AsyncClient) -> None:
+    """expires_at geçmişte olan key ile auth → 401."""
+    headers = await _register_and_login(client, "apikey_expired@example.com")
+
+    # Geçmişte bir tarih ile key oluştur
+    past_date = "2020-01-01T00:00:00Z"
+    create_res = await client.post(
+        "/api/v1/api-keys",
+        json={"name": "Expired Key", "expires_at": past_date},
+        headers=headers,
+    )
+    assert create_res.status_code == 201
+    raw_key = create_res.json()["key"]
+
+    # Süresi dolmuş key ile endpoint'e erişim → 401
+    res = await client.get("/api/v1/users/me", headers={"X-API-Key": raw_key})
+    assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_api_key_with_future_expiry_accepted(client: AsyncClient) -> None:
+    """expires_at gelecekte olan key ile auth → 200."""
+    headers = await _register_and_login(client, "apikey_future@example.com")
+
+    future_date = "2099-12-31T23:59:59Z"
+    create_res = await client.post(
+        "/api/v1/api-keys",
+        json={"name": "Future Key", "expires_at": future_date},
+        headers=headers,
+    )
+    assert create_res.status_code == 201
+    raw_key = create_res.json()["key"]
+
+    res = await client.get("/api/v1/users/me", headers={"X-API-Key": raw_key})
+    assert res.status_code == 200
+    assert res.json()["email"] == "apikey_future@example.com"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Notifications — Sahiplik Kontrolü
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.asyncio
+async def test_mark_other_users_notification_as_read_returns_404(
+    client: AsyncClient, db_session: object
+) -> None:
+    """Başka kullanıcının bildirimini okundu işaretlemeye çalışmak → 404."""
+    from unittest.mock import AsyncMock, patch
+    from uuid import UUID
+
+    from app.services.notification import NotificationService
+
+    headers1 = await _register_and_login(client, "notif_own1@example.com")
+    headers2 = await _register_and_login(client, "notif_own2@example.com")
+
+    user1_res = await client.get("/api/v1/users/me", headers=headers1)
+    user1_id = UUID(user1_res.json()["id"])
+
+    with patch(
+        "app.services.notification.NotificationService._push_to_websocket",
+        new_callable=AsyncMock,
+    ):
+        svc = NotificationService(db_session)  # type: ignore[arg-type]
+        notif = await svc.create(user1_id, "User1'e ait bildirim")
+
+    # User2, User1'in bildirimini okumaya çalışıyor → 404
+    res = await client.patch(f"/api/v1/notifications/{notif.id}", headers=headers2)
+    assert res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_other_users_notification_returns_404(
+    client: AsyncClient, db_session: object
+) -> None:
+    """Başka kullanıcının bildirimini silmeye çalışmak → 404."""
+    from unittest.mock import AsyncMock, patch
+    from uuid import UUID
+
+    from app.services.notification import NotificationService
+
+    headers1 = await _register_and_login(client, "notif_delown1@example.com")
+    headers2 = await _register_and_login(client, "notif_delown2@example.com")
+
+    user1_res = await client.get("/api/v1/users/me", headers=headers1)
+    user1_id = UUID(user1_res.json()["id"])
+
+    with patch(
+        "app.services.notification.NotificationService._push_to_websocket",
+        new_callable=AsyncMock,
+    ):
+        svc = NotificationService(db_session)  # type: ignore[arg-type]
+        notif = await svc.create(user1_id, "User1'e ait silinecek bildirim")
+
+    # User2, User1'in bildirimini silmeye çalışıyor → 404
+    res = await client.delete(f"/api/v1/notifications/{notif.id}", headers=headers2)
+    assert res.status_code == 404
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TOTP — Backup Code Login
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.asyncio
+async def test_login_with_totp_backup_code(client: AsyncClient) -> None:
+    """TOTP aktifken backup kod ile login yapılabilmeli (tek kullanımlık)."""
+    import pyotp
+
+    email = "totp_backup@example.com"
+    password = "StrongPass1"
+    headers = await _register_and_login(client, email, password)
+
+    # TOTP kur ve etkinleştir
+    setup_res = await client.post("/api/v1/auth/totp/setup", headers=headers)
+    secret = setup_res.json()["secret"]
+    valid_code = pyotp.TOTP(secret).now()
+    verify_res = await client.post(
+        "/api/v1/auth/totp/verify", json={"code": valid_code}, headers=headers
+    )
+    assert verify_res.status_code == 200
+    backup_codes: list[str] = verify_res.json()["backup_codes"]
+    assert len(backup_codes) == 8
+
+    # Backup kod ile giriş → 200
+    res = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": password, "totp_code": backup_codes[0]},
+    )
+    assert res.status_code == 200
+    assert "access_token" in res.json()
+
+    # Aynı backup kod ikinci kez kullanılamaz → 401
+    res2 = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": password, "totp_code": backup_codes[0]},
+    )
+    assert res2.status_code == 401
