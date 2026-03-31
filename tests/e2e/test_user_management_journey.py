@@ -19,9 +19,7 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.asyncio
-async def test_full_user_management_journey(
-    client: AsyncClient, db_session: AsyncSession
-) -> None:
+async def test_full_user_management_journey(client: AsyncClient, db_session: AsyncSession) -> None:
     """
     Adım 1: Sıradan kullanıcı kaydı → 201
     Adım 2: Admin kullanıcı kaydı → 201
@@ -45,9 +43,7 @@ async def test_full_user_management_journey(
     user_id = reg_user.json()["id"]
 
     # Adım 2: Admin kullanıcı kaydı
-    await client.post(
-        "/api/v1/auth/register", json={"email": admin_email, "password": password}
-    )
+    await client.post("/api/v1/auth/register", json={"email": admin_email, "password": password})
 
     # Adım 3: Admin rolüne yükselt
     await db_session.execute(
@@ -90,9 +86,7 @@ async def test_full_user_management_journey(
     assert get_deact.json()["is_active"] is False
 
     # Ek: Admin olmayan kullanıcı listeyi göremez
-    user_login = await client.post(
-        "/api/v1/auth/login", json={"email": admin_email, "password": password}
-    )
+    await client.post("/api/v1/auth/login", json={"email": admin_email, "password": password})
     non_admin_login = await client.post(
         "/api/v1/auth/register",
         json={"email": "journey_nonadmin@example.com", "password": password},

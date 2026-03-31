@@ -11,7 +11,6 @@ from app.core.exceptions import AuthenticationError
 from app.services.api_key import _generate_raw_key, _split_key
 from app.services.totp import _decrypt, _encrypt, _generate_backup_codes, _get_fernet
 
-
 # ── _get_fernet ───────────────────────────────────────────────────────────────
 
 

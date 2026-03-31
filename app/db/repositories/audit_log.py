@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from uuid import UUID
+from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
 
 from app.db.models.audit_log import AuditAction, AuditLog
 from app.db.repositories.base import BaseRepository
+
+if TYPE_CHECKING:
+    from datetime import datetime
+    from uuid import UUID
 
 
 class AuditLogRepository(BaseRepository[AuditLog]):

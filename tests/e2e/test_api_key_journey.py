@@ -34,9 +34,7 @@ async def test_full_api_key_journey(client: AsyncClient) -> None:
 
     # Adım 1+2: Kayıt ve giriş
     await client.post("/api/v1/auth/register", json={"email": email, "password": password})
-    login = await client.post(
-        "/api/v1/auth/login", json={"email": email, "password": password}
-    )
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert login.status_code == 200
     jwt_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 

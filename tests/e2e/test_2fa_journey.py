@@ -31,15 +31,11 @@ async def test_full_2fa_journey(client: AsyncClient) -> None:
     password = "StrongPass1"
 
     # Adım 1: Kayıt
-    reg = await client.post(
-        "/api/v1/auth/register", json={"email": email, "password": password}
-    )
+    reg = await client.post("/api/v1/auth/register", json={"email": email, "password": password})
     assert reg.status_code == 201
 
     # Adım 2: Giriş (2FA yok)
-    login = await client.post(
-        "/api/v1/auth/login", json={"email": email, "password": password}
-    )
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert login.status_code == 200
     access_token = login.json()["access_token"]
     refresh_token = login.json()["refresh_token"]
@@ -73,9 +69,7 @@ async def test_full_2fa_journey(client: AsyncClient) -> None:
     assert logout.status_code == 200
 
     # Adım 6: TOTP kodu olmadan giriş → 401
-    no_code = await client.post(
-        "/api/v1/auth/login", json={"email": email, "password": password}
-    )
+    no_code = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert no_code.status_code == 401
 
     # Adım 7: Geçerli TOTP kodu ile giriş → 200

@@ -7,13 +7,17 @@ okuma işlemleri bu ayrı serviste tutulur.
 
 from __future__ import annotations
 
-from datetime import datetime
-from uuid import UUID
+from typing import TYPE_CHECKING
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.db.models.audit_log import AuditAction, AuditLog
 from app.db.repositories.audit_log import AuditLogRepository
+
+if TYPE_CHECKING:
+    from datetime import datetime
+    from uuid import UUID
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.db.models.audit_log import AuditAction, AuditLog
 
 
 class AuditLogService:

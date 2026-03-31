@@ -7,7 +7,6 @@ from pydantic import ValidationError as PydanticValidationError
 
 from app.schemas.auth import RegisterRequest, ResetPasswordRequest, validate_password_strength
 
-
 # ── validate_password_strength ────────────────────────────────────────────────
 
 

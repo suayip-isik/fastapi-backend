@@ -25,7 +25,6 @@ from app.core.exceptions import (
     _serialize_validation_errors,
 )
 
-
 # ── AppError Base ─────────────────────────────────────────────────────────────
 
 
