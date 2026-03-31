@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.endpoints.api_keys import router as api_keys_router
+from app.api.v1.endpoints.audit_logs import router as audit_logs_router
 from app.api.v1.endpoints.auth import router as auth_router
 from app.api.v1.endpoints.notifications import router as notifications_router
 from app.api.v1.endpoints.totp import router as totp_router
@@ -15,6 +16,7 @@ api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth_router)
 api_router.include_router(totp_router)
 api_router.include_router(api_keys_router)
+api_router.include_router(audit_logs_router)
 api_router.include_router(notifications_router)
 api_router.include_router(users_router)
 api_router.include_router(uploads_router)

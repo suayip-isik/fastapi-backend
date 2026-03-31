@@ -79,6 +79,7 @@ fastapi-backend/
 │   │           ├── totp.py             # 2FA kurulum, doğrulama, devre dışı bırakma
 │   │           ├── users.py            # Kullanıcı profili ve yönetimi
 │   │           ├── api_keys.py         # API key oluşturma, listeleme, iptal
+│   │           ├── audit_logs.py       # Audit log listeleme ve sorgulama (admin)
 │   │           ├── notifications.py    # Uygulama içi bildirimler
 │   │           └── uploads.py          # Dosya yükleme ve silme
 │   ├── core/
@@ -118,7 +119,8 @@ fastapi-backend/
 │   │   ├── api_key.py                  # APIKeyService — key oluşturma, doğrulama, iptal
 │   │   ├── notification.py             # NotificationService — bildirim + WebSocket push
 │   │   ├── totp.py                     # TOTPService — 2FA kurulum, doğrulama, yedek kodlar
-│   │   └── audit.py                    # AuditService — bağımsız session ile audit log
+│   │   ├── audit.py                    # AuditService — bağımsız session ile audit log (yazma)
+│   │   └── audit_log.py               # AuditLogService — audit log okuma (admin)
 │   ├── schemas/
 │   │   ├── auth.py                     # Auth istek/yanıt şemaları (kayıt, giriş, token vb.)
 │   │   ├── user.py                     # Kullanıcı istek/yanıt şemaları
@@ -510,6 +512,15 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 | PATCH  | `/notifications/read-all`          | Tüm bildirimleri okundu işaretle | Evet |
 | PATCH  | `/notifications/{notification_id}` | Tek bildirimi okundu işaretle    | Evet |
 | DELETE | `/notifications/{notification_id}` | Bildirimi sil                    | Evet |
+
+### Audit Loglar (`/audit-logs`)
+
+| Method | Path                   | Açıklama                                   | Auth  |
+| ------ | ---------------------- | ------------------------------------------ | ----- |
+| GET    | `/audit-logs`          | Audit logları listele (sayfalı + filtreli) | Admin |
+| GET    | `/audit-logs/{log_id}` | Tek audit log kaydını getir                | Admin |
+
+**Sorgu parametreleri:** `page`, `size`, `user_id`, `action`, `date_from`, `date_to`, `ip_address`
 
 ### Dosya Yükleme (`/uploads`)
 
