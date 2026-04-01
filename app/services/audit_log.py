@@ -46,5 +46,26 @@ class AuditLogService:
             limit=size,
         )
 
+    async def list_logs_cursor(
+        self,
+        *,
+        user_id: UUID | None = None,
+        action: AuditAction | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        ip_address: str | None = None,
+        cursor: str | None = None,
+        size: int = 20,
+    ) -> tuple[list[AuditLog], str | None]:
+        return await self._repo.get_cursor_filtered_page(
+            user_id=user_id,
+            action=action,
+            date_from=date_from,
+            date_to=date_to,
+            ip_address=ip_address,
+            cursor=cursor,
+            limit=size,
+        )
+
     async def get_log(self, log_id: UUID) -> AuditLog:
         return await self._repo.get_by_id_or_raise(log_id)

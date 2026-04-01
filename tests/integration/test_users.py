@@ -276,9 +276,9 @@ async def test_deactivate_user_as_admin(client: AsyncClient, db_session: AsyncSe
 
     res = await client.delete(f"/api/v1/users/{target_id}", headers=headers)
     assert res.status_code == 200
-    assert "deaktif" in res.json()["message"]
+    assert "silindi" in res.json()["message"]
 
-    # Deaktif kullanıcı artık giriş yapamamalı
+    # Soft-deleted kullanıcı artık giriş yapamamalı
     login = await client.post(
         "/api/v1/auth/login", json={"email": target_email, "password": "StrongPass1"}
     )

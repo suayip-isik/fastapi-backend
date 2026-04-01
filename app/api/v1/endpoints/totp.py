@@ -86,3 +86,46 @@ async def disable_totp(
     """Mevcut TOTP kodunu doğrulayarak 2FA'yı devre dışı bırakır."""
     await service.disable(current_user, data.code)
     return MessageResponse(message="2FA başarıyla devre dışı bırakıldı.")
+
+
+class BackupCodeCountResponse(BaseModel):
+    count: int
+    message: str
+
+
+@router.get(
+    "/backup-codes/count",
+    response_model=BackupCodeCountResponse,
+    summary="Kalan backup kod sayısı",
+)
+async def get_backup_code_count(
+    current_user: CurrentUserDep,
+    service: TOTPServiceDep,
+) -> BackupCodeCountResponse:
+    """Kullanılmamış backup kod sayısını döndürür."""
+    count = await service.get_backup_code_count(current_user)
+    return BackupCodeCountResponse(
+        count=count,
+        message=f"{count} adet kullanılmamış backup kodunuz var.",
+    )
+
+
+@router.post(
+    "/backup-codes/regenerate",
+    response_model=BackupCodesResponse,
+    summary="Backup kodları yenile",
+)
+async def regenerate_backup_codes(
+    data: TOTPCodeRequest,
+    current_user: CurrentUserDep,
+    service: TOTPServiceDep,
+) -> dict[str, object]:
+    """
+    Geçerli TOTP kodunu doğrulayarak backup kodları yeniden üretir.
+    Eski backup kodlar geçersiz olur — yeni kodları güvenli bir yerde saklayın.
+    """
+    new_codes = await service.regenerate_backup_codes(current_user, data.code)
+    return {
+        "message": "Backup kodlar yenilendi. Eski kodlar artık geçersiz.",
+        "backup_codes": new_codes,
+    }

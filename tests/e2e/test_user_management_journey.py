@@ -69,21 +69,20 @@ async def test_full_user_management_journey(client: AsyncClient, db_session: Asy
     assert get_user.json()["email"] == user_email
     assert get_user.json()["is_active"] is True
 
-    # Adım 7: Kullanıcıyı deaktif et
+    # Adım 7: Kullanıcıyı soft-delete ile sil
     deact = await client.delete(f"/api/v1/users/{user_id}", headers=admin_headers)
     assert deact.status_code == 200
-    assert "deaktif" in deact.json()["message"]
+    assert "silindi" in deact.json()["message"]
 
-    # Adım 8: Deaktif kullanıcı giriş yapamaz
+    # Adım 8: Silinmiş kullanıcı giriş yapamaz
     bad_login = await client.post(
         "/api/v1/auth/login", json={"email": user_email, "password": password}
     )
     assert bad_login.status_code == 401
 
-    # Adım 9: Admin deaktif kullanıcıyı kontrol eder
+    # Adım 9: Admin silinmiş kullanıcıyı artık göremez (404)
     get_deact = await client.get(f"/api/v1/users/{user_id}", headers=admin_headers)
-    assert get_deact.status_code == 200
-    assert get_deact.json()["is_active"] is False
+    assert get_deact.status_code == 404
 
     # Ek: Admin olmayan kullanıcı listeyi göremez
     await client.post("/api/v1/auth/login", json={"email": admin_email, "password": password})

@@ -12,7 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.core.logging import get_logger
+from app.core.logging import get_logger, request_id_var
 
 _logger = get_logger(__name__)
 
@@ -31,10 +31,12 @@ class AppError(Exception):
         super().__init__(self.message)
 
     def to_dict(self) -> dict[str, Any]:
+        rid = request_id_var.get()
         return {
             "error": {
                 "code": self.code,
                 "message": self.message,
+                "request_id": rid if rid != "-" else None,
                 **({"details": self.details} if self.details else {}),
             }
         }
@@ -125,6 +127,39 @@ class RateLimitError(AppError):
     message = "Çok fazla istek gönderildi. Lütfen bekleyin."
 
 
+# ── Domain-Specific Subclasses ────────────────────────────────────────────────
+
+
+class UserNotFoundError(NotFoundError):
+    code = "USER_NOT_FOUND"
+    message = "Kullanıcı bulunamadı."
+
+
+class UserAlreadyExistsError(AlreadyExistsError):
+    code = "USER_ALREADY_EXISTS"
+    message = "Bu e-posta adresi zaten kayıtlı."
+
+
+class UserDeletedError(AuthenticationError):
+    code = "USER_DELETED"
+    message = "Bu hesap silinmiş."
+
+
+class APIKeyNotFoundError(NotFoundError):
+    code = "API_KEY_NOT_FOUND"
+    message = "API anahtarı bulunamadı."
+
+
+class TOTPNotConfiguredError(BusinessRuleError):
+    code = "TOTP_NOT_CONFIGURED"
+    message = "2FA yapılandırılmamış."
+
+
+class TOTPAlreadyEnabledError(BusinessRuleError):
+    code = "TOTP_ALREADY_ENABLED"
+    message = "2FA zaten aktif."
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -146,7 +181,14 @@ def _error_response(
     message: str,
     details: Any = None,
 ) -> JSONResponse:
-    content: dict[str, Any] = {"error": {"code": code, "message": message}}
+    rid = request_id_var.get()
+    content: dict[str, Any] = {
+        "error": {
+            "code": code,
+            "message": message,
+            "request_id": rid if rid != "-" else None,
+        }
+    }
     if details is not None:
         content["error"]["details"] = details
     return JSONResponse(status_code=status_code, content=content)

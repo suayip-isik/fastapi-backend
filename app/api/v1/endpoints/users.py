@@ -67,9 +67,9 @@ async def list_users(
 
 
 @router.get("/{user_id}", response_model=UserResponse)
-async def get_user(user_id: UUID, _: AdminDep, service: UserServiceDep) -> User:
+async def get_user(user_id: UUID, _: AdminDep, service: UserServiceDep) -> UserResponse:
     """Belirli bir kullaniciyi getir. (Sadece Admin)"""
-    return await service.get_by_id(user_id)
+    return await service.get_by_id_cached(user_id)
 
 
 @router.post("/{user_id}/activate", response_model=UserResponse)
@@ -93,12 +93,28 @@ async def change_user_role(
     return await service.change_role(user_id, data.role)
 
 
-@router.delete("/{user_id}", response_model=MessageResponse)
-async def deactivate_user(
-    user_id: UUID, current_user: AdminDep, service: UserServiceDep
-) -> MessageResponse:
-    """Kullaniciyi deaktif et. (Sadece Admin)"""
+@router.post("/{user_id}/deactivate", response_model=UserResponse)
+async def deactivate_user(user_id: UUID, current_user: AdminDep, service: UserServiceDep) -> User:
+    """Kullaniciyi deaktif et (is_active=False). (Sadece Admin)"""
     if user_id == current_user.id:
         raise InsufficientPermissionsError("Kendi hesabınız üzerinde bu işlemi yapamazsınız.")
-    await service.deactivate(user_id)
-    return MessageResponse(message="Kullanici deaktif edildi.")
+    return await service.deactivate(user_id)
+
+
+@router.delete("/{user_id}", response_model=MessageResponse)
+async def delete_user(
+    user_id: UUID, current_user: AdminDep, service: UserServiceDep
+) -> MessageResponse:
+    """Kullaniciyi soft-delete ile sil. (Sadece Admin)"""
+    if user_id == current_user.id:
+        raise InsufficientPermissionsError("Kendi hesabınız üzerinde bu işlemi yapamazsınız.")
+    await service.soft_delete(user_id)
+    return MessageResponse(message="Kullanici silindi.")
+
+
+@router.post("/{user_id}/restore", response_model=UserResponse)
+async def restore_user(user_id: UUID, current_user: AdminDep, service: UserServiceDep) -> User:
+    """Silinmis kullaniciyi geri yukle. (Sadece Admin)"""
+    if user_id == current_user.id:
+        raise InsufficientPermissionsError("Kendi hesabınız üzerinde bu işlemi yapamazsınız.")
+    return await service.restore(user_id)

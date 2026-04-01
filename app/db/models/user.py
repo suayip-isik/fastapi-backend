@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Boolean, Enum, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.models.base import BaseModel
+from app.db.models.base import BaseModel, SoftDeleteMixin
 
 if TYPE_CHECKING:
     from app.db.models.oauth_account import OAuthAccount
@@ -20,7 +20,7 @@ class UserRole(str, PyEnum):
     MODERATOR = "moderator"
 
 
-class User(BaseModel):
+class User(SoftDeleteMixin, BaseModel):
     __tablename__ = "users"
 
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)

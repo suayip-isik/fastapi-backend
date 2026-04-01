@@ -45,7 +45,9 @@ def test_app_error_custom_message_overrides_default() -> None:
 def test_app_error_to_dict_without_details() -> None:
     err = AppError("Some error")
     d = err.to_dict()
-    assert d == {"error": {"code": "INTERNAL_ERROR", "message": "Some error"}}
+    assert d["error"]["code"] == "INTERNAL_ERROR"
+    assert d["error"]["message"] == "Some error"
+    assert "request_id" in d["error"]
     assert "details" not in d["error"]
 
 

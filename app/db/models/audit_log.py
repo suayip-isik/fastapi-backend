@@ -30,6 +30,8 @@ class AuditAction(str, PyEnum):
     USER_DEACTIVATED = "user_deactivated"
     USER_ACTIVATED = "user_activated"
     ROLE_CHANGED = "role_changed"
+    USER_DELETED = "user_deleted"
+    USER_RESTORED = "user_restored"
     # File
     FILE_UPLOADED = "file_uploaded"
     FILE_DELETED = "file_deleted"

@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from app.core.exceptions import AlreadyExistsError, AuthenticationError, InvalidTokenError
+from app.core.exceptions import AuthenticationError, InvalidTokenError, UserAlreadyExistsError
 from app.core.redis import get_redis_client
 from app.core.security import (
     TokenType,
@@ -46,7 +46,7 @@ class AuthService(AuditableMixin):
 
     async def register(self, data: RegisterRequest) -> User:
         if await self._repo.email_exists(data.email):
-            raise AlreadyExistsError("Bu e-posta adresi zaten kullanılıyor.")
+            raise UserAlreadyExistsError()
 
         user = await self._repo.create(
             email=data.email.lower(),

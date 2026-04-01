@@ -13,6 +13,18 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
+class SoftDeleteMixin:
+    """Soft-delete desteği — sadece bunu miras alan modeller silinebilir."""
+
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
+
+
 class Base(DeclarativeBase):
     """Tüm modellerin base class'ı."""
 
