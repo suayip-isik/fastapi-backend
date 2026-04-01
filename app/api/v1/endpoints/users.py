@@ -37,13 +37,13 @@ def get_user_service(
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me", response_model=UserResponse, openapi_extra={"x-audiences": ["user", "mobile"]})
 async def get_me(current_user: CurrentUserDep) -> User:
     """Giris yapmis kullanicinin profili."""
     return current_user
 
 
-@router.patch("/me", response_model=UserResponse)
+@router.patch("/me", response_model=UserResponse, openapi_extra={"x-audiences": ["user", "mobile"]})
 async def update_me(
     data: UpdateUserRequest,
     current_user: CurrentUserDep,

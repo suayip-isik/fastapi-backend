@@ -154,6 +154,65 @@ def create_app() -> FastAPI:
             redoc_js_url="https://unpkg.com/redoc@latest/bundles/redoc.standalone.js",
         )
 
+    # Audience-specific OpenAPI schemas
+    from typing import Any
+
+    from app.api.v1.openapi import generate_audience_schema
+
+    @app.get("/schema/admin/openapi.json", include_in_schema=False)
+    async def admin_openapi() -> Any:
+        return generate_audience_schema(
+            app,
+            audience="admin",
+            title=f"{settings.APP_NAME} — Admin API",
+            version=settings.APP_VERSION,
+        )
+
+    @app.get("/schema/user/openapi.json", include_in_schema=False)
+    async def user_openapi() -> Any:
+        return generate_audience_schema(
+            app,
+            audience="user",
+            title=f"{settings.APP_NAME} — User API",
+            version=settings.APP_VERSION,
+        )
+
+    @app.get("/schema/mobile/openapi.json", include_in_schema=False)
+    async def mobile_openapi() -> Any:
+        return generate_audience_schema(
+            app,
+            audience="mobile",
+            title=f"{settings.APP_NAME} — Mobile API",
+            version=settings.APP_VERSION,
+        )
+
+    @app.get("/schema/admin/docs", include_in_schema=False)
+    async def admin_docs() -> HTMLResponse:
+        return get_swagger_ui_html(
+            openapi_url="/schema/admin/openapi.json",
+            title=f"{settings.APP_NAME} Admin — Swagger UI",
+            swagger_js_url="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js",
+            swagger_css_url="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css",
+        )
+
+    @app.get("/schema/user/docs", include_in_schema=False)
+    async def user_docs() -> HTMLResponse:
+        return get_swagger_ui_html(
+            openapi_url="/schema/user/openapi.json",
+            title=f"{settings.APP_NAME} User — Swagger UI",
+            swagger_js_url="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js",
+            swagger_css_url="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css",
+        )
+
+    @app.get("/schema/mobile/docs", include_in_schema=False)
+    async def mobile_docs() -> HTMLResponse:
+        return get_swagger_ui_html(
+            openapi_url="/schema/mobile/openapi.json",
+            title=f"{settings.APP_NAME} Mobile — Swagger UI",
+            swagger_js_url="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js",
+            swagger_css_url="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css",
+        )
+
     # Health Check
     @app.get("/health/live", tags=["System"], summary="Liveness probe")
     async def health_live() -> dict[str, str]:

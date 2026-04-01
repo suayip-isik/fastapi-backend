@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-# /docs ve /redoc için CSP gevşetilir
+# /docs, /redoc ve audience-specific schema docs için CSP gevşetilir
 DOCS_PATHS = {"/docs", "/redoc", "/openapi.json"}
 
 # HSTS sadece production'da anlamlı; diğer ortamlarda da eklenir ama tarayıcılar
@@ -65,8 +65,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         response = await call_next(request)
 
-        # /docs ve /redoc için CSP'yi gevşet
-        if request.url.path in DOCS_PATHS:
+        # /docs, /redoc ve /schema/*/docs endpoint'leri için CSP'yi gevşet
+        is_docs = request.url.path in DOCS_PATHS or request.url.path.startswith("/schema/")
+        if is_docs:
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
                 "script-src 'self' 'unsafe-inline' https://unpkg.com; "
