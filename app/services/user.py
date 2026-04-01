@@ -60,6 +60,11 @@ class UserService(AuditableMixin):
         await self._audit_log(AuditAction.USER_DEACTIVATED, user_id=user_id)
         return user
 
+    async def activate(self, user_id: UUID) -> User:
+        user = await self._repo.update(user_id, is_active=True)
+        await self._audit_log(AuditAction.USER_ACTIVATED, user_id=user_id)
+        return user
+
     async def change_role(self, user_id: UUID, role: UserRole) -> User:
         current = await self._repo.get_by_id_or_raise(user_id)
         updated = await self._repo.update(user_id, role=role)

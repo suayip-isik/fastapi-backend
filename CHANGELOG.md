@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `POST /api/v1/users/{user_id}/activate` — deaktif kullanıcıyı yeniden aktif eder (Admin only)
+- `PATCH /api/v1/users/{user_id}/role` — kullanıcı rolünü değiştirir; body: `{"role": "user"|"moderator"|"admin"}` (Admin only)
+- `AuditAction.USER_ACTIVATED` enum değeri ve ilgili Alembic migration (`e1f7a2c94b06`)
+- Self-action koruması: admin kendi hesabı üzerinde activate/deactivate/role-change yapamaz (HTTP 403)
 - TOTP / 2FA support (`POST /api/v1/auth/totp/setup|verify|disable`)
 - API Key authentication (`X-API-Key` header, `POST/GET/DELETE /api/v1/api-keys`)
 - In-app notification system (`/api/v1/notifications`)
@@ -34,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `DELETE /api/v1/users/{user_id}` artık self-action korumasına sahip (admin kendi hesabını deaktif edemez)
 - `LoginRequest` now accepts optional `totp_code` field
 - `get_current_user` dependency now accepts `X-API-Key` header in addition to Bearer token
 - `/health` endpoint now checks real DB, Redis, and Storage connectivity

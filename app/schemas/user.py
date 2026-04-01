@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
 
+from app.db.models.user import UserRole
+
 
 class UserResponse(BaseModel):
     id: UUID
@@ -25,3 +27,7 @@ class UpdateUserRequest(BaseModel):
     full_name: str | None = Field(default=None, max_length=255)
     username: str | None = Field(default=None, max_length=50)
     password: str | None = Field(default=None, min_length=8)
+
+
+class ChangeRoleRequest(BaseModel):
+    role: UserRole

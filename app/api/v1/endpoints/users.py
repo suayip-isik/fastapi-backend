@@ -12,10 +12,11 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import AdminDep, CurrentUserDep
+from app.core.exceptions import InsufficientPermissionsError
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.common import MessageResponse, PaginatedResponse
-from app.schemas.user import UpdateUserRequest, UserResponse
+from app.schemas.user import ChangeRoleRequest, UpdateUserRequest, UserResponse
 from app.services.audit import AuditService
 from app.services.user import UserService
 
@@ -71,8 +72,33 @@ async def get_user(user_id: UUID, _: AdminDep, service: UserServiceDep) -> User:
     return await service.get_by_id(user_id)
 
 
+@router.post("/{user_id}/activate", response_model=UserResponse)
+async def activate_user(user_id: UUID, current_user: AdminDep, service: UserServiceDep) -> User:
+    """Kullaniciyi aktif et. (Sadece Admin)"""
+    if user_id == current_user.id:
+        raise InsufficientPermissionsError("Kendi hesabınız üzerinde bu işlemi yapamazsınız.")
+    return await service.activate(user_id)
+
+
+@router.patch("/{user_id}/role", response_model=UserResponse)
+async def change_user_role(
+    user_id: UUID,
+    data: ChangeRoleRequest,
+    current_user: AdminDep,
+    service: UserServiceDep,
+) -> User:
+    """Kullanicinin rolunu degistir. (Sadece Admin)"""
+    if user_id == current_user.id:
+        raise InsufficientPermissionsError("Kendi hesabınız üzerinde bu işlemi yapamazsınız.")
+    return await service.change_role(user_id, data.role)
+
+
 @router.delete("/{user_id}", response_model=MessageResponse)
-async def deactivate_user(user_id: UUID, _: AdminDep, service: UserServiceDep) -> MessageResponse:
+async def deactivate_user(
+    user_id: UUID, current_user: AdminDep, service: UserServiceDep
+) -> MessageResponse:
     """Kullaniciyi deaktif et. (Sadece Admin)"""
+    if user_id == current_user.id:
+        raise InsufficientPermissionsError("Kendi hesabınız üzerinde bu işlemi yapamazsınız.")
     await service.deactivate(user_id)
     return MessageResponse(message="Kullanici deaktif edildi.")

@@ -487,13 +487,15 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 
 ### Kullanıcılar (`/users`)
 
-| Method | Path               | Açıklama                  | Auth  |
-| ------ | ------------------ | ------------------------- | ----- |
-| GET    | `/users/me`        | Mevcut kullanıcı profili  | Evet  |
-| PATCH  | `/users/me`        | Profili güncelle          | Evet  |
-| GET    | `/users`           | Tüm kullanıcıları listele | Admin |
-| GET    | `/users/{user_id}` | Belirli kullanıcıyı getir | Admin |
-| DELETE | `/users/{user_id}` | Kullanıcıyı deaktif et    | Admin |
+| Method | Path                        | Açıklama                  | Auth  |
+| ------ | --------------------------- | ------------------------- | ----- |
+| GET    | `/users/me`                 | Mevcut kullanıcı profili  | Evet  |
+| PATCH  | `/users/me`                 | Profili güncelle          | Evet  |
+| GET    | `/users`                    | Tüm kullanıcıları listele | Admin |
+| GET    | `/users/{user_id}`          | Belirli kullanıcıyı getir | Admin |
+| POST   | `/users/{user_id}/activate` | Kullanıcıyı aktif et      | Admin |
+| PATCH  | `/users/{user_id}/role`     | Kullanıcı rolünü değiştir | Admin |
+| DELETE | `/users/{user_id}`          | Kullanıcıyı deaktif et    | Admin |
 
 ### API Keys (`/api-keys`)
 
