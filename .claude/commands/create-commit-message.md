@@ -15,7 +15,7 @@ Based on the changes, write ONE commit message following these rules:
 - Format: `type: short description` (conventional commits)
 - Types: feat, fix, docs, chore, refactor, test, style, perf
 - Imperative mood, all lowercase, no trailing period
-- Max 250 characters
+- Max 72 characters
 - Do NOT use double quotes anywhere in the message
 - Do NOT include any author or co-author lines
 - Do NOT make a commit — only output the message
