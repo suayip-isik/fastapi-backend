@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
@@ -51,6 +52,19 @@ class UserResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class DeletedUserResponse(UserResponse):
+    """Soft-delete ile silinmiş kullanıcılar için response schema.
+
+    UserResponse'u genişletir; silinme zamanını da içerir.
+    Yalnızca `GET /users/deleted` (admin trash view) endpoint'inde kullanılır.
+
+    Attributes:
+        deleted_at: Kullanıcının silindiği zaman damgası.
+    """
+
+    deleted_at: datetime
+
+
 class UpdateUserRequest(BaseModel):
     """Kullanıcı bilgilerini güncelleme için request schema.
 
@@ -78,6 +92,23 @@ class UpdateUserRequest(BaseModel):
     full_name: str | None = Field(default=None, max_length=255)
     username: str | None = Field(default=None, max_length=50)
     password: str | None = Field(default=None, min_length=8, max_length=128)
+
+
+class UserStatsResponse(BaseModel):
+    """Kullanıcı istatistikleri response şeması.
+
+    Sistemdeki aktif, pasif ve toplam kullanıcı sayılarını döndürür.
+    Soft-delete ile silinmiş kullanıcılar sayımlara dahil edilmez.
+
+    Attributes:
+        total: Toplam kullanıcı sayısı (silinmişler hariç)
+        active: Aktif kullanıcı sayısı (is_active=True)
+        inactive: Pasif kullanıcı sayısı (is_active=False)
+    """
+
+    total: int = Field(description="Toplam kullanıcı sayısı (silinmişler hariç)")
+    active: int = Field(description="Aktif kullanıcı sayısı (is_active=True)")
+    inactive: int = Field(description="Pasif kullanıcı sayısı (is_active=False)")
 
 
 class ChangeRoleRequest(BaseModel):

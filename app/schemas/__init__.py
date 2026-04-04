@@ -2,7 +2,6 @@
 
 from app.schemas.auth import (
     LoginRequest,
-    OAuthCallbackRequest,
     RefreshRequest,
     RegisterRequest,
     TokenResponse,
@@ -15,7 +14,6 @@ __all__ = [
     "LoginRequest",
     "TokenResponse",
     "RefreshRequest",
-    "OAuthCallbackRequest",
     "UserResponse",
     "UpdateUserRequest",
     "PaginatedResponse",

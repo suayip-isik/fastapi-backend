@@ -6,7 +6,7 @@
 [![Tests](../../actions/workflows/test.yml/badge.svg)](../../actions/workflows/test.yml)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 
-FastAPI tabanlı, production kullanımına hazır bir backend boilerplate. Katmanlı mimari, async PostgreSQL, Redis, S3 uyumlu depolama, WebSocket, 2FA, OAuth2, audit log ve daha fazlasını içerir.
+FastAPI tabanlı, production kullanımına hazır bir backend boilerplate. Katmanlı mimari, async PostgreSQL, Redis, S3 uyumlu depolama, WebSocket, 2FA, audit log ve daha fazlasını içerir.
 
 ---
 
@@ -17,7 +17,6 @@ FastAPI tabanlı, production kullanımına hazır bir backend boilerplate. Katma
 | Özellik           | Açıklama                                                       |
 | ----------------- | -------------------------------------------------------------- |
 | **JWT RS256**     | Private/public key çifti ile imzalanmış access & refresh token |
-| **OAuth2**        | Google ve GitHub sosyal login desteği                          |
 | **TOTP/2FA**      | pyotp ile RFC 6238 uyumlu iki faktörlü doğrulama               |
 | **API Key**       | M2M entegrasyonları için `X-API-Key` header desteği            |
 | **Rate Limiting** | Redis-backed sliding window rate limiting                      |
@@ -36,7 +35,7 @@ FastAPI tabanlı, production kullanımına hazır bir backend boilerplate. Katma
 - **SQLAdmin** entegrasyonu ile görsel veritabanı yönetimi
 - **Role-Based Access**: Sadece `ADMIN` rolüne sahip kullanıcılar erişebilir
 - **JWT Authentication**: Admin panel için ayrı authentication backend
-- **Model Yönetimi**: User, AuditLog, Notification, APIKey, OAuthAccount modelleri
+- **Model Yönetimi**: User, AuditLog, Notification, APIKey modelleri
 - **Güvenlik**: Production validator ile zayıf admin şifreleri reddedilir
 
 ### 🔌 WebSocket Entegrasyonu
@@ -114,10 +113,9 @@ FastAPI tabanlı, production kullanımına hazır bir backend boilerplate. Katma
 | Migrations       | Alembic                                           |
 | Cache / Queue    | Redis 7 (rate limiting, token blacklist, ARQ)     |
 | Background Jobs  | ARQ (Redis-based async task queue)                |
-| Auth             | OAuth2 + JWT RS256 + TOTP/2FA + API Key           |
+| Auth             | JWT RS256 + TOTP/2FA + API Key                    |
 | 2FA              | pyotp 2.9.0 (TOTP tabanlı iki faktörlü doğrulama) |
-| OAuth Providers  | Google, GitHub                                    |
-| HTTP Client      | httpx 0.27.2 (OAuth ve harici API çağrıları)      |
+| HTTP Client      | httpx 0.27.2 (harici API çağrıları)               |
 | Depolama         | S3-uyumlu (MinIO lokal / AWS S3 prod)             |
 | WebSocket        | FastAPI native (room tabanlı)                     |
 | Rate Limiting    | slowapi 0.1.9 (Redis-backed, endpoint-specific)   |
@@ -149,7 +147,7 @@ fastapi-backend/
 │   │   └── v1/
 │   │       ├── router.py               # Ana router (tüm endpoint'leri birleştirir)
 │   │       └── endpoints/
-│   │           ├── auth.py             # Kayıt, giriş, çıkış, OAuth, e-posta doğrulama, şifre sıfırlama
+│   │           ├── auth.py             # Kayıt, giriş, çıkış, e-posta doğrulama, şifre sıfırlama
 │   │           ├── totp.py             # 2FA kurulum, doğrulama, devre dışı bırakma
 │   │           ├── users.py            # Kullanıcı profili ve yönetimi
 │   │           ├── api_keys.py         # API key oluşturma, listeleme, iptal
@@ -171,15 +169,13 @@ fastapi-backend/
 │   │   ├── session.py                  # Async DB session factory ve engine
 │   │   ├── models/
 │   │   │   ├── base.py                 # BaseModel (UUID PK, created_at, updated_at)
-│   │   │   ├── user.py                 # User modeli (rol, TOTP, OAuth ilişkileri)
-│   │   │   ├── oauth_account.py        # OAuth hesap bağlantıları
+│   │   │   ├── user.py                 # User modeli (rol, TOTP)
 │   │   │   ├── api_key.py              # API key saklama (bcrypt hash)
 │   │   │   ├── audit_log.py            # Denetim kayıtları
 │   │   │   └── notification.py         # Uygulama içi bildirimler
 │   │   └── repositories/
 │   │       ├── base.py                 # Generic BaseRepository[T] (get_page window fn)
 │   │       ├── user.py                 # UserRepository
-│   │       ├── oauth_account.py        # OAuthAccountRepository (provider upsert)
 │   │       ├── api_key.py              # APIKeyRepository
 │   │       ├── audit_log.py            # AuditLogRepository
 │   │       └── notification.py         # NotificationRepository
@@ -187,7 +183,6 @@ fastapi-backend/
 │   │   ├── base.py                     # AuditableMixin (audit log paylaşımlı helper)
 │   │   ├── _keys.py                    # Redis key sabitleri (magic string'leri önler)
 │   │   ├── auth.py                     # AuthService — kayıt, giriş, çıkış, token yönetimi
-│   │   ├── oauth.py                    # OAuthService — Google ve GitHub OAuth akışları
 │   │   ├── account.py                  # AccountService — e-posta doğrulama, şifre sıfırlama
 │   │   ├── user.py                     # UserService — kullanıcı CRUD + sayfalama
 │   │   ├── api_key.py                  # APIKeyService — key oluşturma, doğrulama, iptal
@@ -228,7 +223,6 @@ fastapi-backend/
 │   ├── integration/                    # Integration testler (gerçek DB kullanır)
 │   │   ├── test_auth.py               # Kayıt, giriş, çıkış, token, e-posta, şifre sıfırlama
 │   │   ├── test_users.py              # Profil, şifre değiştirme, admin yönetimi
-│   │   ├── test_oauth.py              # Google ve GitHub OAuth akışları
 │   │   ├── test_new_features.py       # TOTP/2FA, API keys, bildirimler
 │   │   ├── test_uploads.py            # Dosya yükleme/silme, sahiplik kontrolü
 │   │   ├── test_websocket.py          # WebSocket auth, ping/pong, broadcast
@@ -462,17 +456,6 @@ Tüm değerleri `.env.example`'dan `.env`'e kopyaladıktan sonra ihtiyacına gö
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30`                 | Access token geçerlilik süresi  | Hayır   |
 | `REFRESH_TOKEN_EXPIRE_DAYS`   | `30`                 | Refresh token geçerlilik süresi | Hayır   |
 
-### OAuth2 Sağlayıcıları
-
-| Değişken               | Örnek Değer                                         | Açıklama               |
-| ---------------------- | --------------------------------------------------- | ---------------------- |
-| `GOOGLE_CLIENT_ID`     | (Google API Console'dan al)                         | Google OAuth Client ID |
-| `GOOGLE_CLIENT_SECRET` | (Google API Console'dan al)                         | Google OAuth Secret    |
-| `GOOGLE_REDIRECT_URI`  | `http://localhost:8000/api/v1/auth/google/callback` | Google callback URL    |
-| `GITHUB_CLIENT_ID`     | (GitHub App'ten al)                                 | GitHub OAuth Client ID |
-| `GITHUB_CLIENT_SECRET` | (GitHub App'ten al)                                 | GitHub OAuth Secret    |
-| `GITHUB_REDIRECT_URI`  | `http://localhost:8000/api/v1/auth/github/callback` | GitHub callback URL    |
-
 ### Depolama (S3 / MinIO)
 
 | Değişken               | Örnek Değer                                    | Açıklama                               | Zorunlu |
@@ -533,9 +516,9 @@ Tüm değerleri `.env.example`'dan `.env`'e kopyaladıktan sonra ihtiyacına gö
 
 Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt şemaları ve deneme için: **http://localhost:8000/docs**
 
-> **Toplam:** 44 endpoint (Auth: 15, TOTP: 4, Users: 9, API Keys: 3, Notifications: 5, Uploads: 2, Audit Logs: 3, WebSocket: 1, Health: 2)
+> **Toplam:** 45 endpoint (Auth: 15, TOTP: 4, Users: 10, API Keys: 3, Notifications: 5, Uploads: 2, Audit Logs: 3, WebSocket: 1, Health: 2)
 
-### 1. Auth (`/auth`) — 15 endpoint
+### 1. Auth (`/auth`) — 11 endpoint
 
 | Method | Path                        | Açıklama                                                          | Auth  |
 | ------ | --------------------------- | ----------------------------------------------------------------- | ----- |
@@ -544,10 +527,6 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 | POST   | `/auth/totp-challenge`      | TOTP doğrulama — adım 2 (partial_token + kod ile tamamla)         | Hayır |
 | POST   | `/auth/refresh`             | Access token yenile (rotation ile)                                | Hayır |
 | POST   | `/auth/logout`              | Çıkış (token blacklist'e eklenir)                                 | Evet  |
-| GET    | `/auth/google`              | Google OAuth akışını başlat                                       | Hayır |
-| GET    | `/auth/google/callback`     | Google OAuth callback                                             | Hayır |
-| GET    | `/auth/github`              | GitHub OAuth akışını başlat                                       | Hayır |
-| GET    | `/auth/github/callback`     | GitHub OAuth callback                                             | Hayır |
 | POST   | `/auth/verify-email`        | E-posta adresini doğrula                                          | Hayır |
 | POST   | `/auth/resend-verification` | Doğrulama e-postasını tekrar gönder                               | Hayır |
 | POST   | `/auth/forgot-password`     | Şifre sıfırlama e-postası gönder                                  | Hayır |
@@ -564,19 +543,20 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 | POST   | `/auth/totp/disable`            | 2FA'yı devre dışı bırak                              | Evet |
 | GET    | `/auth/totp/backup-codes/count` | Kalan yedek kod sayısını getir                       | Evet |
 
-### 3. Kullanıcılar (`/users`) — 9 endpoint
+### 3. Kullanıcılar (`/users`) — 10 endpoint
 
-| Method | Path                          | Açıklama                        | Auth  |
-| ------ | ----------------------------- | ------------------------------- | ----- |
-| GET    | `/users/me`                   | Mevcut kullanıcı profili        | Evet  |
-| PATCH  | `/users/me`                   | Profili güncelle                | Evet  |
-| GET    | `/users`                      | Tüm kullanıcıları listele       | Admin |
-| GET    | `/users/{user_id}`            | Belirli kullanıcıyı getir       | Admin |
-| POST   | `/users/{user_id}/activate`   | Kullanıcıyı aktif et            | Admin |
-| POST   | `/users/{user_id}/deactivate` | Kullanıcıyı deaktif et          | Admin |
-| PATCH  | `/users/{user_id}/role`       | Kullanıcı rolünü değiştir       | Admin |
-| DELETE | `/users/{user_id}`            | Kullanıcıyı soft-delete et      | Admin |
-| POST   | `/users/{user_id}/restore`    | Soft-delete kullanıcıyı geri al | Admin |
+| Method | Path                          | Açıklama                                    | Auth  |
+| ------ | ----------------------------- | ------------------------------------------- | ----- |
+| GET    | `/users/me`                   | Mevcut kullanıcı profili                    | Evet  |
+| PATCH  | `/users/me`                   | Profili güncelle                            | Evet  |
+| GET    | `/users`                      | Tüm kullanıcıları listele                   | Admin |
+| GET    | `/users/stats`                | Aktif/pasif/toplam kullanıcı istatistikleri | Admin |
+| GET    | `/users/{user_id}`            | Belirli kullanıcıyı getir                   | Admin |
+| POST   | `/users/{user_id}/activate`   | Kullanıcıyı aktif et                        | Admin |
+| POST   | `/users/{user_id}/deactivate` | Kullanıcıyı deaktif et                      | Admin |
+| PATCH  | `/users/{user_id}/role`       | Kullanıcı rolünü değiştir                   | Admin |
+| DELETE | `/users/{user_id}`            | Kullanıcıyı soft-delete et                  | Admin |
+| POST   | `/users/{user_id}/restore`    | Soft-delete kullanıcıyı geri al             | Admin |
 
 ### 4. API Keys (`/api-keys`) — 3 endpoint
 
@@ -668,10 +648,9 @@ Yalnızca `ADMIN` rolüne sahip kullanıcılar giriş yapabilir. Giriş bilgiler
 
 **Mevcut View'lar:**
 
-| View            | İzinler     |
-| --------------- | ----------- |
-| Kullanıcılar    | Tam CRUD    |
-| OAuth Hesapları | Salt okunur |
+| View         | İzinler  |
+| ------------ | -------- |
+| Kullanıcılar | Tam CRUD |
 
 **Yeni view eklemek:** `app/admin/views.py`'e `ModelView` subclass'ı ekle — otomatik kaydedilir.
 
@@ -850,11 +829,6 @@ await audit_service.log(
     metadata={"method": "password", "success": True}
 )
 ```
-
-### OAuth2 & CSRF Koruması
-
-- **OAuth2** — Google ve GitHub; `OAuthAccount` tablosuna kaydedilir, sağlayıcı izolasyonu sağlanır
-- **OAuth CSRF Koruması** — State parametresi: her OAuth isteğinde kriptografik rastgele bir `state` üretilir, Redis'te 10 dakika TTL ile saklanır; callback'te atomik `GETDEL` ile tek seferde doğrulanıp tüketilir — race condition olmadan replay saldırılarına karşı koruma
 
 ### Diğer Güvenlik Önlemleri
 

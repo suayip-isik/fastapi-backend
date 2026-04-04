@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.db.models.user import User, UserRole
-    from app.schemas.user import UpdateUserRequest, UserResponse
+    from app.schemas.user import UpdateUserRequest, UserResponse, UserStatsResponse
     from app.services.audit import AuditService
 
 
@@ -107,6 +107,21 @@ class UserService(AuditableMixin):
             keys.append(USER_EMAIL_CACHE_KEY.format(email))
         await CacheService.delete(*keys)
 
+    async def get_stats(self) -> UserStatsResponse:
+        """Sistemdeki kullanıcı istatistiklerini döndürür.
+
+        Tek veritabanı sorgusuyla aktif, pasif ve toplam kullanıcı
+        sayılarını hesaplar. Soft-delete ile silinmiş kullanıcılar
+        sayımlara dahil edilmez.
+
+        Returns:
+            Aktif, pasif ve toplam kullanıcı sayılarını içeren şema.
+        """
+        from app.schemas.user import UserStatsResponse as _UserStatsResponse
+
+        active, inactive, total = await self._repo.count_stats()
+        return _UserStatsResponse(total=total, active=active, inactive=inactive)
+
     async def get_all(self, page: int = 1, size: int = 20) -> tuple[list[User], int]:
         """Tüm kullanıcıları sayfalanmış şekilde listeler.
 
@@ -120,6 +135,77 @@ class UserService(AuditableMixin):
                 - Toplam kullanıcı sayısı (pagination için).
         """
         return await self._repo.get_page(offset=(page - 1) * size, limit=size)
+
+    async def search(
+        self,
+        *,
+        page: int = 1,
+        size: int = 20,
+        q: str | None = None,
+        role: UserRole | None = None,
+        is_active: bool | None = None,
+        is_verified: bool | None = None,
+    ) -> tuple[list[User], int]:
+        """Filtrelere göre aktif kullanıcıları sayfalanmış şekilde arar.
+
+        Arama terimi email, kullanıcı adı ve tam ad alanlarında ILIKE ile
+        eşleştirilir. Filtreler opsiyoneldir; hiçbiri verilmezse tüm aktif
+        kullanıcıları döndürür.
+
+        Args:
+            page: Sayfa numarası (1'den başlar).
+            size: Sayfa başına kayıt sayısı.
+            q: Serbest metin arama terimi.
+            role: Rol filtresi.
+            is_active: Aktiflik durumu filtresi.
+            is_verified: Doğrulama durumu filtresi.
+
+        Returns:
+            (users, total) tuple.
+        """
+        return await self._repo.search_page(
+            q=q,
+            role=role,
+            is_active=is_active,
+            is_verified=is_verified,
+            offset=(page - 1) * size,
+            limit=size,
+        )
+
+    async def search_deleted(
+        self,
+        *,
+        page: int = 1,
+        size: int = 20,
+        q: str | None = None,
+        role: UserRole | None = None,
+        is_active: bool | None = None,
+        is_verified: bool | None = None,
+    ) -> tuple[list[User], int]:
+        """Soft-delete ile silinmiş kullanıcıları sayfalanmış şekilde arar.
+
+        Silinme zamanına göre azalan sırada döner (en son silinen önce).
+        Filtreler opsiyoneldir.
+
+        Args:
+            page: Sayfa numarası (1'den başlar).
+            size: Sayfa başına kayıt sayısı.
+            q: Serbest metin arama terimi.
+            role: Rol filtresi.
+            is_active: Silinmeden önceki aktiflik durumu filtresi.
+            is_verified: Doğrulama durumu filtresi.
+
+        Returns:
+            (users, total) tuple.
+        """
+        return await self._repo.search_deleted_page(
+            q=q,
+            role=role,
+            is_active=is_active,
+            is_verified=is_verified,
+            offset=(page - 1) * size,
+            limit=size,
+        )
 
     async def update(self, user_id: UUID, data: UpdateUserRequest) -> User:
         """Kullanıcı bilgilerini günceller.

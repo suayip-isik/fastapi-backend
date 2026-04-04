@@ -230,7 +230,7 @@ class BusinessRuleError(AppError):
 class ExternalServiceError(AppError):
     """Dış servis (API, webhook vb.) çağrısı başarısız olduğunda fırlatılır.
 
-    OAuth provider, payment gateway, email service gibi external API'ler
+    Payment gateway, email service gibi external API'ler
     timeout, 5xx error veya network hatası verdiğinde kullanılır.
 
     Note:
@@ -239,8 +239,7 @@ class ExternalServiceError(AppError):
         - Circuit breaker pattern önerilir
 
     Example:
-        >>> # Google OAuth API down
-        >>> raise ExternalServiceError("Google OAuth servisi yanıt vermiyor")
+        >>> raise ExternalServiceError("Email servisi yanıt vermiyor")
     """
 
     status_code = status.HTTP_502_BAD_GATEWAY

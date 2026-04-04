@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     - Uygulama temel ayarları (isim, versiyon, debug modu)
     - Veritabanı bağlantı bilgileri (PostgreSQL)
     - Cache ve task queue (Redis)
-    - Güvenlik (JWT, OAuth2)
+    - Güvenlik (JWT)
     - Dosya yükleme ve storage (MinIO/S3)
     - Email gönderimi (SMTP)
     - Rate limiting kuralları
@@ -202,15 +202,6 @@ class Settings(BaseSettings):
             '-----BEGIN PUBLIC KEY-----'
         """
         return self.JWT_PUBLIC_KEY_PATH.read_text()
-
-    # ── OAuth2 ────────────────────────────────────────────────────────────────
-    GOOGLE_CLIENT_ID: str = ""
-    GOOGLE_CLIENT_SECRET: str = ""
-    GOOGLE_REDIRECT_URI: str = ""
-
-    GITHUB_CLIENT_ID: str = ""
-    GITHUB_CLIENT_SECRET: str = ""
-    GITHUB_REDIRECT_URI: str = ""
 
     # ── Storage ───────────────────────────────────────────────────────────────
     STORAGE_BACKEND: str = "minio"  # minio | s3 | local

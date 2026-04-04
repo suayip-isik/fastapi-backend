@@ -3,7 +3,6 @@ Kimlik Doğrulama (Auth) Endpoint'leri.
 
 Bu modül, kullanıcı kimlik doğrulama işlemlerini yönetir:
 - Email/şifre ile kayıt ve giriş
-- OAuth2 (Google, GitHub) ile sosyal giriş
 - JWT token yönetimi (access/refresh)
 - E-posta doğrulama ve şifre sıfırlama
 
@@ -15,7 +14,6 @@ Not:
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Security
-from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,8 +31,8 @@ from app.schemas.auth import (
     RegisterRequest,
     ResendVerificationRequest,
     ResetPasswordRequest,
-    TOTPChallengeRequest,
     TokenResponse,
+    TOTPChallengeRequest,
     VerifyEmailRequest,
 )
 from app.schemas.common import MessageResponse
@@ -42,7 +40,6 @@ from app.schemas.user import UserResponse
 from app.services.account import AccountService
 from app.services.audit import AuditService
 from app.services.auth import AuthService
-from app.services.oauth import OAuthService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -66,14 +63,6 @@ def get_auth_service(
     return AuthService(db, audit)
 
 
-def get_oauth_service(
-    db: Annotated[AsyncSession, Depends(get_db)],
-    audit: AuditServiceDep,
-) -> OAuthService:
-    """get_oauth_service işlemini gerçekleştirir."""
-    return OAuthService(db, audit)
-
-
 def get_account_service(
     db: Annotated[AsyncSession, Depends(get_db)],
     audit: AuditServiceDep,
@@ -83,7 +72,6 @@ def get_account_service(
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
-OAuthServiceDep = Annotated[OAuthService, Depends(get_oauth_service)]
 AccountServiceDep = Annotated[AccountService, Depends(get_account_service)]
 
 
@@ -277,158 +265,6 @@ async def logout(
     """
     await service.logout(credentials.credentials, data.refresh_token, user_id=current_user.id)
     return MessageResponse(message="Basariyla cikis yapildi.")
-
-
-# ── Google OAuth ──────────────────────────────────────────────────────────────
-
-
-@router.get("/google")
-async def google_login(service: OAuthServiceDep) -> RedirectResponse:
-    """
-    Google OAuth2 kimlik doğrulama akışını başlatır.
-
-    Kullanıcıyı Google'ın yetkilendirme sayfasına yönlendirir.
-    Kullanıcı izin verdikten sonra `/google/callback` endpoint'ine
-    authorization code ile geri döner.
-
-    Args:
-        service: OAuth servisi.
-
-    Returns:
-        RedirectResponse: Google OAuth yetkilendirme URL'sine yönlendirme.
-
-    Raises:
-        HTTPException 500: OAuth yapılandırması eksik veya hatalı.
-
-    Note:
-        Bu endpoint genellikle frontend tarafından yeni bir pencerede açılır.
-        Callback sonrası token'lar frontend'e iletilir.
-
-    Example:
-        ```bash
-        # Tarayıcıda aç veya curl ile URL'yi al
-        curl -I http://localhost:8000/api/v1/auth/google
-
-        # Yanıt: 307 Redirect -> https://accounts.google.com/o/oauth2/v2/auth?...
-        ```
-    """
-    return RedirectResponse(await service.get_google_auth_url())
-
-
-@router.get("/google/callback", response_model=TokenResponse)
-async def google_callback(code: str, state: str, service: OAuthServiceDep) -> TokenResponse:
-    """
-    Google OAuth2 callback endpoint'i.
-
-    Google yetkilendirme sonrası bu endpoint'e yönlendirme yapılır.
-    Authorization code, access token ile değiştirilir ve kullanıcı
-    bilgileri alınır. Kullanıcı yoksa otomatik oluşturulur (upsert).
-
-    Args:
-        code: Google'dan alınan authorization code.
-        state: CSRF koruması için state parametresi.
-        service: OAuth servisi.
-
-    Returns:
-        TokenResponse: JWT token çifti.
-            - access_token (str): Erişim token'ı (30 dakika).
-            - refresh_token (str): Yenileme token'ı (30 gün).
-            - token_type (str): "bearer".
-
-    Raises:
-        HTTPException 400: Geçersiz state parametresi (CSRF koruması).
-        HTTPException 400: Geçersiz veya süresi dolmuş authorization code.
-        HTTPException 400: Google'dan e-posta alınamadı.
-        HTTPException 500: Google API ile iletişim hatası.
-
-    Note:
-        Bu endpoint doğrudan çağrılmamalı, Google tarafından çağrılır.
-        E-posta adresi zaten kayıtlıysa, hesaplar otomatik bağlanır.
-
-    Example:
-        ```bash
-        # Bu endpoint Google tarafından çağrılır
-        # Örnek callback URL:
-        # /api/v1/auth/google/callback?code=4/0AX4XfWh...&state=abc123
-        ```
-    """
-    return await service.google_callback(code, state)
-
-
-# ── GitHub OAuth ──────────────────────────────────────────────────────────────
-
-
-@router.get("/github")
-async def github_login(service: OAuthServiceDep) -> RedirectResponse:
-    """
-    GitHub OAuth2 kimlik doğrulama akışını başlatır.
-
-    Kullanıcıyı GitHub'ın yetkilendirme sayfasına yönlendirir.
-    Kullanıcı izin verdikten sonra `/github/callback` endpoint'ine
-    authorization code ile geri döner.
-
-    Args:
-        service: OAuth servisi.
-
-    Returns:
-        RedirectResponse: GitHub OAuth yetkilendirme URL'sine yönlendirme.
-
-    Raises:
-        HTTPException 500: OAuth yapılandırması eksik veya hatalı.
-
-    Note:
-        GitHub OAuth için `user:email` scope'u istenir.
-        Bu, kullanıcının birincil e-posta adresine erişim sağlar.
-
-    Example:
-        ```bash
-        # Tarayıcıda aç veya curl ile URL'yi al
-        curl -I http://localhost:8000/api/v1/auth/github
-
-        # Yanıt: 307 Redirect -> https://github.com/login/oauth/authorize?...
-        ```
-    """
-    return RedirectResponse(await service.get_github_auth_url())
-
-
-@router.get("/github/callback", response_model=TokenResponse)
-async def github_callback(code: str, state: str, service: OAuthServiceDep) -> TokenResponse:
-    """
-    GitHub OAuth2 callback endpoint'i.
-
-    GitHub yetkilendirme sonrası bu endpoint'e yönlendirme yapılır.
-    Authorization code, access token ile değiştirilir ve kullanıcı
-    bilgileri alınır. Kullanıcı yoksa otomatik oluşturulur (upsert).
-
-    Args:
-        code: GitHub'dan alınan authorization code.
-        state: CSRF koruması için state parametresi.
-        service: OAuth servisi.
-
-    Returns:
-        TokenResponse: JWT token çifti.
-            - access_token (str): Erişim token'ı (30 dakika).
-            - refresh_token (str): Yenileme token'ı (30 gün).
-            - token_type (str): "bearer".
-
-    Raises:
-        HTTPException 400: Geçersiz state parametresi (CSRF koruması).
-        HTTPException 400: Geçersiz veya süresi dolmuş authorization code.
-        HTTPException 400: GitHub'dan e-posta alınamadı (e-posta gizli olabilir).
-        HTTPException 500: GitHub API ile iletişim hatası.
-
-    Note:
-        Bu endpoint doğrudan çağrılmamalı, GitHub tarafından çağrılır.
-        E-posta adresi zaten kayıtlıysa, hesaplar otomatik bağlanır.
-
-    Example:
-        ```bash
-        # Bu endpoint GitHub tarafından çağrılır
-        # Örnek callback URL:
-        # /api/v1/auth/github/callback?code=abc123def456&state=xyz789
-        ```
-    """
-    return await service.github_callback(code, state)
 
 
 # ── Email Verification ────────────────────────────────────────────────────────

@@ -8,16 +8,22 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import AdminDep, CurrentUserDep
 from app.api.dependencies.services import get_audit_service
 from app.core.exceptions import InsufficientPermissionsError
-from app.db.models.user import User
+from app.db.models.user import User, UserRole
 from app.db.session import get_db
 from app.schemas.common import MessageResponse, PaginatedResponse, calculate_pages
-from app.schemas.user import ChangeRoleRequest, UpdateUserRequest, UserResponse
+from app.schemas.user import (
+    ChangeRoleRequest,
+    DeletedUserResponse,
+    UpdateUserRequest,
+    UserResponse,
+    UserStatsResponse,
+)
 from app.services.audit import AuditService
 from app.services.user import UserService
 
@@ -81,24 +87,114 @@ async def update_me(
 async def list_users(
     _: AdminDep,
     service: UserServiceDep,
-    page: int = 1,
-    size: int = 20,
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    q: str | None = Query(
+        None,
+        min_length=1,
+        max_length=100,
+        description="email, kullanıcı adı veya tam ad içinde arama",
+    ),
+    role: UserRole | None = Query(None, description="Rol filtresi"),
+    is_active: bool | None = Query(None, description="Aktiflik durumu filtresi"),
+    is_verified: bool | None = Query(None, description="Email doğrulama durumu filtresi"),
 ) -> PaginatedResponse[UserResponse]:
-    """Sistemdeki tüm kullanıcıları sayfalanmış şekilde listeler.
+    """Sistemdeki aktif kullanıcıları filtreler ve sayfalanmış şekilde listeler.
 
     Sadece admin yetkisine sahip kullanıcılar bu endpoint'e erişebilir.
-    Sonuçlar sayfa numarası ve boyutuna göre filtrelenir.
+    Soft-delete ile silinmiş kullanıcılar bu liste dışındadır; bunlar için
+    `GET /users/deleted` kullanılmalıdır.
 
     Args:
         _: Admin yetkisi kontrolü için kullanılan bağımlılık.
         service: Kullanıcı işlemlerini yöneten servis.
         page: Görüntülenecek sayfa numarası (varsayılan: 1).
-        size: Sayfa başına kullanıcı sayısı (varsayılan: 20).
+        size: Sayfa başına kullanıcı sayısı (varsayılan: 20, maks: 100).
+        q: Serbest metin arama terimi — email, kullanıcı adı ve tam ad alanlarında aranır.
+        role: Filtrelenecek kullanıcı rolü.
+        is_active: True = sadece aktif, False = sadece pasif kullanıcılar.
+        is_verified: True = sadece doğrulanmış, False = doğrulanmamış kullanıcılar.
 
     Returns:
         Sayfalanmış kullanıcı listesi (items, total, page, size, pages).
     """
-    users, total = await service.get_all(page=page, size=size)
+    q = q.strip() or None if q else None
+    users, total = await service.search(
+        page=page,
+        size=size,
+        q=q,
+        role=role,
+        is_active=is_active,
+        is_verified=is_verified,
+    )
+    return PaginatedResponse(
+        items=users, total=total, page=page, size=size, pages=calculate_pages(total, size)
+    )
+
+
+@router.get("/stats", response_model=UserStatsResponse)
+async def get_user_stats(_: AdminDep, service: UserServiceDep) -> UserStatsResponse:
+    """Kullanıcı istatistiklerini döndürür.
+
+    Sistemdeki aktif, pasif ve toplam kullanıcı sayısını döndürür.
+    Soft-delete ile silinmiş kullanıcılar sayımlara dahil edilmez.
+    Sadece admin yetkisine sahip kullanıcılar bu endpoint'e erişebilir.
+
+    Args:
+        _: Admin yetkisi kontrolü için kullanılan bağımlılık.
+        service: Kullanıcı işlemlerini yöneten servis.
+
+    Returns:
+        Aktif, pasif ve toplam kullanıcı sayılarını içeren istatistik verisi.
+    """
+    return await service.get_stats()
+
+
+@router.get("/deleted", response_model=PaginatedResponse[DeletedUserResponse])
+async def list_deleted_users(
+    _: AdminDep,
+    service: UserServiceDep,
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    q: str | None = Query(
+        None,
+        min_length=1,
+        max_length=100,
+        description="email, kullanıcı adı veya tam ad içinde arama",
+    ),
+    role: UserRole | None = Query(None, description="Rol filtresi"),
+    is_active: bool | None = Query(None, description="Silinmeden önceki aktiflik durumu filtresi"),
+    is_verified: bool | None = Query(None, description="Email doğrulama durumu filtresi"),
+) -> PaginatedResponse[DeletedUserResponse]:
+    """Soft-delete ile silinmiş kullanıcıları listeler (admin trash view).
+
+    Sadece admin yetkisine sahip kullanıcılar bu endpoint'e erişebilir.
+    Sonuçlar silinme zamanına göre azalan sırada döner (en son silinen önce).
+    Silinen kullanıcıları geri yüklemek için `POST /users/{user_id}/restore`
+    kullanılmalıdır.
+
+    Args:
+        _: Admin yetkisi kontrolü için kullanılan bağımlılık.
+        service: Kullanıcı işlemlerini yöneten servis.
+        page: Görüntülenecek sayfa numarası (varsayılan: 1).
+        size: Sayfa başına kullanıcı sayısı (varsayılan: 20, maks: 100).
+        q: Serbest metin arama terimi — email, kullanıcı adı ve tam ad alanlarında aranır.
+        role: Filtrelenecek kullanıcı rolü.
+        is_active: Silinmeden önceki aktiflik durumu filtresi.
+        is_verified: Doğrulama durumu filtresi.
+
+    Returns:
+        Sayfalanmış silinen kullanıcı listesi (deleted_at dahil).
+    """
+    q = q.strip() or None if q else None
+    users, total = await service.search_deleted(
+        page=page,
+        size=size,
+        q=q,
+        role=role,
+        is_active=is_active,
+        is_verified=is_verified,
+    )
     return PaginatedResponse(
         items=users, total=total, page=page, size=size, pages=calculate_pages(total, size)
     )

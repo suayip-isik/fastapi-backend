@@ -8,7 +8,6 @@ from __future__ import annotations
 from sqladmin import ModelView
 
 from app.db.models.audit_log import AuditLog
-from app.db.models.oauth_account import OAuthAccount
 from app.db.models.user import User
 
 
@@ -90,65 +89,6 @@ class UserAdmin(ModelView, model=User):
     can_delete = True
     can_view_details = True
     can_export = True
-
-
-class OAuthAccountAdmin(ModelView, model=OAuthAccount):
-    """OAuthAccount modeli için SQLAdmin panel view.
-
-    OAuth hesaplarını (Google, GitHub) görüntüleme ve silme işlemlerini
-    sağlar. Güvenlik nedeniyle manuel oluşturma ve düzenleme kapalıdır.
-
-    Attributes:
-        column_list: Listede gösterilen kolonlar (id, user_id, provider, email, created_at)
-        column_searchable_list: Arama yapılabilen alanlar (email, provider)
-        column_filters: Filtreleme için kullanılabilecek alanlar (provider)
-        column_details_list: Detay sayfasında görünen kolonlar
-        form_excluded_columns: Formda görünmeyecek hassas alanlar (access_token, refresh_token)
-
-    Note:
-        - OAuth hesapları manuel oluşturulamaz (can_create=False)
-        - Token bilgileri düzenlenemez (can_edit=False)
-        - Güvenlik nedeniyle export yapılamaz (can_export=False)
-        - Sadece görüntüleme ve silme aktif
-    """
-
-    name = "OAuth Hesabı"
-    name_plural = "OAuth Hesapları"
-    icon = "fa-solid fa-key"
-
-    column_list = [
-        OAuthAccount.id,
-        OAuthAccount.user_id,
-        OAuthAccount.provider,
-        OAuthAccount.email,
-        OAuthAccount.created_at,
-    ]
-
-    column_searchable_list = [OAuthAccount.email, OAuthAccount.provider]
-    column_filters = [OAuthAccount.provider]
-    column_sortable_list = [OAuthAccount.provider, OAuthAccount.created_at]
-
-    column_details_list = [
-        OAuthAccount.id,
-        OAuthAccount.user_id,
-        OAuthAccount.provider,
-        OAuthAccount.provider_user_id,
-        OAuthAccount.email,
-        OAuthAccount.created_at,
-        OAuthAccount.updated_at,
-    ]
-
-    # Token'lar form'da görünmesin
-    form_excluded_columns = [
-        OAuthAccount.access_token,
-        OAuthAccount.refresh_token,
-    ]
-
-    can_create = False  # OAuth hesapları manuel oluşturulmaz
-    can_edit = False  # Token'lar manuel düzenlenmez
-    can_delete = True
-    can_view_details = True
-    can_export = False  # Token bilgileri export edilmesin
 
 
 class AuditLogAdmin(ModelView, model=AuditLog):

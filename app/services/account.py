@@ -74,7 +74,7 @@ class AccountService(AuditableMixin):
         """Şifre sıfırlama e-postası gönder. Kullanıcı yoksa sessizce döner."""
         user = await self._repo.get_active_by_email(email)
         if not user or not user.hashed_password:
-            return  # OAuth kullanıcısı ya da var olmayan e-posta — user enumeration yok
+            return  # Şifresi olmayan ya da var olmayan e-posta — user enumeration yok
 
         token = secrets.token_urlsafe(32)
         redis = await get_redis_client()
@@ -156,7 +156,6 @@ class AccountService(AuditableMixin):
         """Kullanıcının mevcut şifresini doğrulayarak yeni şifre belirler.
 
         Şifre değişikliği için mevcut şifrenin doğru girilmesi zorunludur.
-        OAuth ile kayıt olan kullanıcılar bu işlemi gerçekleştiremez.
 
         Args:
             user_id: Şifresi değiştirilecek kullanıcının benzersiz kimliği.
@@ -165,7 +164,7 @@ class AccountService(AuditableMixin):
 
         Raises:
             NotFoundError: Kullanıcı bulunamazsa.
-            AuthenticationError: Mevcut şifre yanlışsa veya OAuth kullanıcısıysa.
+            AuthenticationError: Mevcut şifre yanlışsa veya şifre belirlenmemişse.
 
         Example:
             >>> await account_service.change_password(
@@ -179,7 +178,7 @@ class AccountService(AuditableMixin):
             raise NotFoundError("Kullanıcı bulunamadı.")
 
         if not user.hashed_password:
-            raise AuthenticationError("OAuth hesapları için şifre değiştirilemez.")
+            raise AuthenticationError("Bu hesap için şifre değiştirilemez.")
 
         if not verify_password(current_password, user.hashed_password):
             raise AuthenticationError("Mevcut şifre hatalı.")
@@ -196,7 +195,6 @@ class AccountService(AuditableMixin):
         Args:
             user_id: Silinecek kullanıcının benzersiz kimliği.
             password: Kullanıcının şifresi (doğrulama için).
-                OAuth kullanıcıları için None olabilir.
 
         Raises:
             NotFoundError: Kullanıcı bulunamazsa.

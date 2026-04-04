@@ -59,7 +59,7 @@ class AdminAuthBackend(AuthenticationBackend):
 
         Note:
             - Form field'ları: username (email), password
-            - OAuth kullanıcıları (hashed_password=None) giriş yapamaz
+            - Şifresi olmayan kullanıcılar (hashed_password=None) giriş yapamaz
             - Exception durumunda False döner (güvenlik)
 
         Example:

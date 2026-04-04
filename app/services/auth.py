@@ -2,7 +2,6 @@
 AuthService — email/password kimlik doğrulama ve token yönetimi.
 
 Sorumluluklar: register · login · logout · refresh
-OAuth akışları → OAuthService
 Email doğrulama ve şifre sıfırlama → AccountService
 """
 
@@ -47,8 +46,7 @@ class AuthService(AuditableMixin):
     """Email/password tabanlı kimlik doğrulama servisi.
 
     Bu servis kullanıcı kaydı, giriş, çıkış ve token yenileme işlemlerini yönetir.
-    OAuth akışları için OAuthService, email doğrulama ve şifre sıfırlama için
-    AccountService kullanılmalıdır.
+    Email doğrulama ve şifre sıfırlama için AccountService kullanılmalıdır.
 
     Attributes:
         _session: Veritabanı oturumu.
@@ -156,7 +154,6 @@ class AuthService(AuditableMixin):
             AuthenticationError: Email/şifre hatalı veya hesap aktif değil.
 
         Note:
-            - OAuth kullanıcıları (hashed_password=None) bu metotla giriş yapamaz
             - Timing attack'lardan korunmak için hata mesajları generic tutulur
         """
         user = await self._repo.get_active_by_email(email)

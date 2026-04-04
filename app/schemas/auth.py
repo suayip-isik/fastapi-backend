@@ -178,27 +178,6 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
-class OAuthCallbackRequest(BaseModel):
-    """OAuth2 callback işlemi için request schema.
-
-    Google/GitHub OAuth flow'undan gelen authorization code'u işler.
-    State parametresi CSRF koruması için kullanılır.
-
-    Attributes:
-        code: OAuth2 authorization code (provider'dan gelen)
-        state: CSRF koruması için state parametresi (opsiyonel)
-
-    Example:
-        >>> request = OAuthCallbackRequest(
-        ...     code="4/0AX4XfWh...",
-        ...     state="random-state-string"
-        ... )
-    """
-
-    code: str
-    state: str | None = None
-
-
 class VerifyEmailRequest(BaseModel):
     """Email doğrulama için request schema.
 

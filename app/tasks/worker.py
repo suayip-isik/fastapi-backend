@@ -200,7 +200,7 @@ async def cleanup_expired_tokens(ctx: dict[str, Any]) -> dict[str, Any]:
     """TTL'siz kalan orphaned Redis key'lerini temizler (cron job).
 
     Her gece yarısı otomatik çalışır. Blacklist, email verification,
-    password reset ve OAuth state key'lerinden TTL'si olmayan
+    password reset key'lerinden TTL'si olmayan
     (orphaned) olanları bulup siler.
 
     Args:
@@ -212,7 +212,7 @@ async def cleanup_expired_tokens(ctx: dict[str, Any]) -> dict[str, Any]:
     Note:
         - Cron schedule: Her gün 00:00
         - Kontrol edilen pattern'ler: blacklist:*, email_verify:*,
-          password_reset:*, oauth_state:*
+          password_reset:*
         - TTL -1 olan key'ler (hiç expire olmayan) temizlenir
         - Batch size: 100 (SCAN komutu ile)
     """
@@ -220,7 +220,7 @@ async def cleanup_expired_tokens(ctx: dict[str, Any]) -> dict[str, Any]:
     from app.core.redis import get_redis_client
 
     redis = await get_redis_client()
-    prefixes = ["blacklist:*", "email_verify:*", "password_reset:*", "oauth_state:*"]
+    prefixes = ["blacklist:*", "email_verify:*", "password_reset:*"]
     cleaned = 0
     for pattern in prefixes:
         cursor: int = 0

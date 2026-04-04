@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any
 
-from sqlalchemy import func, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy import func, or_, select
 
-from app.db.models.user import User
+from app.db.models.user import User, UserRole
 from app.db.repositories.base import SoftDeleteRepository
-
-if TYPE_CHECKING:
-    from uuid import UUID
 
 
 class UserRepository(SoftDeleteRepository[User]):
@@ -72,30 +68,6 @@ class UserRepository(SoftDeleteRepository[User]):
         )
         return result.scalar_one_or_none()
 
-    async def get_with_oauth(self, user_id: UUID) -> User | None:
-        """Kullanıcıyı OAuth hesaplarıyla birlikte getirir.
-
-        OAuth hesapları eager load edilir (N+1 query problemi önlenir).
-        Soft-deleted kullanıcılar sonuçlara dahil edilmez.
-
-        Args:
-            user_id: Kullanıcının UUID'si.
-
-        Returns:
-            OAuth hesapları yüklenmiş User instance veya None.
-
-        Example:
-            >>> user = await repo.get_with_oauth(user_id)
-            >>> for oauth in user.oauth_accounts:
-            ...     print(oauth.provider)
-        """
-        result = await self._session.execute(
-            select(User)
-            .options(selectinload(User.oauth_accounts))
-            .where(User.id == user_id, User.deleted_at.is_(None))
-        )
-        return result.scalar_one_or_none()
-
     async def get_active_by_email(self, email: str) -> User | None:
         """Aktif kullanıcıyı email adresine göre getirir.
 
@@ -146,29 +118,90 @@ class UserRepository(SoftDeleteRepository[User]):
         )
         return result.scalar_one() > 0
 
-    async def get_deleted_page(self, *, offset: int = 0, limit: int = 20) -> tuple[list[User], int]:
-        """Soft-deleted kullanıcıları sayfalanmış olarak getirir.
+    async def count_stats(self) -> tuple[int, int, int]:
+        stmt = select(
+            func.count().filter(User.deleted_at.is_(None)).label("total"),
+            func.count()
+            .filter(User.is_active.is_(True), User.deleted_at.is_(None))
+            .label("active"),
+            func.count()
+            .filter(User.is_active.is_(False), User.deleted_at.is_(None))
+            .label("inactive"),
+        )
+        row = (await self._session.execute(stmt)).one()
+        return row.active, row.inactive, row.total
 
-        Admin trash view için kullanılır. Sadece deleted_at != None olan
-        kayıtları döndürür. Window function ile toplam sayıyı da hesaplar.
+    def _apply_filters(
+        self,
+        stmt: Any,
+        *,
+        q: str | None,
+        role: UserRole | None,
+        is_active: bool | None,
+        is_verified: bool | None,
+    ) -> Any:
+        if q is not None:
+            pattern = f"%{q}%"
+            stmt = stmt.where(
+                or_(
+                    User.email.ilike(pattern),
+                    User.username.ilike(pattern),
+                    User.full_name.ilike(pattern),
+                )
+            )
+        if role is not None:
+            stmt = stmt.where(User.role == role)
+        if is_active is not None:
+            stmt = stmt.where(User.is_active.is_(is_active))
+        if is_verified is not None:
+            stmt = stmt.where(User.is_verified.is_(is_verified))
+        return stmt
 
-        Args:
-            offset: Atlanacak kayıt sayısı (varsayılan: 0).
-            limit: Maksimum döndürülecek kayıt sayısı (varsayılan: 20).
-
-        Returns:
-            Tuple içinde:
-                - list[User]: Silinen kullanıcı listesi.
-                - int: Toplam silinen kullanıcı sayısı.
-
-        Example:
-            >>> users, total = await repo.get_deleted_page(offset=0, limit=10)
-            >>> print(f"{len(users)} / {total} silinen kullanıcı")
-        """
+    async def search_page(
+        self,
+        *,
+        q: str | None = None,
+        role: UserRole | None = None,
+        is_active: bool | None = None,
+        is_verified: bool | None = None,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> tuple[list[User], int]:
         count_col = func.count().over().label("_total")
         stmt = (
-            select(User, count_col).where(User.deleted_at.is_not(None)).offset(offset).limit(limit)
+            select(User, count_col)
+            .where(User.deleted_at.is_(None))
+            .order_by(User.created_at.desc())
         )
+        stmt = self._apply_filters(
+            stmt, q=q, role=role, is_active=is_active, is_verified=is_verified
+        )
+        stmt = stmt.offset(offset).limit(limit)
+        rows = (await self._session.execute(stmt)).all()
+        items = [row[0] for row in rows]
+        total = rows[0][1] if rows else 0
+        return items, total
+
+    async def search_deleted_page(
+        self,
+        *,
+        q: str | None = None,
+        role: UserRole | None = None,
+        is_active: bool | None = None,
+        is_verified: bool | None = None,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> tuple[list[User], int]:
+        count_col = func.count().over().label("_total")
+        stmt = (
+            select(User, count_col)
+            .where(User.deleted_at.is_not(None))
+            .order_by(User.deleted_at.desc())
+        )
+        stmt = self._apply_filters(
+            stmt, q=q, role=role, is_active=is_active, is_verified=is_verified
+        )
+        stmt = stmt.offset(offset).limit(limit)
         rows = (await self._session.execute(stmt)).all()
         items = [row[0] for row in rows]
         total = rows[0][1] if rows else 0
