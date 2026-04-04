@@ -21,12 +21,14 @@ async def _register_and_login(
     email: str,
     password: str = "StrongPass1",
 ) -> dict:
+    """Yardımcı fonksiyon."""
     await client.post("/api/v1/auth/register", json={"email": email, "password": password})
     res = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
     return res.json()
 
 
 async def _auth_headers(client: AsyncClient, email: str, password: str = "StrongPass1") -> dict:
+    """Yardımcı fonksiyon."""
     tokens = await _register_and_login(client, email, password)
     return {"Authorization": f"Bearer {tokens['access_token']}"}
 
@@ -42,6 +44,7 @@ async def _promote_to_admin(db_session: AsyncSession, email: str) -> None:
 
 @pytest.mark.asyncio
 async def test_get_users_me(client: AsyncClient):
+    """test_get_users_me senaryosunu test eder."""
     headers = await _auth_headers(client, "users_me@example.com")
     res = await client.get("/api/v1/users/me", headers=headers)
 
@@ -55,6 +58,7 @@ async def test_get_users_me(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_get_users_me_unauthorized(client: AsyncClient):
+    """test_get_users_me_unauthorized senaryosunu test eder."""
     res = await client.get("/api/v1/users/me")
     assert res.status_code == 401
 
@@ -64,6 +68,7 @@ async def test_get_users_me_unauthorized(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_update_me_full_name(client: AsyncClient):
+    """test_update_me_full_name senaryosunu test eder."""
     headers = await _auth_headers(client, "update_name@example.com")
     res = await client.patch(
         "/api/v1/users/me", json={"full_name": "Yeni Ad Soyad"}, headers=headers
@@ -75,6 +80,7 @@ async def test_update_me_full_name(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_update_me_username(client: AsyncClient):
+    """test_update_me_username senaryosunu test eder."""
     headers = await _auth_headers(client, "update_username@example.com")
     res = await client.patch(
         "/api/v1/users/me", json={"username": "yeni_kullanici"}, headers=headers
@@ -86,6 +92,7 @@ async def test_update_me_username(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_update_me_email(client: AsyncClient):
+    """test_update_me_email senaryosunu test eder."""
     headers = await _auth_headers(client, "old_email@example.com")
     res = await client.patch(
         "/api/v1/users/me", json={"email": "new_address@example.com"}, headers=headers
@@ -97,6 +104,7 @@ async def test_update_me_email(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_update_me_email_duplicate(client: AsyncClient):
+    """test_update_me_email_duplicate senaryosunu test eder."""
     await _auth_headers(client, "taken@example.com")
     headers = await _auth_headers(client, "wants_taken@example.com")
 
@@ -108,6 +116,7 @@ async def test_update_me_email_duplicate(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_update_me_password(client: AsyncClient):
+    """test_update_me_password senaryosunu test eder."""
     email = "change_pw@example.com"
     headers = await _auth_headers(client, email)
 
@@ -127,6 +136,7 @@ async def test_update_me_password(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_update_me_unauthorized(client: AsyncClient):
+    """test_update_me_unauthorized senaryosunu test eder."""
     res = await client.patch("/api/v1/users/me", json={"full_name": "Foo"})
     assert res.status_code == 401
 
@@ -146,6 +156,7 @@ async def test_update_me_no_fields_returns_current_user(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_list_users_as_admin(client: AsyncClient, db_session: AsyncSession):
+    """test_list_users_as_admin senaryosunu test eder."""
     email = "admin_list@example.com"
     headers = await _auth_headers(client, email)
     await _promote_to_admin(db_session, email)
@@ -164,6 +175,7 @@ async def test_list_users_as_admin(client: AsyncClient, db_session: AsyncSession
 
 @pytest.mark.asyncio
 async def test_list_users_as_non_admin(client: AsyncClient):
+    """test_list_users_as_non_admin senaryosunu test eder."""
     headers = await _auth_headers(client, "non_admin_list@example.com")
     res = await client.get("/api/v1/users", headers=headers)
     assert res.status_code == 403
@@ -171,12 +183,14 @@ async def test_list_users_as_non_admin(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_list_users_unauthorized(client: AsyncClient):
+    """test_list_users_unauthorized senaryosunu test eder."""
     res = await client.get("/api/v1/users")
     assert res.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_list_users_pagination(client: AsyncClient, db_session: AsyncSession):
+    """test_list_users_pagination senaryosunu test eder."""
     admin_email = "admin_pager@example.com"
     await _auth_headers(client, "pager_u1@example.com")
     await _auth_headers(client, "pager_u2@example.com")
@@ -195,6 +209,7 @@ async def test_list_users_pagination(client: AsyncClient, db_session: AsyncSessi
 
 @pytest.mark.asyncio
 async def test_list_users_default_pagination(client: AsyncClient, db_session: AsyncSession):
+    """test_list_users_default_pagination senaryosunu test eder."""
     admin_email = "admin_defpager@example.com"
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
@@ -212,6 +227,7 @@ async def test_list_users_default_pagination(client: AsyncClient, db_session: As
 
 @pytest.mark.asyncio
 async def test_get_user_by_id_as_admin(client: AsyncClient, db_session: AsyncSession):
+    """test_get_user_by_id_as_admin senaryosunu test eder."""
     admin_email = "admin_getid@example.com"
     target_email = "target_getid@example.com"
 
@@ -231,6 +247,7 @@ async def test_get_user_by_id_as_admin(client: AsyncClient, db_session: AsyncSes
 
 @pytest.mark.asyncio
 async def test_get_user_by_id_as_non_admin(client: AsyncClient):
+    """test_get_user_by_id_as_non_admin senaryosunu test eder."""
     target_headers = await _auth_headers(client, "target_perm@example.com")
     target_me = await client.get("/api/v1/users/me", headers=target_headers)
     target_id = target_me.json()["id"]
@@ -243,12 +260,14 @@ async def test_get_user_by_id_as_non_admin(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_get_user_by_id_unauthorized(client: AsyncClient):
+    """test_get_user_by_id_unauthorized senaryosunu test eder."""
     res = await client.get("/api/v1/users/00000000-0000-0000-0000-000000000000")
     assert res.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_get_user_by_id_not_found(client: AsyncClient, db_session: AsyncSession):
+    """test_get_user_by_id_not_found senaryosunu test eder."""
     admin_email = "admin_notfound@example.com"
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
@@ -264,6 +283,7 @@ async def test_get_user_by_id_not_found(client: AsyncClient, db_session: AsyncSe
 
 @pytest.mark.asyncio
 async def test_deactivate_user_as_admin(client: AsyncClient, db_session: AsyncSession):
+    """test_deactivate_user_as_admin senaryosunu test eder."""
     admin_email = "admin_deact@example.com"
     target_email = "target_deact@example.com"
 
@@ -287,6 +307,7 @@ async def test_deactivate_user_as_admin(client: AsyncClient, db_session: AsyncSe
 
 @pytest.mark.asyncio
 async def test_deactivate_user_as_non_admin(client: AsyncClient):
+    """test_deactivate_user_as_non_admin senaryosunu test eder."""
     target_headers = await _auth_headers(client, "target_nodeact@example.com")
     target_me = await client.get("/api/v1/users/me", headers=target_headers)
     target_id = target_me.json()["id"]
@@ -299,6 +320,7 @@ async def test_deactivate_user_as_non_admin(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_deactivate_user_unauthorized(client: AsyncClient):
+    """test_deactivate_user_unauthorized senaryosunu test eder."""
     res = await client.delete("/api/v1/users/00000000-0000-0000-0000-000000000000")
     assert res.status_code == 401
 

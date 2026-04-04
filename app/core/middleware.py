@@ -30,7 +30,39 @@ _HSTS_VALUE = "max-age=31536000; includeSubDomains"
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
+    """Her HTTP request'e benzersiz X-Request-ID header ekler.
+
+    Gelen request'te X-Request-ID varsa onu kullanır, yoksa yeni UUID
+    oluşturur. Request ID context variable olarak saklanır ve tüm log
+    kayıtlarına otomatik eklenir. Response header'ına da eklenir.
+    Ayrıca IP adresi ve user-agent bilgilerini de context'e bind eder.
+
+    Note:
+        - Request ID structlog context'ine bind edilir
+        - Client tarafından gönderilen ID'ler kabul edilir
+        - UUID4 formatında oluşturulur
+        - IP adresi ve user-agent da log context'ine eklenir
+
+    Example:
+        >>> # Request: GET /users (X-Request-ID yok)
+        >>> # Response: 200 OK (X-Request-ID: abc-123-def)
+        >>> # Logs: {"event": "...", "request_id": "abc-123-def"}
+    """
+
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        """Request'i işler ve request ID ekler.
+
+        X-Request-ID header'ını kontrol eder; yoksa yeni UUID oluşturur.
+        Request ID, IP adresi ve user-agent bilgilerini context variable'lara
+        bind eder. Response işlendikten sonra context'i temizler.
+
+        Args:
+            request: Gelen HTTP request
+            call_next: Sonraki middleware/handler fonksiyonu
+
+        Returns:
+            Response: X-Request-ID header'ı eklenmiş HTTP response
+        """
         request_id = request.headers.get("X-Request-ID", str(uuid4()))
         rid_token = request_id_var.set(request_id)
         ip_token = ip_address_var.set(request.client.host if request.client else "-")
@@ -46,7 +78,37 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
 
 class TimingMiddleware(BaseHTTPMiddleware):
+    """Request işlem süresini ölçer ve loglar.
+
+    Her HTTP request'in işlenme süresini milisaniye cinsinden hesaplar.
+    Süre bilgisini X-Process-Time-Ms response header'ına ekler ve
+    structlog ile detaylı request log kaydı oluşturur.
+
+    Note:
+        - time.perf_counter() ile yüksek hassasiyette ölçüm
+        - Süre 2 ondalık basamağa yuvarlanır
+        - Method, path, status code ve süre loglanır
+
+    Example:
+        >>> # Request: POST /auth/login (500ms sürer)
+        >>> # Response: 200 OK (X-Process-Time-Ms: 500.23)
+        >>> # Log: {"event": "request_completed", "duration_ms": 500.23}
+    """
+
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        """Request'i zamanlar ve süre bilgisini loglar.
+
+        Request işleme başlamadan önce zamanı kaydeder, işlem bittikten
+        sonra geçen süreyi hesaplar. Süreyi hem response header'ına ekler
+        hem de log kaydı oluşturur.
+
+        Args:
+            request: Gelen HTTP request
+            call_next: Sonraki middleware/handler fonksiyonu
+
+        Returns:
+            Response: X-Process-Time-Ms header'ı eklenmiş HTTP response
+        """
         start = time.perf_counter()
         response = await call_next(request)
         duration_ms = round((time.perf_counter() - start) * 1000, 2)
@@ -62,7 +124,44 @@ class TimingMiddleware(BaseHTTPMiddleware):
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Tüm HTTP response'lara güvenlik header'ları ekler.
+
+    OWASP önerileri doğrultusunda güvenlik header'ları ekler:
+    - Content-Security-Policy (CSP): XSS koruması
+    - X-Content-Type-Options: MIME sniffing koruması
+    - X-Frame-Options: Clickjacking koruması
+    - HSTS: HTTPS zorunluluğu
+    - CORS policy header'ları
+
+    API documentation path'leri (/docs, /redoc, /schema/*) için
+    CSP politikası gevşetilir (SwaggerUI/ReDoc için gerekli).
+
+    Note:
+        - /docs ve /redoc için unsafe-inline izni verilir
+        - Production dışında HSTS tarayıcılar tarafından göz ardı edilir
+        - Permissions-Policy ile tehlikeli API'lar engellenir
+
+    Example:
+        >>> # Normal endpoint: GET /users
+        >>> # Response headers: X-Frame-Options: DENY, CSP: default-src 'self'
+        >>> # Docs endpoint: GET /docs
+        >>> # Response headers: CSP: script-src 'self' 'unsafe-inline' ...
+    """
+
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        """Request'i işler ve güvenlik header'larını ekler.
+
+        Response oluşturulduktan sonra güvenlik header'larını ekler.
+        Documentation endpoint'leri için CSP politikası gevşetilir,
+        diğer endpoint'ler için sıkı güvenlik politikası uygulanır.
+
+        Args:
+            request: Gelen HTTP request
+            call_next: Sonraki middleware/handler fonksiyonu
+
+        Returns:
+            Response: Güvenlik header'ları eklenmiş HTTP response
+        """
         response = await call_next(request)
 
         # /docs, /redoc ve /schema/*/docs endpoint'leri için CSP'yi gevşet

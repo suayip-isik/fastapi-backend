@@ -17,7 +17,24 @@ logger = get_logger(__name__)
 
 
 async def check_database() -> tuple[bool, str]:
-    """PostgreSQL bağlantısını SELECT 1 ile doğrula."""
+    """PostgreSQL veritabanı bağlantısını kontrol eder.
+
+    Basit bir SELECT 1 sorgusu çalıştırarak DB erişilebilirliğini test eder.
+    Kubernetes liveness/readiness probe'ları için kullanılır.
+
+    Returns:
+        tuple[bool, str]: İlk eleman sağlık durumu (True=sağlıklı, False=hata),
+            ikinci eleman durum mesajı ("ok" veya hata detayı)
+
+    Example:
+        >>> is_healthy, message = await check_database()
+        >>> # (True, "ok")
+
+    Note:
+        - AsyncSessionFactory ile session oluşturulur ve otomatik kapatılır
+        - Exception durumunda (False, error_message) döner (raise etmez)
+        - Hata durumunda warning seviyesinde log kaydı oluşturulur
+    """
     try:
         async with AsyncSessionFactory() as session:
             await session.execute(text("SELECT 1"))
@@ -28,7 +45,25 @@ async def check_database() -> tuple[bool, str]:
 
 
 async def check_redis() -> tuple[bool, str]:
-    """Redis bağlantısını PING ile doğrula."""
+    """Redis bağlantısını kontrol eder.
+
+    PING komutu ile Redis sunucusuna erişilebilirliği test eder.
+    Rate limiting ve ARQ task queue için Redis bağlantısının sağlıklı
+    olduğunu doğrular.
+
+    Returns:
+        tuple[bool, str]: İlk eleman sağlık durumu (True=sağlıklı, False=hata),
+            ikinci eleman durum mesajı ("ok" veya hata detayı)
+
+    Example:
+        >>> is_healthy, message = await check_redis()
+        >>> # (True, "ok")
+
+    Note:
+        - get_redis_client() ile Redis client alınır
+        - PING komutu başarısızsa False döner
+        - Exception durumunda warning seviyesinde log kaydı oluşturulur
+    """
     try:
         client = await get_redis_client()
         await client.ping()
@@ -39,7 +74,27 @@ async def check_redis() -> tuple[bool, str]:
 
 
 async def check_storage() -> tuple[bool, str]:
-    """S3/MinIO bucket erişimini doğrula."""
+    """S3/MinIO object storage bağlantısını kontrol eder.
+
+    head_bucket operasyonu ile bucket'a erişilebilirliği test eder.
+    File upload/download işlemleri için storage sisteminin sağlıklı
+    olduğunu doğrular. Hem AWS S3 hem de MinIO (local dev) desteklenir.
+
+    Returns:
+        tuple[bool, str]: İlk eleman sağlık durumu (True=sağlıklı, False=hata),
+            ikinci eleman durum mesajı ("ok" veya hata detayı)
+
+    Example:
+        >>> is_healthy, message = await check_storage()
+        >>> # (True, "ok")
+
+    Note:
+        - aioboto3 Session ile S3 client oluşturulur
+        - Settings'den S3_ACCESS_KEY, S3_SECRET_KEY, S3_REGION alınır
+        - MinIO için S3_ENDPOINT_URL kullanılır
+        - Bucket mevcut değilse veya erişim yoksa False döner
+        - Exception durumunda warning seviyesinde log kaydı oluşturulur
+    """
     try:
         session = aioboto3.Session(
             aws_access_key_id=settings.S3_ACCESS_KEY,

@@ -49,6 +49,7 @@ def _setup_sentry() -> None:
         request = event.get("request")
         if isinstance(request, dict):
             request.pop("cookies", None)
+            request.pop("data", None)
             headers = request.get("headers")
             if isinstance(headers, dict):
                 headers.pop("authorization", None)
@@ -68,6 +69,18 @@ def _setup_sentry() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Uygulama yasam dongusunu yonetir.
+
+    Baslangicta loglama/Sentry kurulumunu yapar ve varsayilan admin
+    kullanicisini olusturur. Kapanista DB engine ve Redis baglantisini
+    guvenli sekilde kapatir.
+
+    Args:
+        app: FastAPI uygulama nesnesi.
+
+    Yields:
+        Uygulama calisirken kontrolu FastAPI'ye birakir.
+    """
     setup_logging()
     _setup_sentry()
     from app.core.logging import get_logger
@@ -82,6 +95,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 def create_app() -> FastAPI:
+    """FastAPI uygulamasini olusturur ve tum bilesenleri kaydeder.
+
+    Middleware, exception handler, router, admin panel, metrics ve docs
+    endpoint'lerini tek merkezde baglar.
+
+    Returns:
+        Konfiguru edilmis FastAPI uygulama nesnesi.
+    """
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
@@ -139,6 +160,7 @@ def create_app() -> FastAPI:
     # Docs
     @app.get("/docs", include_in_schema=False)
     async def swagger_ui() -> HTMLResponse:
+        """Swagger UI sayfasini dondurur."""
         return get_swagger_ui_html(
             openapi_url="/openapi.json",
             title=f"{settings.APP_NAME} - Swagger UI",
@@ -148,6 +170,7 @@ def create_app() -> FastAPI:
 
     @app.get("/redoc", include_in_schema=False)
     async def redoc_ui() -> HTMLResponse:
+        """ReDoc sayfasini dondurur."""
         return get_redoc_html(
             openapi_url="/openapi.json",
             title=f"{settings.APP_NAME} - ReDoc",
@@ -161,6 +184,7 @@ def create_app() -> FastAPI:
 
     @app.get("/schema/admin/openapi.json", include_in_schema=False)
     async def admin_openapi() -> Any:
+        """Admin audience icin filtrelenmis OpenAPI semasini dondurur."""
         return generate_audience_schema(
             app,
             audience="admin",
@@ -170,6 +194,7 @@ def create_app() -> FastAPI:
 
     @app.get("/schema/user/openapi.json", include_in_schema=False)
     async def user_openapi() -> Any:
+        """User audience icin filtrelenmis OpenAPI semasini dondurur."""
         return generate_audience_schema(
             app,
             audience="user",
@@ -179,6 +204,7 @@ def create_app() -> FastAPI:
 
     @app.get("/schema/mobile/openapi.json", include_in_schema=False)
     async def mobile_openapi() -> Any:
+        """Mobile audience icin filtrelenmis OpenAPI semasini dondurur."""
         return generate_audience_schema(
             app,
             audience="mobile",
@@ -188,6 +214,7 @@ def create_app() -> FastAPI:
 
     @app.get("/schema/admin/docs", include_in_schema=False)
     async def admin_docs() -> HTMLResponse:
+        """Admin audience icin Swagger UI sayfasini dondurur."""
         return get_swagger_ui_html(
             openapi_url="/schema/admin/openapi.json",
             title=f"{settings.APP_NAME} Admin — Swagger UI",
@@ -197,6 +224,7 @@ def create_app() -> FastAPI:
 
     @app.get("/schema/user/docs", include_in_schema=False)
     async def user_docs() -> HTMLResponse:
+        """User audience icin Swagger UI sayfasini dondurur."""
         return get_swagger_ui_html(
             openapi_url="/schema/user/openapi.json",
             title=f"{settings.APP_NAME} User — Swagger UI",
@@ -206,6 +234,7 @@ def create_app() -> FastAPI:
 
     @app.get("/schema/mobile/docs", include_in_schema=False)
     async def mobile_docs() -> HTMLResponse:
+        """Mobile audience icin Swagger UI sayfasini dondurur."""
         return get_swagger_ui_html(
             openapi_url="/schema/mobile/openapi.json",
             title=f"{settings.APP_NAME} Mobile — Swagger UI",

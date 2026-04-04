@@ -18,10 +18,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    """Users tablosuna totp_secret ve totp_enabled alanlarını ekler."""
     op.add_column('users', sa.Column('totp_secret', sa.Text(), nullable=True))
     op.add_column('users', sa.Column('totp_enabled', sa.Boolean(), nullable=False, server_default='false'))
 
 
 def downgrade() -> None:
+    """Users tablosundan TOTP alanlarını kaldırır."""
     op.drop_column('users', 'totp_enabled')
     op.drop_column('users', 'totp_secret')

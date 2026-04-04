@@ -38,12 +38,29 @@ AsyncSessionFactory = async_sessionmaker(
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """
-    FastAPI dependency — her request için yeni session açar,
-    işlem bitince otomatik kapatır.
+    """Database session dependency (request scope).
 
-    Kullanım:
-        async def endpoint(db: AsyncSession = Depends(get_db)):
+    Her HTTP request için yeni bir AsyncSession oluşturur. Request
+    tamamlandığında session otomatik kapanır ve commit/rollback
+    işlemleri yönetilir. Transaction yönetimi try/except bloğu
+    ile otomatik yapılır (exception durumunda rollback).
+
+    Yields:
+        AsyncSession: SQLAlchemy async session instance
+
+    Example:
+        >>> @router.get("/users")
+        >>> async def get_users(db: DBDep):
+        ...     users = await db.execute(select(User))
+        ...     return users.scalars().all()
+        >>> # Request bitince db.close() otomatik
+
+    Note:
+        - Connection pool'dan session alınır (pool_size=10)
+        - Exception durumunda rollback otomatik yapılır
+        - Başarılı tamamlanmada commit otomatik yapılır
+        - expire_on_commit=False (commit sonrası lazy-load sorunsuz)
+        - pool_pre_ping=True (stale connection kontrolü aktif)
     """
     async with AsyncSessionFactory() as session:
         try:

@@ -20,6 +20,7 @@ from app.core.config import settings
 
 
 async def create_bucket(s3_client, bucket_name: str) -> None:
+    """Belirtilen isimde S3/MinIO bucket oluşturur veya mevcutsa atlar."""
     try:
         await s3_client.head_bucket(Bucket=bucket_name)
         print(f"ℹ️  Bucket zaten mevcut: {bucket_name}")
@@ -34,6 +35,7 @@ async def create_bucket(s3_client, bucket_name: str) -> None:
 
 
 async def setup_buckets() -> None:
+    """MinIO/S3 bağlantısı kurar ve gerekli bucket'ları oluşturur."""
     print(f"🔌 MinIO bağlantısı kuruluyor: {settings.S3_ENDPOINT_URL}")
 
     session = aioboto3.Session(

@@ -20,13 +20,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import CurrentUserDep
 from app.db.session import get_db
-from app.schemas.common import MessageResponse, PaginatedResponse
+from app.schemas.common import MessageResponse, PaginatedResponse, calculate_pages
 from app.services.notification import NotificationService
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 
 def get_notification_service(db: Annotated[AsyncSession, Depends(get_db)]) -> NotificationService:
+    """NotificationService dependency factory'si."""
     return NotificationService(db)
 
 
@@ -37,6 +38,8 @@ NotificationServiceDep = Annotated[NotificationService, Depends(get_notification
 
 
 class NotificationResponse(BaseModel):
+    """NotificationResponse sınıfı."""
+
     id: UUID
     type: str
     title: str
@@ -49,6 +52,8 @@ class NotificationResponse(BaseModel):
 
 
 class UnreadCountResponse(BaseModel):
+    """UnreadCountResponse sınıfı."""
+
     count: int
 
 
@@ -63,17 +68,30 @@ async def list_notifications(
     size: int = Query(default=20, ge=1, le=100),
     unread_first: bool = Query(default=True),
 ) -> PaginatedResponse[NotificationResponse]:
-    """Bildirimleri sayfalı listele."""
+    """Kullanıcının bildirimlerini sayfalı olarak listeler.
+
+    Okunmamış bildirimleri önce gösterecek şekilde sıralanır.
+    Sayfalama parametreleri ile sonuçlar filtrelenebilir.
+
+    Args:
+        current_user: Kimliği doğrulanmış mevcut kullanıcı.
+        service: Bildirim işlemleri servisi.
+        page: Sayfa numarası (varsayılan: 1).
+        size: Sayfa başına bildirim sayısı (varsayılan: 20, maks: 100).
+        unread_first: Okunmamışları önce göster (varsayılan: True).
+
+    Returns:
+        PaginatedResponse[NotificationResponse]: Sayfalanmış bildirim listesi.
+    """
     items, total = await service.list_for_user(
         current_user.id, page=page, size=size, unread_first=unread_first
     )
-    pages = (total + size - 1) // size if total > 0 else 0
     return PaginatedResponse(
         items=[NotificationResponse.model_validate(n) for n in items],
         total=total,
         page=page,
         size=size,
-        pages=pages,
+        pages=calculate_pages(total, size),
     )
 
 
@@ -82,7 +100,17 @@ async def unread_count(
     current_user: CurrentUserDep,
     service: NotificationServiceDep,
 ) -> UnreadCountResponse:
-    """Okunmamış bildirim sayısını döndür."""
+    """Kullanıcının okunmamış bildirim sayısını döndürür.
+
+    Bildirim rozeti veya sayacı göstermek için kullanılır.
+
+    Args:
+        current_user: Kimliği doğrulanmış mevcut kullanıcı.
+        service: Bildirim işlemleri servisi.
+
+    Returns:
+        UnreadCountResponse: Okunmamış bildirim sayısını içeren yanıt.
+    """
     count = await service.count_unread(current_user.id)
     return UnreadCountResponse(count=count)
 
@@ -92,7 +120,17 @@ async def mark_all_read(
     current_user: CurrentUserDep,
     service: NotificationServiceDep,
 ) -> MessageResponse:
-    """Tüm bildirimleri okundu olarak işaretle."""
+    """Kullanıcının tüm bildirimlerini okundu olarak işaretler.
+
+    Toplu işlem olarak tüm okunmamış bildirimleri okundu durumuna geçirir.
+
+    Args:
+        current_user: Kimliği doğrulanmış mevcut kullanıcı.
+        service: Bildirim işlemleri servisi.
+
+    Returns:
+        MessageResponse: İşaretlenen bildirim sayısını içeren mesaj.
+    """
     count = await service.mark_all_read(current_user.id)
     return MessageResponse(message=f"{count} bildirim okundu olarak işaretlendi.")
 
@@ -103,7 +141,21 @@ async def mark_read(
     current_user: CurrentUserDep,
     service: NotificationServiceDep,
 ) -> NotificationResponse:
-    """Bildirimi okundu olarak işaretle."""
+    """Belirtilen bildirimi okundu olarak işaretler.
+
+    Kullanıcı yalnızca kendi bildirimlerini işaretleyebilir.
+
+    Args:
+        notification_id: İşaretlenecek bildirimin UUID'si.
+        current_user: Kimliği doğrulanmış mevcut kullanıcı.
+        service: Bildirim işlemleri servisi.
+
+    Returns:
+        NotificationResponse: Güncellenen bildirimin detayları.
+
+    Raises:
+        HTTPException: Bildirim bulunamazsa 404 hatası döner.
+    """
     notification = await service.mark_read(notification_id, current_user.id)
     return NotificationResponse.model_validate(notification)
 
@@ -114,6 +166,21 @@ async def delete_notification(
     current_user: CurrentUserDep,
     service: NotificationServiceDep,
 ) -> MessageResponse:
-    """Bildirimi sil."""
+    """Belirtilen bildirimi kalıcı olarak siler.
+
+    Kullanıcı yalnızca kendi bildirimlerini silebilir.
+    Bu işlem geri alınamaz.
+
+    Args:
+        notification_id: Silinecek bildirimin UUID'si.
+        current_user: Kimliği doğrulanmış mevcut kullanıcı.
+        service: Bildirim işlemleri servisi.
+
+    Returns:
+        MessageResponse: Silme işleminin başarılı olduğunu belirten mesaj.
+
+    Raises:
+        HTTPException: Bildirim bulunamazsa 404 hatası döner.
+    """
     await service.delete(notification_id, current_user.id)
     return MessageResponse(message="Bildirim silindi.")

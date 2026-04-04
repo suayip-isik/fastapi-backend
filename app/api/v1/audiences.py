@@ -7,10 +7,12 @@ Bu metadata, generate_audience_schema() tarafından filtreleme sırasında kulla
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from fastapi import APIRouter
 from fastapi.routing import APIRoute
+
+if TYPE_CHECKING:
+    from fastapi import APIRouter
 
 Audience = Literal["admin", "user", "mobile"]
 

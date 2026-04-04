@@ -12,10 +12,11 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import AdminDep, CurrentUserDep
+from app.api.dependencies.services import get_audit_service
 from app.core.exceptions import InsufficientPermissionsError
 from app.db.models.user import User
 from app.db.session import get_db
-from app.schemas.common import MessageResponse, PaginatedResponse
+from app.schemas.common import MessageResponse, PaginatedResponse, calculate_pages
 from app.schemas.user import ChangeRoleRequest, UpdateUserRequest, UserResponse
 from app.services.audit import AuditService
 from app.services.user import UserService
@@ -23,33 +24,56 @@ from app.services.user import UserService
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
-def get_audit_service() -> AuditService:
-    return AuditService()
-
-
 def get_user_service(
     db: Annotated[AsyncSession, Depends(get_db)],
     audit: Annotated[AuditService, Depends(get_audit_service)],
 ) -> UserService:
+    """UserService dependency factory'si."""
     return UserService(db, audit)
 
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 
 
-@router.get("/me", response_model=UserResponse, openapi_extra={"x-audiences": ["user", "mobile"]})
+@router.get(
+    "/me", response_model=UserResponse, openapi_extra={"x-audiences": ["admin", "user", "mobile"]}
+)
 async def get_me(current_user: CurrentUserDep) -> User:
-    """Giris yapmis kullanicinin profili."""
+    """Giriş yapmış kullanıcının profil bilgilerini getirir.
+
+    Kimlik doğrulaması yapılmış kullanıcının kendi profil bilgilerini
+    döndürür. Token üzerinden kullanıcı kimliği belirlenir.
+
+    Args:
+        current_user: JWT token ile doğrulanmış mevcut kullanıcı.
+
+    Returns:
+        Kullanıcının profil bilgileri (id, email, ad, rol vb.).
+    """
     return current_user
 
 
-@router.patch("/me", response_model=UserResponse, openapi_extra={"x-audiences": ["user", "mobile"]})
+@router.patch(
+    "/me", response_model=UserResponse, openapi_extra={"x-audiences": ["admin", "user", "mobile"]}
+)
 async def update_me(
     data: UpdateUserRequest,
     current_user: CurrentUserDep,
     service: UserServiceDep,
 ) -> User:
-    """Giris yapmis kullanicinin profilini guncelle."""
+    """Giriş yapmış kullanıcının profil bilgilerini günceller.
+
+    Kullanıcının ad, soyad gibi düzenlenebilir alanlarını günceller.
+    Email ve rol gibi hassas alanlar bu endpoint üzerinden değiştirilemez.
+
+    Args:
+        data: Güncellenecek profil alanlarını içeren istek verisi.
+        current_user: JWT token ile doğrulanmış mevcut kullanıcı.
+        service: Kullanıcı işlemlerini yöneten servis.
+
+    Returns:
+        Güncellenmiş kullanıcı profil bilgileri.
+    """
     return await service.update(current_user.id, data)
 
 
@@ -60,21 +84,67 @@ async def list_users(
     page: int = 1,
     size: int = 20,
 ) -> PaginatedResponse[UserResponse]:
-    """Tum kullanicilari listele. (Sadece Admin)"""
+    """Sistemdeki tüm kullanıcıları sayfalanmış şekilde listeler.
+
+    Sadece admin yetkisine sahip kullanıcılar bu endpoint'e erişebilir.
+    Sonuçlar sayfa numarası ve boyutuna göre filtrelenir.
+
+    Args:
+        _: Admin yetkisi kontrolü için kullanılan bağımlılık.
+        service: Kullanıcı işlemlerini yöneten servis.
+        page: Görüntülenecek sayfa numarası (varsayılan: 1).
+        size: Sayfa başına kullanıcı sayısı (varsayılan: 20).
+
+    Returns:
+        Sayfalanmış kullanıcı listesi (items, total, page, size, pages).
+    """
     users, total = await service.get_all(page=page, size=size)
-    pages = (total + size - 1) // size
-    return PaginatedResponse(items=users, total=total, page=page, size=size, pages=pages)
+    return PaginatedResponse(
+        items=users, total=total, page=page, size=size, pages=calculate_pages(total, size)
+    )
 
 
 @router.get("/{user_id}", response_model=UserResponse)
 async def get_user(user_id: UUID, _: AdminDep, service: UserServiceDep) -> UserResponse:
-    """Belirli bir kullaniciyi getir. (Sadece Admin)"""
+    """Belirtilen kullanıcının detaylı bilgilerini getirir.
+
+    Sadece admin yetkisine sahip kullanıcılar bu endpoint'e erişebilir.
+    Sonuç önbellekten döndürülebilir (cached).
+
+    Args:
+        user_id: Sorgulanacak kullanıcının benzersiz kimliği (UUID).
+        _: Admin yetkisi kontrolü için kullanılan bağımlılık.
+        service: Kullanıcı işlemlerini yöneten servis.
+
+    Returns:
+        Kullanıcının detaylı profil bilgileri.
+
+    Raises:
+        NotFoundError: Belirtilen ID'ye sahip kullanıcı bulunamazsa.
+    """
     return await service.get_by_id_cached(user_id)
 
 
 @router.post("/{user_id}/activate", response_model=UserResponse)
 async def activate_user(user_id: UUID, current_user: AdminDep, service: UserServiceDep) -> User:
-    """Kullaniciyi aktif et. (Sadece Admin)"""
+    """Deaktif edilmiş bir kullanıcıyı tekrar aktif eder.
+
+    Sadece admin yetkisine sahip kullanıcılar bu endpoint'e erişebilir.
+    Kullanıcının is_active alanını True olarak günceller ve sisteme
+    giriş yapabilmesini sağlar.
+
+    Args:
+        user_id: Aktif edilecek kullanıcının benzersiz kimliği (UUID).
+        current_user: İşlemi yapan admin kullanıcı.
+        service: Kullanıcı işlemlerini yöneten servis.
+
+    Returns:
+        Aktif edilmiş kullanıcının güncel profil bilgileri.
+
+    Raises:
+        InsufficientPermissionsError: Admin kendi hesabını aktif etmeye çalışırsa.
+        NotFoundError: Belirtilen ID'ye sahip kullanıcı bulunamazsa.
+    """
     if user_id == current_user.id:
         raise InsufficientPermissionsError("Kendi hesabınız üzerinde bu işlemi yapamazsınız.")
     return await service.activate(user_id)
@@ -87,7 +157,25 @@ async def change_user_role(
     current_user: AdminDep,
     service: UserServiceDep,
 ) -> User:
-    """Kullanicinin rolunu degistir. (Sadece Admin)"""
+    """Kullanıcının sistem rolünü değiştirir.
+
+    Sadece admin yetkisine sahip kullanıcılar bu endpoint'e erişebilir.
+    Kullanıcıya USER, MODERATOR veya ADMIN rollerinden biri atanabilir.
+    Rol değişikliği kullanıcının erişebileceği kaynakları etkiler.
+
+    Args:
+        user_id: Rolü değiştirilecek kullanıcının benzersiz kimliği (UUID).
+        data: Yeni rol bilgisini içeren istek verisi.
+        current_user: İşlemi yapan admin kullanıcı.
+        service: Kullanıcı işlemlerini yöneten servis.
+
+    Returns:
+        Rol değişikliği yapılmış kullanıcının güncel profil bilgileri.
+
+    Raises:
+        InsufficientPermissionsError: Admin kendi rolünü değiştirmeye çalışırsa.
+        NotFoundError: Belirtilen ID'ye sahip kullanıcı bulunamazsa.
+    """
     if user_id == current_user.id:
         raise InsufficientPermissionsError("Kendi hesabınız üzerinde bu işlemi yapamazsınız.")
     return await service.change_role(user_id, data.role)
@@ -95,7 +183,24 @@ async def change_user_role(
 
 @router.post("/{user_id}/deactivate", response_model=UserResponse)
 async def deactivate_user(user_id: UUID, current_user: AdminDep, service: UserServiceDep) -> User:
-    """Kullaniciyi deaktif et (is_active=False). (Sadece Admin)"""
+    """Aktif bir kullanıcıyı deaktif eder.
+
+    Sadece admin yetkisine sahip kullanıcılar bu endpoint'e erişebilir.
+    Kullanıcının is_active alanını False olarak günceller. Deaktif
+    kullanıcılar sisteme giriş yapamaz ancak verileri korunur.
+
+    Args:
+        user_id: Deaktif edilecek kullanıcının benzersiz kimliği (UUID).
+        current_user: İşlemi yapan admin kullanıcı.
+        service: Kullanıcı işlemlerini yöneten servis.
+
+    Returns:
+        Deaktif edilmiş kullanıcının güncel profil bilgileri.
+
+    Raises:
+        InsufficientPermissionsError: Admin kendi hesabını deaktif etmeye çalışırsa.
+        NotFoundError: Belirtilen ID'ye sahip kullanıcı bulunamazsa.
+    """
     if user_id == current_user.id:
         raise InsufficientPermissionsError("Kendi hesabınız üzerinde bu işlemi yapamazsınız.")
     return await service.deactivate(user_id)
@@ -105,7 +210,24 @@ async def deactivate_user(user_id: UUID, current_user: AdminDep, service: UserSe
 async def delete_user(
     user_id: UUID, current_user: AdminDep, service: UserServiceDep
 ) -> MessageResponse:
-    """Kullaniciyi soft-delete ile sil. (Sadece Admin)"""
+    """Kullanıcıyı soft-delete yöntemiyle siler.
+
+    Sadece admin yetkisine sahip kullanıcılar bu endpoint'e erişebilir.
+    Kullanıcı veritabanından kalıcı olarak silinmez, deleted_at alanı
+    güncellenir. Silinen kullanıcı restore endpoint'i ile geri yüklenebilir.
+
+    Args:
+        user_id: Silinecek kullanıcının benzersiz kimliği (UUID).
+        current_user: İşlemi yapan admin kullanıcı.
+        service: Kullanıcı işlemlerini yöneten servis.
+
+    Returns:
+        İşlem sonucunu bildiren mesaj yanıtı.
+
+    Raises:
+        InsufficientPermissionsError: Admin kendi hesabını silmeye çalışırsa.
+        NotFoundError: Belirtilen ID'ye sahip kullanıcı bulunamazsa.
+    """
     if user_id == current_user.id:
         raise InsufficientPermissionsError("Kendi hesabınız üzerinde bu işlemi yapamazsınız.")
     await service.soft_delete(user_id)
@@ -114,7 +236,24 @@ async def delete_user(
 
 @router.post("/{user_id}/restore", response_model=UserResponse)
 async def restore_user(user_id: UUID, current_user: AdminDep, service: UserServiceDep) -> User:
-    """Silinmis kullaniciyi geri yukle. (Sadece Admin)"""
+    """Soft-delete ile silinmiş kullanıcıyı geri yükler.
+
+    Sadece admin yetkisine sahip kullanıcılar bu endpoint'e erişebilir.
+    Kullanıcının deleted_at alanını temizleyerek hesabı tekrar aktif
+    hale getirir. Kalıcı olarak silinmiş kullanıcılar geri yüklenemez.
+
+    Args:
+        user_id: Geri yüklenecek kullanıcının benzersiz kimliği (UUID).
+        current_user: İşlemi yapan admin kullanıcı.
+        service: Kullanıcı işlemlerini yöneten servis.
+
+    Returns:
+        Geri yüklenmiş kullanıcının güncel profil bilgileri.
+
+    Raises:
+        InsufficientPermissionsError: Admin kendi hesabını geri yüklemeye çalışırsa.
+        NotFoundError: Belirtilen ID'ye sahip silinmiş kullanıcı bulunamazsa.
+    """
     if user_id == current_user.id:
         raise InsufficientPermissionsError("Kendi hesabınız üzerinde bu işlemi yapamazsınız.")
     return await service.restore(user_id)

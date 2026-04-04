@@ -21,7 +21,10 @@ if TYPE_CHECKING:
 
 
 class AuditLogService:
+    """Audit log kayitlarini okuma/sorgulama servisidir."""
+
     def __init__(self, session: AsyncSession) -> None:
+        """AuditLogService nesnesini repository baglantisiyla olusturur."""
         self._repo = AuditLogRepository(session)
 
     async def list_logs(
@@ -35,6 +38,7 @@ class AuditLogService:
         page: int = 1,
         size: int = 20,
     ) -> tuple[list[AuditLog], int]:
+        """Filtreli audit log kayitlarini offset-based sayfalamayla listeler."""
         offset = (page - 1) * size
         return await self._repo.get_filtered_page(
             user_id=user_id,
@@ -57,6 +61,7 @@ class AuditLogService:
         cursor: str | None = None,
         size: int = 20,
     ) -> tuple[list[AuditLog], str | None]:
+        """Filtreli audit log kayitlarini cursor-based sayfalamayla listeler."""
         return await self._repo.get_cursor_filtered_page(
             user_id=user_id,
             action=action,
@@ -68,4 +73,5 @@ class AuditLogService:
         )
 
     async def get_log(self, log_id: UUID) -> AuditLog:
+        """ID ile tek bir audit log kaydini getirir."""
         return await self._repo.get_by_id_or_raise(log_id)

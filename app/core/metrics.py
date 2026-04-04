@@ -40,9 +40,27 @@ _instrumentator: Instrumentator | None = None
 
 
 def setup_metrics(app: FastAPI) -> None:
-    """
-    Prometheus metriklerini FastAPI uygulamasına bağla.
-    /metrics endpoint'ini oluşturur.
+    """Prometheus metrics instrumentator'ı FastAPI uygulamasına ekler.
+
+    /metrics endpoint'ini otomatik oluşturur ve HTTP metriklerini toplamaya başlar.
+    Request count, latency, response status code gibi standart metrikleri toplar.
+    Health check endpoint'leri metriklerden hariç tutulur.
+
+    Args:
+        app: FastAPI application instance
+
+    Note:
+        - /metrics endpoint otomatik expose edilir (Swagger'da görünmez)
+        - Grafana/Prometheus ile kullanılabilir
+        - Metrikler: http_requests_total, http_request_duration_seconds vb.
+        - Health endpoint'leri (/health, /health/live, /health/ready) hariç tutulur
+        - Status kodları gruplandırılır (2xx, 3xx, 4xx, 5xx)
+
+    Example:
+        >>> from fastapi import FastAPI
+        >>> app = FastAPI()
+        >>> setup_metrics(app)
+        >>> # GET /metrics -> Prometheus format metrikleri döner
     """
     global _instrumentator
     _instrumentator = Instrumentator(

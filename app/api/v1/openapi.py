@@ -8,10 +8,12 @@ filtrelenmiş bir OpenAPI şeması üretir.
 from __future__ import annotations
 
 import copy
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
 
 from app.api.v1.audiences import ALL, Audience
 
@@ -72,6 +74,7 @@ def _build_schema(
     title: str,
     version: str,
 ) -> dict[str, Any]:
+    """Belirli bir audience icin filtrelenmis OpenAPI semasini olusturur."""
     schema = copy.deepcopy(
         get_openapi(
             title=title,

@@ -21,6 +21,7 @@ from app.core.security import (
 
 
 def test_hash_password_returns_different_hash_each_time():
+    """test_hash_password_returns_different_hash_each_time senaryosunu test eder."""
     pw = "TestPassword1"
     h1 = hash_password(pw)
     h2 = hash_password(pw)
@@ -28,17 +29,20 @@ def test_hash_password_returns_different_hash_each_time():
 
 
 def test_verify_password_correct():
+    """test_verify_password_correct senaryosunu test eder."""
     pw = "TestPassword1"
     hashed = hash_password(pw)
     assert verify_password(pw, hashed) is True
 
 
 def test_verify_password_wrong():
+    """test_verify_password_wrong senaryosunu test eder."""
     hashed = hash_password("TestPassword1")
     assert verify_password("WrongPassword1", hashed) is False
 
 
 def test_token_type_values():
+    """test_token_type_values senaryosunu test eder."""
     assert TokenType.ACCESS == "access"
     assert TokenType.REFRESH == "refresh"
 

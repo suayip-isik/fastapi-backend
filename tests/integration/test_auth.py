@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 @pytest.mark.asyncio
 async def test_register_success(client: AsyncClient):
+    """test_register_success senaryosunu test eder."""
     res = await client.post(
         "/api/v1/auth/register",
         json={
@@ -35,6 +36,7 @@ async def test_register_success(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_register_duplicate_email(client: AsyncClient):
+    """test_register_duplicate_email senaryosunu test eder."""
     payload = {"email": "dup@example.com", "password": "StrongPass1"}
     await client.post("/api/v1/auth/register", json=payload)
     res = await client.post("/api/v1/auth/register", json=payload)
@@ -43,6 +45,7 @@ async def test_register_duplicate_email(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_login_success(client: AsyncClient):
+    """test_login_success senaryosunu test eder."""
     await client.post(
         "/api/v1/auth/register",
         json={
@@ -65,6 +68,7 @@ async def test_login_success(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_login_wrong_password(client: AsyncClient):
+    """test_login_wrong_password senaryosunu test eder."""
     res = await client.post(
         "/api/v1/auth/login",
         json={
@@ -78,6 +82,7 @@ async def test_login_wrong_password(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_get_me_authenticated(client: AsyncClient):
     # Register + login
+    """test_get_me_authenticated senaryosunu test eder."""
     await client.post(
         "/api/v1/auth/register",
         json={
@@ -101,12 +106,14 @@ async def test_get_me_authenticated(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_get_me_unauthorized(client: AsyncClient):
+    """test_get_me_unauthorized senaryosunu test eder."""
     res = await client.get("/api/v1/auth/me")
     assert res.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_health_check(client: AsyncClient):
+    """test_health_check senaryosunu test eder."""
     res = await client.get("/health")
     assert res.status_code == 200
     data = res.json()
@@ -580,7 +587,7 @@ async def test_verify_email_already_verified_user_still_succeeds(
 
 @pytest.mark.asyncio
 async def test_login_with_wrong_totp_backup_code(client: AsyncClient) -> None:
-    """Geçersiz backup kod ile login → 401."""
+    """Geçersiz backup kod ile totp-challenge → 401."""
     import pyotp
 
     email = "totp_bad_backup@example.com"
@@ -594,9 +601,101 @@ async def test_login_with_wrong_totp_backup_code(client: AsyncClient) -> None:
     valid_code = pyotp.TOTP(secret).now()
     await client.post("/api/v1/auth/totp/verify", json={"code": valid_code}, headers=headers)
 
-    # Geçersiz backup kod ile giriş → 401
-    res = await client.post(
+    # Adım 1: partial_token al
+    step1 = await client.post(
         "/api/v1/auth/login",
-        json={"email": email, "password": password, "totp_code": "INVALID1"},
+        json={"email": email, "password": password},
+    )
+    assert step1.status_code == 200
+    assert step1.json()["requires_totp"] is True
+    partial_token = step1.json()["partial_token"]
+
+    # Adım 2: Geçersiz backup kod ile challenge → 401
+    res = await client.post(
+        "/api/v1/auth/totp-challenge",
+        json={"partial_token": partial_token, "code": "INVALID1"},
     )
     assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_totp_challenge_invalid_partial_token(client: AsyncClient) -> None:
+    """Geçersiz partial_token ile totp-challenge → 401."""
+    res = await client.post(
+        "/api/v1/auth/totp-challenge",
+        json={"partial_token": "nonexistent_token", "code": "123456"},
+    )
+    assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_totp_challenge_single_use(client: AsyncClient) -> None:
+    """Aynı partial_token ile iki kez challenge → ikincisi 401."""
+    import pyotp
+
+    email = "totp_single_use@example.com"
+    password = "StrongPass1"
+    tokens = await _register_and_login(client, email)
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    setup_res = await client.post("/api/v1/auth/totp/setup", headers=headers)
+    secret = setup_res.json()["secret"]
+    valid_code = pyotp.TOTP(secret).now()
+    await client.post("/api/v1/auth/totp/verify", json={"code": valid_code}, headers=headers)
+
+    step1 = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": password},
+    )
+    partial_token = step1.json()["partial_token"]
+
+    totp = pyotp.TOTP(secret)
+    code = totp.now()
+
+    first = await client.post(
+        "/api/v1/auth/totp-challenge",
+        json={"partial_token": partial_token, "code": code},
+    )
+    assert first.status_code == 200
+
+    second = await client.post(
+        "/api/v1/auth/totp-challenge",
+        json={"partial_token": partial_token, "code": code},
+    )
+    assert second.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_totp_two_step_login_success(client: AsyncClient) -> None:
+    """TOTP aktif kullanıcı için iki adımlı login başarılı."""
+    import pyotp
+
+    email = "totp_two_step@example.com"
+    password = "StrongPass1"
+    tokens = await _register_and_login(client, email)
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    setup_res = await client.post("/api/v1/auth/totp/setup", headers=headers)
+    secret = setup_res.json()["secret"]
+    valid_code = pyotp.TOTP(secret).now()
+    await client.post("/api/v1/auth/totp/verify", json={"code": valid_code}, headers=headers)
+
+    # Adım 1
+    step1 = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": password},
+    )
+    assert step1.status_code == 200
+    data1 = step1.json()
+    assert data1["requires_totp"] is True
+    assert "partial_token" in data1
+
+    # Adım 2
+    step2 = await client.post(
+        "/api/v1/auth/totp-challenge",
+        json={"partial_token": data1["partial_token"], "code": pyotp.TOTP(secret).now()},
+    )
+    assert step2.status_code == 200
+    data2 = step2.json()
+    assert "access_token" in data2
+    assert "refresh_token" in data2

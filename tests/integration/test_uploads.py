@@ -25,17 +25,20 @@ _TEXT_FILE = ("test.txt", b"hello", "text/plain")
 
 
 async def _auth_headers(client: AsyncClient, email: str, password: str = "StrongPass1") -> dict:
+    """Yardımcı fonksiyon."""
     await client.post("/api/v1/auth/register", json={"email": email, "password": password})
     res = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
     return {"Authorization": f"Bearer {res.json()['access_token']}"}
 
 
 async def _get_user_id(client: AsyncClient, headers: dict) -> str:
+    """Yardımcı fonksiyon."""
     res = await client.get("/api/v1/users/me", headers=headers)
     return res.json()["id"]
 
 
 async def _promote_to_admin(db_session: AsyncSession, email: str) -> None:
+    """Yardımcı fonksiyon."""
     await db_session.execute(sa_update(User).where(User.email == email).values(role=UserRole.ADMIN))
     db_session.expire_all()
 
@@ -54,6 +57,7 @@ def _mock_storage(key: str = _FAKE_KEY, url: str = _FAKE_URL) -> MagicMock:
 
 @pytest.mark.asyncio
 async def test_upload_file_success(client: AsyncClient):
+    """test_upload_file_success senaryosunu test eder."""
     headers = await _auth_headers(client, "uploader@example.com")
 
     with patch("app.api.v1.endpoints.uploads.storage", _mock_storage()):
@@ -72,6 +76,7 @@ async def test_upload_file_success(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_upload_file_unauthorized(client: AsyncClient):
+    """test_upload_file_unauthorized senaryosunu test eder."""
     with patch("app.api.v1.endpoints.uploads.storage", _mock_storage()):
         res = await client.post(
             "/api/v1/uploads",
@@ -83,6 +88,7 @@ async def test_upload_file_unauthorized(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_upload_file_too_large(client: AsyncClient):
+    """test_upload_file_too_large senaryosunu test eder."""
     headers = await _auth_headers(client, "uploader_large@example.com")
 
     mock = _mock_storage()
@@ -100,6 +106,7 @@ async def test_upload_file_too_large(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_upload_file_invalid_type(client: AsyncClient):
+    """test_upload_file_invalid_type senaryosunu test eder."""
     headers = await _auth_headers(client, "uploader_type@example.com")
 
     mock = _mock_storage()
@@ -141,6 +148,7 @@ async def test_upload_calls_storage_with_user_folder(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_delete_file_as_owner(client: AsyncClient):
+    """test_delete_file_as_owner senaryosunu test eder."""
     headers = await _auth_headers(client, "owner_del@example.com")
     user_id = await _get_user_id(client, headers)
     key = f"users/{user_id}/myfile.jpg"
@@ -188,6 +196,7 @@ async def test_delete_file_as_admin(client: AsyncClient, db_session: AsyncSessio
 
 @pytest.mark.asyncio
 async def test_delete_file_unauthorized(client: AsyncClient):
+    """test_delete_file_unauthorized senaryosunu test eder."""
     mock = _mock_storage()
 
     with patch("app.api.v1.endpoints.uploads.storage", mock):

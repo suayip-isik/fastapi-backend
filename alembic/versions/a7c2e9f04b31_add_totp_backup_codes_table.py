@@ -19,6 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    """TOTP backup kodları için totp_backup_codes tablosunu oluşturur."""
     op.create_table(
         "totp_backup_codes",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
@@ -39,6 +40,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """totp_backup_codes tablosunu siler."""
     op.drop_index("ix_totp_backup_codes_user_active", table_name="totp_backup_codes")
     op.drop_index("ix_totp_backup_codes_user_id", table_name="totp_backup_codes")
     op.drop_table("totp_backup_codes")

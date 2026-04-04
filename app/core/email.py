@@ -1,7 +1,29 @@
-"""
-E-posta gönderim utility.
-SMTP_HOST yapılandırılmamışsa dev_link'i stdout'a loglar (dev fallback).
-Hiçbir zaman exception fırlatmaz — e-posta hatası API akışını kesmemeli.
+"""Email gönderim modülü.
+
+Bu modül SMTP üzerinden asenkron email gönderimi için utility fonksiyonları sağlar.
+aiosmtplib kütüphanesi kullanılarak async/await desteği ile email gönderilir.
+
+Güvenlik ve Stabilite:
+    - Email body asla loglanmaz (doğrulama/sıfırlama token'ları içerebilir)
+    - SMTP hatalarında exception fırlatılmaz (API akışı kesintiye uğramaz)
+    - Development ortamında SMTP olmadan link extraction ile test edilebilir
+
+Yapılandırma:
+    Email ayarları app.core.config.Settings üzerinden yapılır:
+    - SMTP_HOST: SMTP sunucu adresi (boşsa dev fallback aktif)
+    - SMTP_PORT: SMTP port (varsayılan 587)
+    - SMTP_USER: SMTP kimlik doğrulama kullanıcı adı
+    - SMTP_PASSWORD: SMTP kimlik doğrulama şifresi
+    - EMAILS_FROM_EMAIL: Gönderen email adresi
+
+Dev Fallback:
+    SMTP_HOST yapılandırılmamışsa (development/test ortamı) email gönderilmez,
+    bunun yerine HTML içeriğindeki ilk link parse edilip log'a yazılır.
+    Bu sayede geliştirme ortamında doğrulama/sıfırlama linkleri görülebilir.
+
+Note:
+    Production ortamında background task (ARQ) ile kullanılmalıdır.
+    Retry mechanism bu modülde yok, task queue'da yapılandırılmalı.
 """
 
 from __future__ import annotations
@@ -22,12 +44,40 @@ _HREF_RE = re.compile(r"""href=['"]([^'"]+)['"]""")
 
 
 async def send_email(*, to: str, subject: str, html_body: str) -> None:
-    """
-    E-posta gönder.
+    """SMTP üzerinden HTML email gönderir (async).
 
-    SMTP_HOST tanımlı değilse linki log'a yazar ve döner (dev mode).
-    body asla loglanmaz — HTML içeriği doğrulama/sıfırlama token'ı içerebilir.
-    SMTP hatasında da loglayıp devam eder — asla exception fırlatmaz.
+    aiosmtplib kullanarak asenkron email gönderimi yapar. SMTP ayarları
+    Settings'den (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD) alınır.
+
+    SMTP_HOST yapılandırılmamışsa (dev/test ortamı) email gönderimi yapılmaz,
+    bunun yerine HTML içeriğindeki linkler parse edilip ilk link log'a yazılır.
+    Bu sayede geliştirme ortamında doğrulama/sıfırlama linkleri console'da görünür.
+
+    Email gönderimi başarısız olursa exception fırlatmaz, sadece log yazılır.
+    Bu davranış API akışının email hatalarından etkilenmemesini sağlar.
+
+    Args:
+        to: Alıcı email adresi (tek alıcı)
+        subject: Email başlığı
+        html_body: HTML formatında email içeriği (doğrulama/sıfırlama token'ları
+            içerebilir, güvenlik nedeniyle asla loglanmaz)
+
+    Returns:
+        None: Fonksiyon asla exception fırlatmaz, başarısız durumda sadece log yazılır
+
+    Example:
+        >>> await send_email(
+        ...     to="user@example.com",
+        ...     subject="Email Doğrulama",
+        ...     html_body="<h1>Hoş Geldiniz</h1><a href='http://...'>Doğrula</a>"
+        ... )
+
+    Note:
+        - Production'da gerçek SMTP kullanılır (TLS ile)
+        - Development'ta SMTP_HOST boşsa console'a dev_link log yazılır
+        - Email body asla loglanmaz (güvenlik - token içerebilir)
+        - Retry mechanism yok, background task (ARQ) ile kullanılmalı
+        - SMTP hatalarında exception fırlatılmaz, sadece error log yazılır
     """
     if not settings.SMTP_HOST:
         links = _HREF_RE.findall(html_body)

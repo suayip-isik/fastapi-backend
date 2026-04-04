@@ -11,6 +11,7 @@ from uuid import UUID
 from sqladmin.authentication import AuthenticationBackend
 
 from app.core.exceptions import AppError
+from app.core.logging import get_logger
 from app.core.security import TokenType, decode_token
 from app.db.models.user import UserRole
 from app.db.repositories.user import UserRepository
@@ -19,12 +20,53 @@ from app.db.session import AsyncSessionFactory
 if TYPE_CHECKING:
     from starlette.requests import Request
 
+logger = get_logger(__name__)
+
 
 class AdminAuthBackend(AuthenticationBackend):
+    """SQLAdmin panel için JWT tabanlı authentication backend.
+
+    Admin paneline erişimi JWT token ile kontrol eder. Sadece ADMIN
+    rolüne sahip kullanıcılar panele girebilir. Token session'dan
+    okunur ve her istekte validate edilir.
+
+    Note:
+        - Sadece UserRole.ADMIN yetkisi yeterli
+        - Token validation core.security modülünü kullanır
+        - Login başarısız ise /admin/login'e redirect
+        - Token session cookie'de saklanır
+
+    Example:
+        >>> # Browser: Session cookie ile otomatik auth
+        >>> # GET /admin -> Admin panel (ADMIN rolü gerekli)
+    """
+
     async def login(self, request: Request) -> bool:
-        """
-        Admin login formu — email/password ile giriş.
-        Başarılıysa JWT token'ı session'a kaydeder.
+        """Admin login formu ile email/password doğrulama.
+
+        Kullanıcı email ve password ile giriş yapar. Başarılı
+        doğrulamadan sonra JWT access token üretilir ve session'a
+        kaydedilir. Sadece aktif ve ADMIN rolüne sahip kullanıcılar
+        giriş yapabilir.
+
+        Args:
+            request: Starlette Request objesi. Form data'dan username
+                (email) ve password alanlarını okur.
+
+        Returns:
+            True: Login başarılı, token session'a kaydedildi
+            False: Login başarısız (geçersiz credentials, yetkisiz vb.)
+
+        Note:
+            - Form field'ları: username (email), password
+            - OAuth kullanıcıları (hashed_password=None) giriş yapamaz
+            - Exception durumunda False döner (güvenlik)
+
+        Example:
+            >>> # POST /admin/login ile form gönderilir
+            >>> # username: admin@example.com
+            >>> # password: securepass
+            >>> # -> Success: Session'a token yazılır
         """
         form = await request.form()
         email = str(form.get("username", ""))
@@ -57,16 +99,57 @@ class AdminAuthBackend(AuthenticationBackend):
                 return True
 
         except Exception:
+            logger.warning("admin_login_unexpected_error", exc_info=True)
             return False
 
     async def logout(self, request: Request) -> bool:
-        """Session'dan token'ı temizle."""
+        """Admin kullanıcı çıkışı - session temizleme.
+
+        Kullanıcı oturumunu sonlandırır. Session içindeki tüm
+        veriler (token dahil) temizlenir. Logout sonrası kullanıcı
+        admin paneline erişemez.
+
+        Args:
+            request: Starlette Request objesi. Session verileri
+                bu objeden temizlenir.
+
+        Returns:
+            Her zaman True döner (logout daima başarılıdır).
+
+        Example:
+            >>> # GET /admin/logout
+            >>> # -> Session temizlenir, login sayfasına redirect
+        """
         request.session.clear()
         return True
 
     async def authenticate(self, request: Request) -> bool:
-        """
-        Her admin isteğinde token doğrula ve ADMIN rolü kontrol et.
+        """Her admin isteğinde token doğrulama ve yetki kontrolü.
+
+        Admin paneline gelen her istekte çağrılır. Session'daki
+        JWT token'ı decode eder, geçerliliğini ve kullanıcının
+        ADMIN rolüne sahip olduğunu kontrol eder. Başarısız
+        durumda erişim reddedilir.
+
+        Args:
+            request: Starlette Request objesi. Session'dan token
+                okunur.
+
+        Returns:
+            True: Token geçerli ve kullanıcı ADMIN rolünde
+            False: Token geçersiz, kullanıcı yetkisiz veya hata
+
+        Note:
+            - Token TokenType.ACCESS olmalı
+            - Kullanıcı aktif (is_active=True) olmalı
+            - Kullanıcı UserRole.ADMIN olmalı
+            - Herhangi bir hata durumunda False döner
+
+        Example:
+            >>> # Her admin panel isteğinde otomatik çalışır
+            >>> # GET /admin/user -> authenticate() check
+            >>> # -> True ise panel gösterilir
+            >>> # -> False ise login'e redirect
         """
         token = request.session.get("admin_token")
         if not token:
@@ -93,4 +176,5 @@ class AdminAuthBackend(AuthenticationBackend):
         except AppError:
             return False
         except Exception:
+            logger.warning("admin_authenticate_unexpected_error", exc_info=True)
             return False

@@ -8,6 +8,8 @@ from httpx import AsyncClient
 
 
 class TestRequestIDMiddleware:
+    """TestRequestIDMiddleware test grubunu içerir."""
+
     async def test_generates_uuid_when_no_header(self, client: AsyncClient) -> None:
         """X-Request-ID header'ı olmadan istek → UUID formatında header üretilmeli."""
         res = await client.get("/health/live")
@@ -31,6 +33,8 @@ class TestRequestIDMiddleware:
 
 
 class TestTimingMiddleware:
+    """TestTimingMiddleware test grubunu içerir."""
+
     async def test_adds_process_time_header(self, client: AsyncClient) -> None:
         """Her response'da X-Process-Time-Ms header'ı bulunmalı."""
         res = await client.get("/health/live")
@@ -44,28 +48,36 @@ class TestTimingMiddleware:
 
 
 class TestSecurityHeadersMiddleware:
+    """TestSecurityHeadersMiddleware test grubunu içerir."""
+
     async def test_adds_x_content_type_options(self, client: AsyncClient) -> None:
+        """test_adds_x_content_type_options senaryosunu test eder."""
         res = await client.get("/health/live")
         assert res.headers.get("x-content-type-options") == "nosniff"
 
     async def test_adds_x_frame_options(self, client: AsyncClient) -> None:
+        """test_adds_x_frame_options senaryosunu test eder."""
         res = await client.get("/health/live")
         assert res.headers.get("x-frame-options") == "DENY"
 
     async def test_adds_xss_protection(self, client: AsyncClient) -> None:
+        """test_adds_xss_protection senaryosunu test eder."""
         res = await client.get("/health/live")
         assert res.headers.get("x-xss-protection") == "1; mode=block"
 
     async def test_adds_strict_transport_security(self, client: AsyncClient) -> None:
+        """test_adds_strict_transport_security senaryosunu test eder."""
         res = await client.get("/health/live")
         hsts = res.headers.get("strict-transport-security", "")
         assert "max-age=" in hsts
 
     async def test_adds_referrer_policy(self, client: AsyncClient) -> None:
+        """test_adds_referrer_policy senaryosunu test eder."""
         res = await client.get("/health/live")
         assert "referrer-policy" in res.headers
 
     async def test_adds_permissions_policy(self, client: AsyncClient) -> None:
+        """test_adds_permissions_policy senaryosunu test eder."""
         res = await client.get("/health/live")
         assert "permissions-policy" in res.headers
 

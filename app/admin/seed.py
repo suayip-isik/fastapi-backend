@@ -17,6 +17,24 @@ logger = structlog.get_logger(__name__)
 
 
 async def create_default_admin() -> None:
+    """Varsayılan admin kullanıcısını yoksa oluşturur.
+
+    Uygulama başlangıcında çağrılır. ADMIN_EMAIL ve ADMIN_PASSWORD
+    ayarlarından faydalanarak tam yetkili bir admin hesabı oluşturur.
+
+    İş mantığı:
+        1. ADMIN_EMAIL adresinin veritabanında mevcut olup olmadığını kontrol eder.
+        2. Kayıt varsa işlem yapmadan döner (idempotent).
+        3. Kayıt yoksa şifreyi bcrypt ile hash'ler ve kullanıcıyı oluşturur.
+        4. Kullanıcı is_active=True, is_verified=True, role=ADMIN olarak kaydedilir.
+
+    Raises:
+        SQLAlchemyError: Veritabanı bağlantısı veya commit işlemi başarısız olursa.
+
+    Note:
+        - Bu fonksiyon idempotent'tir; birden fazla kez çağrılması güvenlidir.
+        - ADMIN_EMAIL ve ADMIN_PASSWORD değerleri `.env` dosyasından okunur.
+    """
     async with AsyncSessionFactory() as session:
         repo = UserRepository(session)
 

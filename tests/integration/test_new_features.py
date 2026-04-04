@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 async def _register_and_login(
     client: AsyncClient, email: str, password: str = "StrongPass1"
 ) -> dict[str, str]:
+    """Yardımcı fonksiyon."""
     await client.post("/api/v1/auth/register", json={"email": email, "password": password})
     res = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert res.status_code == 200
@@ -32,12 +33,14 @@ async def _register_and_login(
 
 @pytest.mark.asyncio
 async def test_totp_setup_requires_auth(client: AsyncClient) -> None:
+    """test_totp_setup_requires_auth senaryosunu test eder."""
     res = await client.post("/api/v1/auth/totp/setup")
     assert res.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_totp_setup_returns_qr_and_secret(client: AsyncClient) -> None:
+    """test_totp_setup_returns_qr_and_secret senaryosunu test eder."""
     headers = await _register_and_login(client, "totp_setup@example.com")
     res = await client.post("/api/v1/auth/totp/setup", headers=headers)
     assert res.status_code == 200
@@ -50,6 +53,7 @@ async def test_totp_setup_returns_qr_and_secret(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_totp_verify_invalid_code(client: AsyncClient) -> None:
+    """test_totp_verify_invalid_code senaryosunu test eder."""
     headers = await _register_and_login(client, "totp_verify_bad@example.com")
     await client.post("/api/v1/auth/totp/setup", headers=headers)
     res = await client.post("/api/v1/auth/totp/verify", json={"code": "000000"}, headers=headers)
@@ -88,6 +92,7 @@ async def test_totp_verify_and_disable_flow(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_totp_disable_when_not_enabled(client: AsyncClient) -> None:
+    """test_totp_disable_when_not_enabled senaryosunu test eder."""
     headers = await _register_and_login(client, "totp_disable_na@example.com")
     res = await client.post("/api/v1/auth/totp/disable", json={"code": "123456"}, headers=headers)
     assert res.status_code == 400  # BusinessRuleError
@@ -127,6 +132,7 @@ async def test_login_requires_totp_when_enabled(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_create_api_key(client: AsyncClient) -> None:
+    """test_create_api_key senaryosunu test eder."""
     headers = await _register_and_login(client, "apikey_create@example.com")
     res = await client.post(
         "/api/v1/api-keys",
@@ -142,6 +148,7 @@ async def test_create_api_key(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_list_api_keys(client: AsyncClient) -> None:
+    """test_list_api_keys senaryosunu test eder."""
     headers = await _register_and_login(client, "apikey_list@example.com")
     await client.post("/api/v1/api-keys", json={"name": "Key 1"}, headers=headers)
     await client.post("/api/v1/api-keys", json={"name": "Key 2"}, headers=headers)
@@ -153,6 +160,7 @@ async def test_list_api_keys(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_revoke_api_key(client: AsyncClient) -> None:
+    """test_revoke_api_key senaryosunu test eder."""
     headers = await _register_and_login(client, "apikey_revoke@example.com")
     create_res = await client.post(
         "/api/v1/api-keys", json={"name": "Revokable Key"}, headers=headers
@@ -182,12 +190,14 @@ async def test_authenticate_with_api_key(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_invalid_api_key_rejected(client: AsyncClient) -> None:
+    """test_invalid_api_key_rejected senaryosunu test eder."""
     res = await client.get("/api/v1/users/me", headers={"X-API-Key": "sk_live_invalid"})
     assert res.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_revoke_other_users_key_fails(client: AsyncClient) -> None:
+    """test_revoke_other_users_key_fails senaryosunu test eder."""
     headers1 = await _register_and_login(client, "apikey_own1@example.com")
     headers2 = await _register_and_login(client, "apikey_own2@example.com")
 
@@ -206,6 +216,7 @@ async def test_revoke_other_users_key_fails(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_notifications_empty_by_default(client: AsyncClient) -> None:
+    """test_notifications_empty_by_default senaryosunu test eder."""
     headers = await _register_and_login(client, "notif_empty@example.com")
     res = await client.get("/api/v1/notifications", headers=headers)
     assert res.status_code == 200
@@ -242,6 +253,7 @@ async def test_notification_create_and_list(client: AsyncClient, db_session: obj
 
 @pytest.mark.asyncio
 async def test_notification_mark_read(client: AsyncClient, db_session: object) -> None:
+    """test_notification_mark_read senaryosunu test eder."""
     from uuid import UUID
 
     from app.services.notification import NotificationService
@@ -264,6 +276,7 @@ async def test_notification_mark_read(client: AsyncClient, db_session: object) -
 
 @pytest.mark.asyncio
 async def test_notification_mark_all_read(client: AsyncClient, db_session: object) -> None:
+    """test_notification_mark_all_read senaryosunu test eder."""
     from uuid import UUID
 
     from app.services.notification import NotificationService
@@ -289,6 +302,7 @@ async def test_notification_mark_all_read(client: AsyncClient, db_session: objec
 
 @pytest.mark.asyncio
 async def test_notification_delete(client: AsyncClient, db_session: object) -> None:
+    """test_notification_delete senaryosunu test eder."""
     from uuid import UUID
 
     from app.services.notification import NotificationService
@@ -313,6 +327,7 @@ async def test_notification_delete(client: AsyncClient, db_session: object) -> N
 
 @pytest.mark.asyncio
 async def test_notification_unread_count(client: AsyncClient, db_session: object) -> None:
+    """test_notification_unread_count senaryosunu test eder."""
     from uuid import UUID
 
     from app.services.notification import NotificationService
@@ -340,6 +355,7 @@ async def test_notification_unread_count(client: AsyncClient, db_session: object
 
 @pytest.mark.asyncio
 async def test_health_live(client: AsyncClient) -> None:
+    """test_health_live senaryosunu test eder."""
     res = await client.get("/health/live")
     assert res.status_code == 200
     assert res.json()["status"] == "ok"

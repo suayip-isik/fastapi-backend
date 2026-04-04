@@ -31,6 +31,11 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
+    """Offline modda migration çalıştırır (SQL script üretir).
+
+    Veritabanına bağlanmadan SQL scriptleri üretir. CI/CD pipeline'ında
+    veya manuel review için kullanılır.
+    """
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
@@ -43,12 +48,14 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
+    """Senkron bağlantı ile migration'ları çalıştırır."""
     context.configure(connection=connection, target_metadata=target_metadata)
     with context.begin_transaction():
         context.run_migrations()
 
 
 async def run_async_migrations() -> None:
+    """Async engine ile migration'ları çalıştırır."""
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
@@ -60,6 +67,7 @@ async def run_async_migrations() -> None:
 
 
 def run_migrations_online() -> None:
+    """Online modda migration çalıştırır (veritabanına bağlanır)."""
     asyncio.run(run_async_migrations())
 
 

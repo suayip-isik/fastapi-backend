@@ -13,6 +13,7 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 import app.core.redis as redis_module
 from app.core.config import settings
@@ -27,25 +28,41 @@ if TYPE_CHECKING:
 # Test DB — ayrı bir DB kullan
 TEST_DATABASE_URL = settings.DATABASE_URL.replace(f"/{settings.POSTGRES_DB}", "/test_db")
 
+# NullPool session factory — test süresi boyunca app engine'ini override eder
+_null_pool_factory = async_sessionmaker(
+    create_async_engine(TEST_DATABASE_URL, poolclass=NullPool),
+    expire_on_commit=False,
+)
+
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_db():
-    """Test başında tabloları oluştur, sonunda sil (sync — kendi loop'unu kullanır)."""
+    """Test başında tabloları oluştur, sonunda sil.
+
+    NullPool kullanır: event loop sınırı aşılmaz, connection havuzu taşmaz.
+    """
 
     async def _create() -> None:
-        engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+        engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         await engine.dispose()
 
     async def _drop() -> None:
-        engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+        engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
         await engine.dispose()
 
     asyncio.run(_create())
-    yield
+
+    # App engine + AuditService'i de NullPool ile override et — pool dolup taşmasın
+    with (
+        patch("app.db.session.AsyncSessionFactory", _null_pool_factory),
+        patch("app.services.audit.AsyncSessionFactory", _null_pool_factory),
+    ):
+        yield
+
     asyncio.run(_drop())
 
 
@@ -85,10 +102,17 @@ def mock_enqueue():
 
 @pytest_asyncio.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Her test için kendi event loop'unda taze engine + session."""
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+    """Her test için NullPool engine + taze session.
+
+    NullPool: her bağlantı işlem sonrası hemen kapatılır.
+    Test öncesi tüm tablolar temizlenir — izolasyon sağlanır.
+    """
+    engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session:
+        for table in reversed(Base.metadata.sorted_tables):
+            await session.execute(table.delete())
+        await session.commit()
         yield session
     await engine.dispose()
 
@@ -98,6 +122,7 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """Test HTTP client — DB override ile."""
 
     async def override_get_db():
+        """override_get_db işlemini gerçekleştirir."""
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db

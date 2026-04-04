@@ -22,6 +22,7 @@ class SoftDeleteMixin:
 
     @property
     def is_deleted(self) -> bool:
+        """Kaydin soft-delete edilmis olup olmadigini belirtir."""
         return self.deleted_at is not None
 
 

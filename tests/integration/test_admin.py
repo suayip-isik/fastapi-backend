@@ -14,6 +14,8 @@ from httpx import AsyncClient
 
 
 class TestAdminPanelAccessControl:
+    """TestAdminPanelAccessControl test grubunu içerir."""
+
     async def test_unauthenticated_redirects_to_login(self, client: AsyncClient) -> None:
         """Session olmadan /admin/ isteği → /admin/login sayfasına yönlendirmeli."""
         res = await client.get("/admin/", follow_redirects=False)

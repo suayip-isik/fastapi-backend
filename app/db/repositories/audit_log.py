@@ -1,4 +1,8 @@
-"""AuditLog repository."""
+"""AuditLog repository.
+
+Bu modül, denetim günlüğü (audit log) kayıtlarına erişim için
+repository sınıfını içerir.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +19,20 @@ if TYPE_CHECKING:
 
 
 class AuditLogRepository(BaseRepository[AuditLog]):
+    """Denetim günlüğü kayıtları için repository sınıfı.
+
+    Bu sınıf, AuditLog modeli üzerinde CRUD işlemleri ve özelleştirilmiş
+    sorgular sağlar. BaseRepository'den miras alır ve filtreleme,
+    sayfalama gibi ek özellikler sunar.
+
+    Attributes:
+        model: Bu repository'nin çalıştığı SQLAlchemy model sınıfı.
+
+    Example:
+        >>> repo = AuditLogRepository(session)
+        >>> logs, total = await repo.get_filtered_page(user_id=user.id)
+    """
+
     model = AuditLog
 
     def _apply_filters(
@@ -27,7 +45,22 @@ class AuditLogRepository(BaseRepository[AuditLog]):
         date_to: datetime | None,
         ip_address: str | None,
     ) -> Any:
-        """Ortak filtre koşullarını stmt'e uygular."""
+        """Ortak filtre koşullarını SQL ifadesine uygular.
+
+        Verilen parametrelere göre WHERE koşullarını dinamik olarak ekler.
+        None olan parametreler filtrelemeye dahil edilmez.
+
+        Args:
+            stmt: Filtrelerin uygulanacağı SQLAlchemy select ifadesi.
+            user_id: Filtrelenecek kullanıcı UUID'si.
+            action: Filtrelenecek denetim eylemi türü.
+            date_from: Başlangıç tarihi (dahil).
+            date_to: Bitiş tarihi (dahil).
+            ip_address: Filtrelenecek IP adresi.
+
+        Returns:
+            Filtreler uygulanmış SQLAlchemy select ifadesi.
+        """
         if user_id is not None:
             stmt = stmt.where(AuditLog.user_id == user_id)
         if action is not None:
@@ -51,7 +84,32 @@ class AuditLogRepository(BaseRepository[AuditLog]):
         offset: int = 0,
         limit: int = 20,
     ) -> tuple[list[AuditLog], int]:
-        """Filtreli ve sayfalı audit log sorgusu (window function ile tek sorgu)."""
+        """Filtreli ve sayfalı denetim günlüğü sorgusu yapar.
+
+        Window function kullanarak tek sorguda hem sonuçları hem de
+        toplam kayıt sayısını döndürür. Sonuçlar oluşturulma tarihine
+        göre azalan sırada sıralanır.
+
+        Args:
+            user_id: Filtrelenecek kullanıcı UUID'si.
+            action: Filtrelenecek denetim eylemi türü.
+            date_from: Başlangıç tarihi (dahil).
+            date_to: Bitiş tarihi (dahil).
+            ip_address: Filtrelenecek IP adresi.
+            offset: Atlanacak kayıt sayısı (sayfalama için).
+            limit: Döndürülecek maksimum kayıt sayısı.
+
+        Returns:
+            İki elemanlı tuple:
+                - Denetim günlüğü kayıtlarının listesi.
+                - Filtrelere uyan toplam kayıt sayısı.
+
+        Example:
+            >>> logs, total = await repo.get_filtered_page(
+            ...     action=AuditAction.LOGIN,
+            ...     limit=10
+            ... )
+        """
         count_col = func.count().over().label("_total")
         stmt = select(AuditLog, count_col).order_by(AuditLog.created_at.desc())
         stmt = self._apply_filters(
@@ -79,7 +137,36 @@ class AuditLogRepository(BaseRepository[AuditLog]):
         cursor: str | None = None,
         limit: int = 20,
     ) -> tuple[list[AuditLog], str | None]:
-        """Filtreli cursor tabanlı audit log sorgusu."""
+        """Filtreli cursor tabanlı denetim günlüğü sorgusu yapar.
+
+        Offset yerine cursor kullanarak daha verimli sayfalama sağlar.
+        Büyük veri setlerinde offset-based sayfalamaya göre daha performanslıdır.
+        Cursor, created_at ve id alanlarının kombinasyonundan oluşur.
+
+        Args:
+            user_id: Filtrelenecek kullanıcı UUID'si.
+            action: Filtrelenecek denetim eylemi türü.
+            date_from: Başlangıç tarihi (dahil).
+            date_to: Bitiş tarihi (dahil).
+            ip_address: Filtrelenecek IP adresi.
+            cursor: Önceki sayfanın son kaydını temsil eden cursor değeri.
+                None ise ilk sayfadan başlar.
+            limit: Döndürülecek maksimum kayıt sayısı.
+
+        Returns:
+            İki elemanlı tuple:
+                - Denetim günlüğü kayıtlarının listesi.
+                - Sonraki sayfa için cursor değeri. Daha fazla kayıt yoksa None.
+
+        Example:
+            >>> # İlk sayfa
+            >>> logs, next_cursor = await repo.get_cursor_filtered_page(limit=20)
+            >>> # Sonraki sayfa
+            >>> logs, next_cursor = await repo.get_cursor_filtered_page(
+            ...     cursor=next_cursor,
+            ...     limit=20
+            ... )
+        """
         from app.schemas.common import decode_cursor, encode_cursor
 
         stmt = select(AuditLog)

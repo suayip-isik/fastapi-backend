@@ -19,10 +19,12 @@ _PASSWORD = "StrongPass1!"
 
 
 async def _register(client: AsyncClient, email: str) -> None:
+    """Yardımcı fonksiyon."""
     await client.post("/api/v1/auth/register", json={"email": email, "password": _PASSWORD})
 
 
 async def _login_tokens(client: AsyncClient, email: str) -> dict:
+    """Yardımcı fonksiyon."""
     res = await client.post("/api/v1/auth/login", json={"email": email, "password": _PASSWORD})
     return res.json()
 
@@ -48,6 +50,8 @@ def _called_actions(mock: AsyncMock) -> list[AuditAction]:
 
 
 class TestRegisterAudit:
+    """TestRegisterAudit test grubunu içerir."""
+
     async def test_register_triggers_register_audit_action(
         self, client: AsyncClient, mock_audit: AsyncMock
     ) -> None:
@@ -71,6 +75,8 @@ class TestRegisterAudit:
 
 
 class TestLoginAudit:
+    """TestLoginAudit test grubunu içerir."""
+
     async def test_successful_login_triggers_login_success_audit(
         self, client: AsyncClient, mock_audit: AsyncMock
     ) -> None:
@@ -112,6 +118,8 @@ class TestLoginAudit:
 
 
 class TestLogoutAudit:
+    """TestLogoutAudit test grubunu içerir."""
+
     async def test_logout_triggers_logout_audit(
         self, client: AsyncClient, mock_audit: AsyncMock
     ) -> None:
@@ -129,6 +137,8 @@ class TestLogoutAudit:
 
 
 class TestTokenRefreshAudit:
+    """TestTokenRefreshAudit test grubunu içerir."""
+
     async def test_token_refresh_triggers_audit(
         self, client: AsyncClient, mock_audit: AsyncMock
     ) -> None:

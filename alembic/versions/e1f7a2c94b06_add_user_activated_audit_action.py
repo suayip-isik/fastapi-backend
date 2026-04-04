@@ -17,9 +17,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    """AuditAction enum'ına user_activated değerini ekler."""
     op.execute("ALTER TYPE auditaction ADD VALUE IF NOT EXISTS 'user_activated'")
 
 
 def downgrade() -> None:
+    """PostgreSQL enum değeri silmeyi desteklemez, bu yüzden işlem yapılmaz."""
     # PostgreSQL enum değeri silmeyi desteklemez.
     pass
