@@ -1,6 +1,6 @@
 """
 SQLAdmin kimlik doğrulama backend'i.
-Mevcut JWT sistemi ve UserRole.ADMIN kontrolü kullanılır.
+Mevcut JWT sistemi ve admin rol kontrolü kullanılır.
 """
 
 from __future__ import annotations
@@ -10,10 +10,11 @@ from uuid import UUID
 
 from sqladmin.authentication import AuthenticationBackend
 
+from app.api.dependencies.auth import get_user_permissions
 from app.core.exceptions import AppError
 from app.core.logging import get_logger
+from app.core.permissions import Permission
 from app.core.security import TokenType, decode_token
-from app.db.models.user import UserRole
 from app.db.repositories.user import UserRepository
 from app.db.session import AsyncSessionFactory
 
@@ -31,7 +32,7 @@ class AdminAuthBackend(AuthenticationBackend):
     okunur ve her istekte validate edilir.
 
     Note:
-        - Sadece UserRole.ADMIN yetkisi yeterli
+        - Sadece admin rolü yeterli (admin:access permission)
         - Token validation core.security modülünü kullanır
         - Login başarısız ise /admin/login'e redirect
         - Token session cookie'de saklanır
@@ -78,7 +79,7 @@ class AdminAuthBackend(AuthenticationBackend):
         try:
             from app.core.security import create_access_token, verify_password
 
-            async with AsyncSessionFactory() as session:
+            async with AsyncSessionFactory() as session, session.begin():
                 repo = UserRepository(session)
                 user = await repo.get_active_by_email(email)
 
@@ -91,12 +92,13 @@ class AdminAuthBackend(AuthenticationBackend):
                 if not verify_password(password, user.hashed_password):
                     return False
 
-                if user.role != UserRole.ADMIN:
-                    return False
+            user_perms = await get_user_permissions(user.id)
+            if Permission.ADMIN_ACCESS.value not in user_perms:
+                return False
 
-                token = create_access_token(str(user.id))
-                request.session["admin_token"] = token
-                return True
+            token = create_access_token(str(user.id))
+            request.session["admin_token"] = token
+            return True
 
         except Exception:
             logger.warning("admin_login_unexpected_error", exc_info=True)
@@ -142,7 +144,7 @@ class AdminAuthBackend(AuthenticationBackend):
         Note:
             - Token TokenType.ACCESS olmalı
             - Kullanıcı aktif (is_active=True) olmalı
-            - Kullanıcı UserRole.ADMIN olmalı
+            - Kullanıcı admin:access permission'ına sahip olmalı
             - Herhangi bir hata durumunda False döner
 
         Example:
@@ -161,17 +163,15 @@ class AdminAuthBackend(AuthenticationBackend):
             if payload.type != TokenType.ACCESS:
                 return False
 
-            async with AsyncSessionFactory() as session:
+            async with AsyncSessionFactory() as session, session.begin():
                 repo = UserRepository(session)
                 user = await repo.get_by_id(UUID(payload.sub))
 
                 if not user or not user.is_active:
                     return False
 
-                if user.role != UserRole.ADMIN:
-                    return False
-
-            return True
+            user_perms = await get_user_permissions(user.id)
+            return Permission.ADMIN_ACCESS.value in user_perms
 
         except AppError:
             return False

@@ -13,3 +13,6 @@ TOTP_BACKUP_KEY = "totp_backup:{}"  # {user_id} → set of backup codes
 USER_CACHE_KEY = "user_cache:id:{}"  # {user_id} → UserResponse JSON
 USER_EMAIL_CACHE_KEY = "user_cache:email:{}"  # {email} → UserResponse JSON
 USER_CACHE_TTL = 5 * 60  # 300 saniye
+
+USER_PERMISSIONS_KEY = "user_permissions:{}"  # {user_id} → permission string listesi JSON
+USER_PERMISSIONS_TTL = 15 * 60  # 900 saniye

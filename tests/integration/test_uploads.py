@@ -9,7 +9,8 @@ import pytest
 from sqlalchemy import update as sa_update
 
 from app.core.exceptions import FileTooLargeError, InvalidFileTypeError
-from app.db.models.user import User, UserRole
+from app.db.models.role import Role
+from app.db.models.user import User
 
 if TYPE_CHECKING:
     from httpx import AsyncClient
@@ -39,7 +40,14 @@ async def _get_user_id(client: AsyncClient, headers: dict) -> str:
 
 async def _promote_to_admin(db_session: AsyncSession, email: str) -> None:
     """Yardımcı fonksiyon."""
-    await db_session.execute(sa_update(User).where(User.email == email).values(role=UserRole.ADMIN))
+    from sqlalchemy import select
+
+    result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
+    admin_role_id = result.scalar_one()
+    await db_session.execute(
+        sa_update(User).where(User.email == email).values(role_id=admin_role_id)
+    )
+    await db_session.commit()
     db_session.expire_all()
 
 

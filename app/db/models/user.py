@@ -2,33 +2,17 @@
 
 from __future__ import annotations
 
-from enum import Enum as PyEnum
+from typing import TYPE_CHECKING
+from uuid import UUID
 
-from sqlalchemy import Boolean, Enum, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Boolean, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.models.base import BaseModel, SoftDeleteMixin
 
-
-class UserRole(str, PyEnum):
-    """Kullanıcı rol tanımları.
-
-    Sistemdeki kullanıcı yetkilerini belirler. Rol bazlı erişim kontrolü
-    (RBAC) için kullanılır.
-
-    Attributes:
-        ADMIN: Sistem yöneticisi (tüm yetkiler)
-        USER: Normal kullanıcı (standart yetkiler)
-        MODERATOR: Moderatör (içerik yönetimi yetkisi)
-
-    Note:
-        - Database'de enum member name saklanır (örn: "ADMIN")
-        - require_roles() dependency ile endpoint koruması yapılır
-    """
-
-    ADMIN = "admin"
-    USER = "user"
-    MODERATOR = "moderator"
+if TYPE_CHECKING:
+    from app.db.models.role import Role
 
 
 class User(SoftDeleteMixin, BaseModel):
@@ -36,6 +20,7 @@ class User(SoftDeleteMixin, BaseModel):
 
     Sistem kullanıcılarını temsil eder. Authentication, authorization ve
     profil bilgilerini içerir. Soft delete destekler (SoftDeleteMixin).
+    Rol ataması `role_id` FK üzerinden `Role` modeline yapılır.
 
     Attributes:
         email: Benzersiz email adresi (unique index, max 255 karakter)
@@ -43,7 +28,8 @@ class User(SoftDeleteMixin, BaseModel):
         hashed_password: bcrypt ile hash'lenmiş şifre (12 rounds, nullable)
         full_name: Kullanıcının tam adı (max 255 karakter, nullable)
         avatar_url: Profil resmi URL (nullable)
-        role: UserRole enum (ADMIN, USER, MODERATOR, default: USER)
+        role_id: Atanmış rolün UUID'si (FK → roles.id)
+        role: Role ilişkisi (selectin ile otomatik yüklenir)
         is_active: Hesap aktif mi (deaktif edilebilir, default: True)
         is_verified: Email doğrulanmış mı (default: False)
         totp_secret: TOTP 2FA secret (Fernet ile şifrelenmiş, nullable)
@@ -53,19 +39,9 @@ class User(SoftDeleteMixin, BaseModel):
         deleted_at: Soft delete zamanı (SoftDeleteMixin'den inherit, nullable)
         id: UUID primary key (BaseModel'den inherit)
 
-    Example:
-        >>> from app.core.security import get_password_hash
-        >>> user = User(
-        ...     email="test@example.com",
-        ...     username="testuser",
-        ...     hashed_password=get_password_hash("password123"),
-        ...     role=UserRole.USER
-        ... )
-
     Note:
-        - hashed_password asla direkt set edilmez, get_password_hash() kullan
-        - BaseModel'den UUID id, timestamps (created_at, updated_at) inherit eder
-        - SoftDeleteMixin'den deleted_at, is_deleted property inherit eder
+        - hashed_password asla direkt set edilmez, hash_password() kullan
+        - role ilişkisi lazy="selectin" ile otomatik yüklenir
         - totp_secret Fernet encryption ile şifrelenmiş saklanır
     """
 
@@ -77,7 +53,13 @@ class User(SoftDeleteMixin, BaseModel):
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.USER, nullable=False)
+    role_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("roles.id"),
+        nullable=False,
+        index=True,
+    )
+    role: Mapped[Role] = relationship("Role", lazy="selectin")
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

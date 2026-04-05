@@ -50,7 +50,7 @@ Example:
     >>> @router.delete("/users/{user_id}")
     >>> async def delete_user(
     ...     user_id: UUID,
-    ...     admin: AdminDep,
+    ...     _: Annotated[User, Depends(require_permissions(Permission.USERS_DELETE))],
     ...     audit: AuditServiceDep,
     ... ) -> None:
     ...     await user_service.delete(user_id, audit=audit)

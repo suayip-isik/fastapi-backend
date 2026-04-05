@@ -307,7 +307,17 @@ class BaseRepository(Generic[ModelType], ABC):
             >>> user = await repo.update(user_id, status="inactive", role="user")
         """
         await self._session.execute(update(self.model).where(self.model.id == id).values(**data))
-        return await self.get_by_id_or_raise(id)
+        # populate_existing=True: bulk UPDATE sonrası identity map cache'ini es geçip
+        # ilişkiler (selectin) dahil taze veri çeker.
+        result = await self._session.execute(
+            select(self.model).where(self.model.id == id).execution_options(populate_existing=True)
+        )
+        obj = result.scalar_one_or_none()
+        if obj is None:
+            from app.core.exceptions import NotFoundError
+
+            raise NotFoundError(f"{self.model.__name__} bulunamadı: {id}")
+        return obj
 
     async def delete(self, id: UUID) -> bool:
         """Kaydı kalıcı olarak siler (hard delete).

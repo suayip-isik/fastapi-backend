@@ -10,7 +10,12 @@ from app.core.exceptions import AlreadyExistsError, BusinessRuleError, UserNotFo
 from app.core.security import hash_password
 from app.db.models.audit_log import AuditAction
 from app.db.repositories.user import UserRepository
-from app.services._keys import USER_CACHE_KEY, USER_CACHE_TTL, USER_EMAIL_CACHE_KEY
+from app.services._keys import (
+    USER_CACHE_KEY,
+    USER_CACHE_TTL,
+    USER_EMAIL_CACHE_KEY,
+    USER_PERMISSIONS_KEY,
+)
 from app.services.base import AuditableMixin
 from app.services.cache import CacheService
 
@@ -19,7 +24,7 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from app.db.models.user import User, UserRole
+    from app.db.models.user import User
     from app.schemas.user import UpdateUserRequest, UserResponse, UserStatsResponse
     from app.services.audit import AuditService
 
@@ -94,17 +99,22 @@ class UserService(AuditableMixin):
         await CacheService.set(key, schema.model_dump(), USER_CACHE_TTL)
         return schema
 
-    async def _invalidate_user_cache(self, user_id: UUID, email: str | None = None) -> None:
+    async def _invalidate_user_cache(
+        self, user_id: UUID, email: str | None = None, invalidate_permissions: bool = False
+    ) -> None:
         """Kullanıcıya ait cache kayıtlarını temizler.
 
         Args:
             user_id: Kullanıcının benzersiz tanımlayıcısı.
-            email: Kullanıcının e-posta adresi. Verilirse e-posta
-                bazlı cache de temizlenir.
+            email: Kullanıcının e-posta adresi. Verilirse e-posta cache de temizlenir.
+            invalidate_permissions: True ise permission cache de temizlenir.
+                Rol değişikliği sonrası True geçilmelidir.
         """
         keys = [USER_CACHE_KEY.format(str(user_id))]
         if email:
             keys.append(USER_EMAIL_CACHE_KEY.format(email))
+        if invalidate_permissions:
+            keys.append(USER_PERMISSIONS_KEY.format(str(user_id)))
         await CacheService.delete(*keys)
 
     async def get_stats(self) -> UserStatsResponse:
@@ -142,7 +152,7 @@ class UserService(AuditableMixin):
         page: int = 1,
         size: int = 20,
         q: str | None = None,
-        role: UserRole | None = None,
+        role: str | None = None,
         is_active: bool | None = None,
         is_verified: bool | None = None,
     ) -> tuple[list[User], int]:
@@ -178,7 +188,7 @@ class UserService(AuditableMixin):
         page: int = 1,
         size: int = 20,
         q: str | None = None,
-        role: UserRole | None = None,
+        role: str | None = None,
         is_active: bool | None = None,
         is_verified: bool | None = None,
     ) -> tuple[list[User], int]:
@@ -288,32 +298,41 @@ class UserService(AuditableMixin):
         await self._audit_log(AuditAction.USER_ACTIVATED, user_id=user_id)
         return updated
 
-    async def change_role(self, user_id: UUID, role: UserRole) -> User:
-        """Kullanıcının rolünü değiştirir.
+    async def assign_role(self, user_id: UUID, role_name: str) -> User:
+        """Kullanıcıya rol atar.
 
-        Rol değişikliği audit log'a eski ve yeni rol bilgisiyle
-        birlikte kaydedilir. Bu işlem genellikle admin yetkisi gerektirir.
+        Verilen isimde rol veritabanında aranır, bulunursa kullanıcıya
+        atanır. Rol değişikliğinde permission cache invalidate edilir.
 
         Args:
             user_id: Rolü değiştirilecek kullanıcının UUID'si.
-            role: Atanacak yeni rol (UserRole enum değeri).
+            role_name: Atanacak rolün adı (ör: "admin", "accountant").
 
         Returns:
             Güncellenmiş kullanıcı nesnesi.
 
         Raises:
             UserNotFoundError: Kullanıcı bulunamadığında.
-
-        Example:
-            >>> await user_service.change_role(user_id, UserRole.ADMIN)
+            NotFoundError: Belirtilen isimde rol bulunamadığında.
         """
+        from app.db.repositories.role import RoleRepository
+
         current = await self._repo.get_by_id_or_raise(user_id)
-        await self._invalidate_user_cache(user_id, current.email)
-        updated = await self._repo.update(user_id, role=role)
+
+        role_repo = RoleRepository(self._repo._session)
+        new_role = await role_repo.get_by_name(role_name)
+        if not new_role:
+            from app.core.exceptions import NotFoundError
+
+            raise NotFoundError(f"'{role_name}' adında bir rol bulunamadı.")
+
+        old_role_name = current.role.name if current.role else None
+        await self._invalidate_user_cache(user_id, current.email, invalidate_permissions=True)
+        updated = await self._repo.update(user_id, role_id=new_role.id)
         await self._audit_log(
             AuditAction.ROLE_CHANGED,
             user_id=user_id,
-            extra={"old_role": current.role.value, "new_role": role.value},
+            extra={"old_role": old_role_name, "new_role": role_name},
         )
         return updated
 

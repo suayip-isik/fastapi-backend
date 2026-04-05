@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING
 import pytest
 from sqlalchemy import update as sa_update
 
-from app.db.models.user import User, UserRole
+from app.db.models.role import Role
+from app.db.models.user import User
 
 if TYPE_CHECKING:
     from httpx import AsyncClient
@@ -46,9 +47,14 @@ async def test_full_user_management_journey(client: AsyncClient, db_session: Asy
     await client.post("/api/v1/auth/register", json={"email": admin_email, "password": password})
 
     # Adım 3: Admin rolüne yükselt
+    from sqlalchemy import select
+
+    result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
+    admin_role_id = result.scalar_one()
     await db_session.execute(
-        sa_update(User).where(User.email == admin_email).values(role=UserRole.ADMIN)
+        sa_update(User).where(User.email == admin_email).values(role_id=admin_role_id)
     )
+    await db_session.commit()
     db_session.expire_all()
 
     # Adım 4: Admin girişi

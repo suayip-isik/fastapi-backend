@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_, select
 
-from app.db.models.user import User, UserRole
+if TYPE_CHECKING:
+    from uuid import UUID
+
+from app.db.models.role import Role
+from app.db.models.user import User
 from app.db.repositories.base import SoftDeleteRepository
 
 
@@ -26,6 +30,15 @@ class UserRepository(SoftDeleteRepository[User]):
     """
 
     model = User
+
+    async def _get_default_role_id(self) -> UUID:
+        result = await self._session.execute(select(Role.id).where(Role.name == "user"))
+        return result.scalar_one()
+
+    async def create(self, **data: Any) -> User:
+        if "role_id" not in data:
+            data["role_id"] = await self._get_default_role_id()
+        return await super().create(**data)
 
     async def get_by_email(self, email: str) -> User | None:
         """Email adresine göre kullanıcı getirir.
@@ -136,7 +149,7 @@ class UserRepository(SoftDeleteRepository[User]):
         stmt: Any,
         *,
         q: str | None,
-        role: UserRole | None,
+        role: str | None,
         is_active: bool | None,
         is_verified: bool | None,
     ) -> Any:
@@ -150,7 +163,9 @@ class UserRepository(SoftDeleteRepository[User]):
                 )
             )
         if role is not None:
-            stmt = stmt.where(User.role == role)
+            stmt = stmt.where(
+                User.role_id == select(Role.id).where(Role.name == role).scalar_subquery()
+            )
         if is_active is not None:
             stmt = stmt.where(User.is_active.is_(is_active))
         if is_verified is not None:
@@ -161,7 +176,7 @@ class UserRepository(SoftDeleteRepository[User]):
         self,
         *,
         q: str | None = None,
-        role: UserRole | None = None,
+        role: str | None = None,
         is_active: bool | None = None,
         is_verified: bool | None = None,
         offset: int = 0,
@@ -186,7 +201,7 @@ class UserRepository(SoftDeleteRepository[User]):
         self,
         *,
         q: str | None = None,
-        role: UserRole | None = None,
+        role: str | None = None,
         is_active: bool | None = None,
         is_verified: bool | None = None,
         offset: int = 0,

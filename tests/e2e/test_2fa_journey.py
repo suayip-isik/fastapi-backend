@@ -68,23 +68,28 @@ async def test_full_2fa_journey(client: AsyncClient) -> None:
     )
     assert logout.status_code == 200
 
-    # Adım 6: TOTP kodu olmadan giriş → 401
+    # Adım 6: TOTP kodu olmadan giriş → partial_token challenge (200)
     no_code = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
-    assert no_code.status_code == 401
+    assert no_code.status_code == 200
+    assert no_code.json()["requires_totp"] is True
+    partial = no_code.json()["partial_token"]
 
-    # Adım 7: Geçerli TOTP kodu ile giriş → 200
+    # Adım 7: partial_token + geçerli TOTP kodu ile challenge → 200
     totp_login = await client.post(
-        "/api/v1/auth/login",
-        json={"email": email, "password": password, "totp_code": pyotp.TOTP(secret).now()},
+        "/api/v1/auth/totp-challenge",
+        json={"partial_token": partial, "code": pyotp.TOTP(secret).now()},
     )
     assert totp_login.status_code == 200
     assert "access_token" in totp_login.json()
     new_auth_headers = {"Authorization": f"Bearer {totp_login.json()['access_token']}"}
 
-    # Adım 8: Hatalı TOTP kodu ile giriş → 401
+    # Adım 8: Hatalı TOTP kodu ile challenge → 401 (yeni partial_token al)
+    step8_partial = (
+        await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    ).json()["partial_token"]
     bad_login = await client.post(
-        "/api/v1/auth/login",
-        json={"email": email, "password": password, "totp_code": "000000"},
+        "/api/v1/auth/totp-challenge",
+        json={"partial_token": step8_partial, "code": "000000"},
     )
     assert bad_login.status_code == 401
 

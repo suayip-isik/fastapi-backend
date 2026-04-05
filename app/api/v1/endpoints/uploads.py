@@ -127,15 +127,14 @@ async def delete_file(
 
     Note:
         - Kullanıcılar sadece kendi klasörlerindeki dosyaları silebilir
-        - Admin (UserRole.ADMIN) tüm dosyaları silebilir
+        - Admin rolündeki kullanıcılar tüm dosyaları silebilir
         - Ownership kontrolü key prefix'ine göre yapılır (users/{user_id}/)
         - Rate limit: RATE_LIMIT_UPLOAD (settings'den)
         - Audit log: FILE_DELETED action ile kaydedilir
     """
     from app.core.exceptions import InsufficientPermissionsError
-    from app.db.models.user import UserRole
 
-    is_admin = current_user.role == UserRole.ADMIN
+    is_admin = current_user.role is not None and current_user.role.name == "admin"
     is_owner = key.startswith(f"users/{current_user.id!s}/")
 
     if not is_admin and not is_owner:

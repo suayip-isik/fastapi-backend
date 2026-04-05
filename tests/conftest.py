@@ -18,7 +18,9 @@ from sqlalchemy.pool import NullPool
 import app.core.redis as redis_module
 from app.core.config import settings
 from app.core.limiter import limiter
+from app.core.permissions import ADMIN_PERMISSIONS, MODERATOR_PERMISSIONS, USER_PERMISSIONS
 from app.db.models.base import Base
+from app.db.models.role import Role, RolePermission
 from app.db.session import get_db
 from app.main import app
 
@@ -100,6 +102,24 @@ def mock_enqueue():
         yield mock
 
 
+@pytest.fixture(autouse=True)
+def mock_audit_log():
+    """
+    Tüm testlerde AuditService.log'u mock'la.
+
+    AuditService bağımsız bir AsyncSessionFactory session'ı açar ve henüz
+    commit edilmemiş user_id'ye FK referans içeren bir INSERT yapar. Bu,
+    PostgreSQL'in işlem kilidini beklemesine neden olur (transactionid wait).
+    Ana session (db_session) commit edilmeden önce AuditService'in bu INSERT'i
+    beklediği için kilitlenme (deadlock) oluşur.
+
+    test_audit_log.py zaten AuditableMixin._audit_log'u mock'ladığından
+    bu fixture ile çakışmaz.
+    """
+    with patch("app.services.audit.AuditService.log", new_callable=AsyncMock):
+        yield
+
+
 @pytest_asyncio.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """Her test için NullPool engine + taze session.
@@ -107,13 +127,35 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     NullPool: her bağlantı işlem sonrası hemen kapatılır.
     Test öncesi tüm tablolar temizlenir — izolasyon sağlanır.
     """
-    engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+    engine = create_async_engine(
+        TEST_DATABASE_URL,
+        poolclass=NullPool,
+    )
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
     async with session_factory() as session:
         for table in reversed(Base.metadata.sorted_tables):
             await session.execute(table.delete())
         await session.commit()
-        yield session
+
+        for role_data in [
+            {"name": "admin", "description": "Admin", "permissions": ADMIN_PERMISSIONS},
+            {"name": "user", "description": "User", "permissions": USER_PERMISSIONS},
+            {"name": "moderator", "description": "Moderator", "permissions": MODERATOR_PERMISSIONS},
+        ]:
+            role = Role(
+                name=role_data["name"], description=role_data["description"], is_system=True
+            )
+            session.add(role)
+            await session.flush()
+            for perm in role_data["permissions"]:
+                session.add(RolePermission(role_id=role.id, permission=perm))
+        await session.commit()
+
+        try:
+            yield session
+        finally:
+            await session.rollback()
     await engine.dispose()
 
 
@@ -123,7 +165,12 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 
     async def override_get_db():
         """override_get_db işlemini gerçekleştirir."""
-        yield db_session
+        try:
+            yield db_session
+            await db_session.commit()
+        except Exception:
+            await db_session.rollback()
+            raise
 
     app.dependency_overrides[get_db] = override_get_db
 

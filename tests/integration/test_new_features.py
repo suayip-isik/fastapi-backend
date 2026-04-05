@@ -113,14 +113,16 @@ async def test_login_requires_totp_when_enabled(client: AsyncClient) -> None:
     valid_code = pyotp.TOTP(secret).now()
     await client.post("/api/v1/auth/totp/verify", json={"code": valid_code}, headers=headers)
 
-    # TOTP kodu olmadan login → 401
+    # TOTP kodu olmadan login → partial_token challenge (200)
     res = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
-    assert res.status_code == 401
+    assert res.status_code == 200
+    assert res.json()["requires_totp"] is True
+    partial = res.json()["partial_token"]
 
-    # TOTP kodu ile login → 200
+    # partial_token + geçerli TOTP kodu ile challenge → 200
     res2 = await client.post(
-        "/api/v1/auth/login",
-        json={"email": email, "password": password, "totp_code": pyotp.TOTP(secret).now()},
+        "/api/v1/auth/totp-challenge",
+        json={"partial_token": partial, "code": pyotp.TOTP(secret).now()},
     )
     assert res2.status_code == 200
 
@@ -498,17 +500,27 @@ async def test_login_with_totp_backup_code(client: AsyncClient) -> None:
     backup_codes: list[str] = verify_res.json()["backup_codes"]
     assert len(backup_codes) == 8
 
-    # Backup kod ile giriş → 200
+    # Login → partial_token, sonra backup kod ile challenge → 200
+    partial_res = await client.post(
+        "/api/v1/auth/login", json={"email": email, "password": password}
+    )
+    assert partial_res.json()["requires_totp"] is True
+    partial = partial_res.json()["partial_token"]
+
     res = await client.post(
-        "/api/v1/auth/login",
-        json={"email": email, "password": password, "totp_code": backup_codes[0]},
+        "/api/v1/auth/totp-challenge",
+        json={"partial_token": partial, "code": backup_codes[0]},
     )
     assert res.status_code == 200
     assert "access_token" in res.json()
 
-    # Aynı backup kod ikinci kez kullanılamaz → 401
+    # Aynı backup kod ikinci kez kullanılamaz — yeni partial_token gerekli
+    partial_res2 = await client.post(
+        "/api/v1/auth/login", json={"email": email, "password": password}
+    )
+    partial2 = partial_res2.json()["partial_token"]
     res2 = await client.post(
-        "/api/v1/auth/login",
-        json={"email": email, "password": password, "totp_code": backup_codes[0]},
+        "/api/v1/auth/totp-challenge",
+        json={"partial_token": partial2, "code": backup_codes[0]},
     )
     assert res2.status_code == 401

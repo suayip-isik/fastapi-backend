@@ -5,7 +5,8 @@ Tüm ortak bağımlılıklar burada tanımlanır.
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+import json
+from typing import TYPE_CHECKING, Annotated, Any
 from uuid import UUID
 
 from fastapi import Depends, Header, Security
@@ -19,10 +20,13 @@ from app.core.exceptions import (
 )
 from app.core.redis import get_redis_client
 from app.core.security import TokenType, decode_token
-from app.db.models.user import User, UserRole
+from app.db.models.user import User
 from app.db.repositories.user import UserRepository
 from app.db.session import get_db
-from app.services._keys import BLACKLIST_KEY
+from app.services._keys import BLACKLIST_KEY, USER_PERMISSIONS_KEY, USER_PERMISSIONS_TTL
+
+if TYPE_CHECKING:
+    from app.core.permissions import Permission
 
 # ── Security Scheme ───────────────────────────────────────────────────────────
 
@@ -36,30 +40,44 @@ DBDep = Annotated[AsyncSession, Depends(get_db)]
 
 
 def get_user_repository(db: DBDep) -> UserRepository:
-    """UserRepository instance döner (dependency injection).
-
-    Database session dependency'sini alarak UserRepository
-    instance'ı oluşturur. FastAPI dependency injection sistemi
-    tarafından otomatik çözümlenir.
-
-    Args:
-        db: Database session dependency (DBDep = Annotated[AsyncSession, Depends(get_db)])
-
-    Returns:
-        UserRepository: Kullanıcı veritabanı işlemleri için repository instance
-
-    Example:
-        >>> @router.get("/users/{user_id}")
-        >>> async def get_user(
-        ...     user_id: UUID,
-        ...     user_repo: UserRepoDep
-        ... ):
-        ...     return await user_repo.get_by_id(user_id)
-    """
     return UserRepository(db)
 
 
 UserRepoDep = Annotated[UserRepository, Depends(get_user_repository)]
+
+# ── Permission Cache ──────────────────────────────────────────────────────────
+
+
+async def get_user_permissions(user_id: UUID) -> set[str]:
+    """Kullanıcının permission setini Redis cache üzerinden getirir.
+
+    Cache miss durumunda veritabanından yükler ve cache'e yazar.
+    TTL: USER_PERMISSIONS_TTL (15 dakika).
+    Rol değişikliğinde cache invalidate edilmelidir.
+    """
+    from sqlalchemy import select
+
+    from app.db.models.role import RolePermission
+    from app.db.models.user import User as UserModel
+    from app.db.session import AsyncSessionFactory
+
+    redis = await get_redis_client()
+    key = USER_PERMISSIONS_KEY.format(str(user_id))
+    cached = await redis.get(key)
+    if cached:
+        return set(json.loads(cached))
+
+    async with AsyncSessionFactory() as session, session.begin():
+        result = await session.execute(
+            select(RolePermission.permission)
+            .join(UserModel, UserModel.role_id == RolePermission.role_id)
+            .where(UserModel.id == user_id)
+        )
+        perms = set(result.scalars().all())
+
+    await redis.set(key, json.dumps(list(perms)), ex=USER_PERMISSIONS_TTL)
+    return perms
+
 
 # ── Auth Dependencies ─────────────────────────────────────────────────────────
 
@@ -76,26 +94,16 @@ async def get_current_user(
     Token blacklist kontrolü ve kullanıcı aktiflik durumu doğrulanır.
 
     Args:
-        credentials: HTTP Bearer token credentials. Authorization header'ından
-            otomatik çözümlenir. None ise X-API-Key kontrol edilir.
-        user_repo: Kullanıcı repository dependency. Veritabanı sorguları için.
-        x_api_key: Opsiyonel API Key header değeri. Bearer token yoksa kullanılır.
+        credentials: HTTP Bearer token credentials.
+        user_repo: Kullanıcı repository dependency.
+        x_api_key: Opsiyonel API Key header değeri.
 
     Returns:
         User: Doğrulanmış ve aktif kullanıcı modeli.
 
     Raises:
-        AuthenticationError: Geçerli credentials sağlanmadığında veya
-            kullanıcı bulunamadığında/pasif olduğunda.
-        InvalidTokenError: Token türü ACCESS değilse veya token
-            blacklist'te ise.
-
-    Example:
-        >>> @router.get("/me")
-        >>> async def get_me(
-        ...     user: Annotated[User, Depends(get_current_user)]
-        ... ) -> UserResponse:
-        ...     return user
+        AuthenticationError: Geçerli credentials sağlanmadığında.
+        InvalidTokenError: Token türü ACCESS değilse veya blacklist'teyse.
     """
     # API Key auth
     if x_api_key:
@@ -131,27 +139,7 @@ async def get_current_user(
 async def get_current_active_user(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
-    """Aktif ve doğrulanmış kullanıcıyı döner.
-
-    get_current_user üzerine ince bir sarmalayıcı. Endpoint'lerin büyük
-    çoğunluğu bu dependency'yi kullanır. İleride email doğrulama gibi
-    ek kontroller eklenebilir.
-
-    Args:
-        current_user: get_current_user dependency'sinden çözümlenen kullanıcı.
-
-    Returns:
-        User: Aktif ve doğrulanmış kullanıcı modeli.
-
-    Example:
-        >>> @router.put("/profile")
-        >>> async def update_profile(
-        ...     user: CurrentUserDep,
-        ...     data: ProfileUpdate
-        ... ) -> UserResponse:
-        ...     # user aktif ve doğrulanmış
-        ...     return await service.update(user, data)
-    """
+    """Aktif kullanıcıyı döner."""
     return current_user
 
 
@@ -164,133 +152,52 @@ async def get_optional_current_user(
     """Opsiyonel kimlik doğrulama dependency'si.
 
     Credentials sağlanmışsa kullanıcıyı çözer, sağlanmamışsa None döner.
-    Public endpoint'lerde opsiyonel auth için kullanılır (örn: giriş yapmış
-    kullanıcılara farklı içerik gösterme).
-
-    Args:
-        credentials: HTTP Bearer token credentials. Opsiyonel.
-        user_repo: Kullanıcı repository dependency.
-        x_api_key: Opsiyonel API Key header değeri.
-
-    Returns:
-        User | None: Doğrulanmış kullanıcı veya credentials yoksa None.
-
-    Raises:
-        InvalidTokenError: Credentials sağlanmış ama geçersizse.
-        AuthenticationError: Credentials sağlanmış ama kullanıcı bulunamadıysa.
-
-    Example:
-        >>> @router.get("/posts")
-        >>> async def list_posts(
-        ...     user: OptionalUserDep
-        ... ) -> list[Post]:
-        ...     if user:
-        ...         return await service.list_for_user(user)
-        ...     return await service.list_public()
     """
     if not credentials and not x_api_key:
         return None
     return await get_current_user(credentials, user_repo, db, x_api_key)
 
 
-def require_roles(*roles: UserRole) -> Any:
-    """Rol tabanlı erişim kontrolü için dependency factory.
+def require_permissions(*perms: Permission) -> Any:
+    """Permission tabanlı erişim kontrolü için dependency factory.
 
-    Belirtilen rollerden birine sahip kullanıcıları gerektiren
-    bir dependency fonksiyonu üretir. RBAC implementasyonu için kullanılır.
+    Belirtilen permission'lardan en az birine sahip kullanıcıları
+    gerektiren bir dependency fonksiyonu üretir.
 
     Args:
-        *roles: İzin verilen UserRole enum değerleri. Kullanıcının
-            bu rollerden en az birine sahip olması gerekir.
+        *perms: Gerekli Permission enum değerleri (OR mantığı — biri yeterlı).
 
     Returns:
         Callable: FastAPI dependency olarak kullanılabilecek async fonksiyon.
-            Başarılı olursa User döner.
 
     Raises:
-        InsufficientPermissionsError: Kullanıcı gerekli rollerden
-            hiçbirine sahip değilse (dependency içinde).
+        InsufficientPermissionsError: Kullanıcı gerekli permission'lardan
+            hiçbirine sahip değilse.
 
     Example:
-        >>> @router.delete("/users/{user_id}")
-        >>> async def delete_user(
-        ...     user_id: UUID,
-        ...     admin: Annotated[User, Depends(require_roles(UserRole.ADMIN))]
-        ... ) -> None:
-        ...     # Sadece ADMIN rolü erişebilir
-        ...     await service.delete(user_id)
-
-        >>> # Birden fazla rol için:
-        >>> @router.get("/reports")
-        >>> async def get_reports(
-        ...     user: Annotated[User, Depends(require_roles(UserRole.ADMIN, UserRole.MODERATOR))]
-        ... ) -> list[Report]:
-        ...     return await service.list_reports()
+        >>> @router.get("/users")
+        >>> async def list_users(
+        ...     _: Annotated[User, Depends(require_permissions(Permission.USERS_READ))]
+        ... ): ...
     """
 
-    async def check_role(
+    async def check(
         current_user: Annotated[User, Depends(get_current_active_user)],
     ) -> User:
-        """Kullanıcının gerekli rollerden en az birine sahip olduğunu doğrular.
-
-        require_roles factory'si tarafından oluşturulan iç dependency fonksiyonu.
-        Dış scope'taki `roles` değişkenini yakalar (closure).
-
-        Args:
-            current_user: get_current_active_user dependency'sinden çözümlenen
-                doğrulanmış aktif kullanıcı.
-
-        Returns:
-            User: Rol kontrolünü geçen kullanıcı.
-
-        Raises:
-            InsufficientPermissionsError: Kullanıcının rolü, izin verilen
-                roller arasında yer almıyorsa.
-        """
-        if current_user.role not in roles:
+        user_perms = await get_user_permissions(current_user.id)
+        if not any(p.value in user_perms for p in perms):
             raise InsufficientPermissionsError(
-                f"Bu işlem için gerekli rol: {', '.join(r.value for r in roles)}"
+                f"Bu işlem için gerekli yetki: {', '.join(p.value for p in perms)}"
             )
         return current_user
 
-    return check_role
+    return check
 
 
 # ── Type Aliases ──────────────────────────────────────────────────────────────
 
 CurrentUserDep = Annotated[User, Depends(get_current_active_user)]
-"""Aktif kullanıcı dependency type alias.
-
-Endpoint parametrelerinde `user: CurrentUserDep` şeklinde kullanılır.
-Otomatik olarak JWT/API Key doğrulaması yapar.
-
-Example:
-    >>> @router.get("/me")
-    >>> async def get_me(user: CurrentUserDep) -> UserResponse:
-    ...     return user
-"""
-
-AdminDep = Annotated[User, Depends(require_roles(UserRole.ADMIN))]
-"""Admin rolü gerektiren dependency type alias.
-
-Sadece ADMIN rolüne sahip kullanıcıların erişebileceği endpoint'ler için.
-
-Example:
-    >>> @router.delete("/users/{user_id}")
-    >>> async def delete_user(admin: AdminDep, user_id: UUID) -> None:
-    ...     await service.delete(user_id)
-"""
+"""Aktif kullanıcı dependency type alias."""
 
 OptionalUserDep = Annotated[User | None, Depends(get_optional_current_user)]
-"""Opsiyonel kullanıcı dependency type alias.
-
-Public endpoint'lerde opsiyonel auth için kullanılır.
-Credentials yoksa None döner, varsa doğrulama yapar.
-
-Example:
-    >>> @router.get("/feed")
-    >>> async def get_feed(user: OptionalUserDep) -> FeedResponse:
-    ...     if user:
-    ...         return await service.personalized_feed(user)
-    ...     return await service.public_feed()
-"""
+"""Opsiyonel kullanıcı dependency type alias."""

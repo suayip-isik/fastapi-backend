@@ -8,34 +8,17 @@ from __future__ import annotations
 from sqladmin import ModelView
 
 from app.db.models.audit_log import AuditLog
+from app.db.models.role import Role
 from app.db.models.user import User
 
 
 class UserAdmin(ModelView, model=User):
-    """User modeli için SQLAdmin panel view.
-
-    Kullanıcıları listeleme, görüntüleme, düzenleme ve silme işlemlerini
-    sağlar. Hassas alanlar (şifre hash, TOTP secret) formda gizlidir.
-
-    Attributes:
-        column_list: Listede gösterilen kolonlar (id, email, full_name, role, vb.)
-        column_searchable_list: Arama yapılabilen alanlar (email, full_name, username)
-        column_filters: Filtreleme için kullanılabilecek alanlar (role, is_active, is_verified)
-        column_details_list: Detay sayfasında görünen tüm kolonlar
-        form_columns: Create/edit formunda düzenlenebilecek alanlar
-        form_excluded_columns: Formda görünmeyecek hassas alanlar
-        page_size: Sayfa başına gösterilen kayıt sayısı (25)
-
-    Note:
-        - hashed_password ve totp_secret formda görünmez
-        - Tüm CRUD operasyonları aktif (create, edit, delete, view, export)
-    """
+    """User modeli için SQLAdmin panel view."""
 
     name = "Kullanıcı"
     name_plural = "Kullanıcılar"
     icon = "fa-solid fa-users"
 
-    # Listede görünecek kolonlar
     column_list = [
         User.id,
         User.email,
@@ -46,16 +29,10 @@ class UserAdmin(ModelView, model=User):
         User.created_at,
     ]
 
-    # Arama yapılabilecek kolonlar
     column_searchable_list = [User.email, User.full_name, User.username]
+    column_filters = [User.is_active, User.is_verified]
+    column_sortable_list = [User.email, User.created_at]
 
-    # Filtrelenebilecek kolonlar
-    column_filters = [User.role, User.is_active, User.is_verified]
-
-    # Sıralanabilecek kolonlar
-    column_sortable_list = [User.email, User.created_at, User.role]
-
-    # Detay sayfasında görünecek kolonlar
     column_details_list = [
         User.id,
         User.email,
@@ -69,7 +46,6 @@ class UserAdmin(ModelView, model=User):
         User.updated_at,
     ]
 
-    # Form'da görünecek alanlar (create/edit)
     form_columns = [
         User.email,
         User.username,
@@ -79,11 +55,53 @@ class UserAdmin(ModelView, model=User):
         User.is_verified,
     ]
 
-    # Sayfa başına kayıt sayısı
     page_size = 25
     page_size_options = [25, 50, 100]
 
-    # İzinler
+    can_create = True
+    can_edit = True
+    can_delete = True
+    can_view_details = True
+    can_export = True
+
+
+class RoleAdmin(ModelView, model=Role):
+    """Role modeli için SQLAdmin panel view.
+
+    Rolleri ve permission setlerini görüntüler.
+    Sistem rolleri silinmemelidir (is_system=True olanlar).
+    """
+
+    name = "Rol"
+    name_plural = "Roller"
+    icon = "fa-solid fa-shield"
+
+    column_list = [
+        Role.name,
+        Role.description,
+        Role.is_system,
+        Role.created_at,
+    ]
+
+    column_searchable_list = [Role.name, Role.description]
+    column_filters = [Role.is_system]
+    column_sortable_list = [Role.name, Role.created_at]
+
+    column_details_list = [
+        Role.id,
+        Role.name,
+        Role.description,
+        Role.is_system,
+        Role.permissions,
+        Role.created_at,
+        Role.updated_at,
+    ]
+
+    form_columns = [Role.name, Role.description]
+
+    page_size = 25
+    page_size_options = [25, 50]
+
     can_create = True
     can_edit = True
     can_delete = True
@@ -92,23 +110,7 @@ class UserAdmin(ModelView, model=User):
 
 
 class AuditLogAdmin(ModelView, model=AuditLog):
-    """AuditLog modeli için SQLAdmin panel view.
-
-    Sistem denetim kayıtlarını (audit logs) görüntüleme ve dışa aktarma
-    işlemlerini sağlar. Salt okunur - kayıtlar değiştirilemez veya silinemez.
-
-    Attributes:
-        column_list: Listede gösterilen kolonlar (created_at, action, user_id, ip_address, user_agent)
-        column_searchable_list: Arama yapılabilen alanlar (ip_address)
-        column_filters: Filtreleme için kullanılabilecek alanlar (action, user_id)
-        column_details_list: Detay sayfasında görünen tüm kolonlar (extra JSON dahil)
-        page_size: Sayfa başına gösterilen kayıt sayısı (50)
-
-    Note:
-        - Salt okunur view (can_create, can_edit, can_delete=False)
-        - Sadece görüntüleme ve export aktif
-        - Denetim kaydı bütünlüğü korunur
-    """
+    """AuditLog modeli için SQLAdmin panel view — salt okunur."""
 
     name = "Audit Log"
     name_plural = "Audit Loglar"

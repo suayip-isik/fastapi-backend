@@ -11,14 +11,15 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies.auth import AdminDep, CurrentUserDep
+from app.api.dependencies.auth import CurrentUserDep, require_permissions
 from app.api.dependencies.services import get_audit_service
 from app.core.exceptions import InsufficientPermissionsError
-from app.db.models.user import User, UserRole
+from app.core.permissions import Permission
+from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.common import MessageResponse, PaginatedResponse, calculate_pages
+from app.schemas.role import AssignRoleRequest
 from app.schemas.user import (
-    ChangeRoleRequest,
     DeletedUserResponse,
     UpdateUserRequest,
     UserResponse,
@@ -28,6 +29,11 @@ from app.services.audit import AuditService
 from app.services.user import UserService
 
 router = APIRouter(prefix="/users", tags=["Users"])
+
+# Modül yüklendiğinde bir kez oluşturulur — her request'te tek Redis GET maliyeti.
+_UsersReadDep = Annotated[User, Depends(require_permissions(Permission.USERS_READ))]
+_UsersWriteDep = Annotated[User, Depends(require_permissions(Permission.USERS_WRITE))]
+_UsersDeleteDep = Annotated[User, Depends(require_permissions(Permission.USERS_DELETE))]
 
 
 def get_user_service(
@@ -85,7 +91,7 @@ async def update_me(
 
 @router.get("", response_model=PaginatedResponse[UserResponse])
 async def list_users(
-    _: AdminDep,
+    _: _UsersReadDep,
     service: UserServiceDep,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
@@ -95,7 +101,7 @@ async def list_users(
         max_length=100,
         description="email, kullanıcı adı veya tam ad içinde arama",
     ),
-    role: UserRole | None = Query(None, description="Rol filtresi"),
+    role: str | None = Query(None, description="Rol adı filtresi (ör: admin, user)"),
     is_active: bool | None = Query(None, description="Aktiflik durumu filtresi"),
     is_verified: bool | None = Query(None, description="Email doğrulama durumu filtresi"),
 ) -> PaginatedResponse[UserResponse]:
@@ -133,7 +139,7 @@ async def list_users(
 
 
 @router.get("/stats", response_model=UserStatsResponse)
-async def get_user_stats(_: AdminDep, service: UserServiceDep) -> UserStatsResponse:
+async def get_user_stats(_: _UsersReadDep, service: UserServiceDep) -> UserStatsResponse:
     """Kullanıcı istatistiklerini döndürür.
 
     Sistemdeki aktif, pasif ve toplam kullanıcı sayısını döndürür.
@@ -152,7 +158,7 @@ async def get_user_stats(_: AdminDep, service: UserServiceDep) -> UserStatsRespo
 
 @router.get("/deleted", response_model=PaginatedResponse[DeletedUserResponse])
 async def list_deleted_users(
-    _: AdminDep,
+    _: _UsersReadDep,
     service: UserServiceDep,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
@@ -162,7 +168,7 @@ async def list_deleted_users(
         max_length=100,
         description="email, kullanıcı adı veya tam ad içinde arama",
     ),
-    role: UserRole | None = Query(None, description="Rol filtresi"),
+    role: str | None = Query(None, description="Rol adı filtresi (ör: admin, user)"),
     is_active: bool | None = Query(None, description="Silinmeden önceki aktiflik durumu filtresi"),
     is_verified: bool | None = Query(None, description="Email doğrulama durumu filtresi"),
 ) -> PaginatedResponse[DeletedUserResponse]:
@@ -201,7 +207,7 @@ async def list_deleted_users(
 
 
 @router.get("/{user_id}", response_model=UserResponse)
-async def get_user(user_id: UUID, _: AdminDep, service: UserServiceDep) -> UserResponse:
+async def get_user(user_id: UUID, _: _UsersReadDep, service: UserServiceDep) -> UserResponse:
     """Belirtilen kullanıcının detaylı bilgilerini getirir.
 
     Sadece admin yetkisine sahip kullanıcılar bu endpoint'e erişebilir.
@@ -222,7 +228,9 @@ async def get_user(user_id: UUID, _: AdminDep, service: UserServiceDep) -> UserR
 
 
 @router.post("/{user_id}/activate", response_model=UserResponse)
-async def activate_user(user_id: UUID, current_user: AdminDep, service: UserServiceDep) -> User:
+async def activate_user(
+    user_id: UUID, current_user: _UsersWriteDep, service: UserServiceDep
+) -> User:
     """Deaktif edilmiş bir kullanıcıyı tekrar aktif eder.
 
     Sadece admin yetkisine sahip kullanıcılar bu endpoint'e erişebilir.
@@ -247,38 +255,40 @@ async def activate_user(user_id: UUID, current_user: AdminDep, service: UserServ
 
 
 @router.patch("/{user_id}/role", response_model=UserResponse)
-async def change_user_role(
+async def assign_user_role(
     user_id: UUID,
-    data: ChangeRoleRequest,
-    current_user: AdminDep,
+    data: AssignRoleRequest,
+    current_user: _UsersWriteDep,
     service: UserServiceDep,
 ) -> User:
-    """Kullanıcının sistem rolünü değiştirir.
+    """Kullanıcıya rol atar.
 
     Sadece admin yetkisine sahip kullanıcılar bu endpoint'e erişebilir.
-    Kullanıcıya USER, MODERATOR veya ADMIN rollerinden biri atanabilir.
-    Rol değişikliği kullanıcının erişebileceği kaynakları etkiler.
+    Rol değişikliği kullanıcının erişebileceği kaynakları etkiler ve
+    permission cache'i invalidate eder.
 
     Args:
         user_id: Rolü değiştirilecek kullanıcının benzersiz kimliği (UUID).
-        data: Yeni rol bilgisini içeren istek verisi.
+        data: Atanacak rolün adını içeren istek verisi.
         current_user: İşlemi yapan admin kullanıcı.
         service: Kullanıcı işlemlerini yöneten servis.
 
     Returns:
-        Rol değişikliği yapılmış kullanıcının güncel profil bilgileri.
+        Rol atanmış kullanıcının güncel profil bilgileri.
 
     Raises:
         InsufficientPermissionsError: Admin kendi rolünü değiştirmeye çalışırsa.
-        NotFoundError: Belirtilen ID'ye sahip kullanıcı bulunamazsa.
+        NotFoundError: Kullanıcı veya rol bulunamazsa.
     """
     if user_id == current_user.id:
         raise InsufficientPermissionsError("Kendi hesabınız üzerinde bu işlemi yapamazsınız.")
-    return await service.change_role(user_id, data.role)
+    return await service.assign_role(user_id, data.role_name)
 
 
 @router.post("/{user_id}/deactivate", response_model=UserResponse)
-async def deactivate_user(user_id: UUID, current_user: AdminDep, service: UserServiceDep) -> User:
+async def deactivate_user(
+    user_id: UUID, current_user: _UsersWriteDep, service: UserServiceDep
+) -> User:
     """Aktif bir kullanıcıyı deaktif eder.
 
     Sadece admin yetkisine sahip kullanıcılar bu endpoint'e erişebilir.
@@ -304,7 +314,7 @@ async def deactivate_user(user_id: UUID, current_user: AdminDep, service: UserSe
 
 @router.delete("/{user_id}", response_model=MessageResponse)
 async def delete_user(
-    user_id: UUID, current_user: AdminDep, service: UserServiceDep
+    user_id: UUID, current_user: _UsersDeleteDep, service: UserServiceDep
 ) -> MessageResponse:
     """Kullanıcıyı soft-delete yöntemiyle siler.
 
@@ -331,7 +341,9 @@ async def delete_user(
 
 
 @router.post("/{user_id}/restore", response_model=UserResponse)
-async def restore_user(user_id: UUID, current_user: AdminDep, service: UserServiceDep) -> User:
+async def restore_user(
+    user_id: UUID, current_user: _UsersDeleteDep, service: UserServiceDep
+) -> User:
     """Soft-delete ile silinmiş kullanıcıyı geri yükler.
 
     Sadece admin yetkisine sahip kullanıcılar bu endpoint'e erişebilir.
