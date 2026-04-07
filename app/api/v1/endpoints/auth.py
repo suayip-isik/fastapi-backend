@@ -13,12 +13,13 @@ Not:
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, Security
+from fastapi import APIRouter, Depends, Request, Response, Security
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import CurrentUserDep, bearer_scheme
 from app.core.config import settings
+from app.core.cookies import clear_auth_cookies, set_auth_cookies
 from app.core.limiter import limiter
 from app.db.models.user import User
 from app.db.session import get_db
@@ -120,7 +121,7 @@ async def register(request: Request, data: RegisterRequest, service: AuthService
 @router.post("/login", response_model=TokenResponse | PartialAuthResponse)
 @limiter.limit(settings.RATE_LIMIT_AUTH)
 async def login(
-    request: Request, data: LoginRequest, service: AuthServiceDep
+    request: Request, response: Response, data: LoginRequest, service: AuthServiceDep
 ) -> TokenResponse | PartialAuthResponse:
     """
     E-posta ve şifre ile kullanıcı girişinin birinci adımı.
@@ -131,6 +132,7 @@ async def login(
 
     Args:
         request: FastAPI Request nesnesi (rate limiting için).
+        response: FastAPI Response nesnesi (cookie için).
         data: Giriş bilgileri.
             - email (str): Kayıtlı e-posta adresi.
             - password (str): Kullanıcı şifresi.
@@ -150,13 +152,19 @@ async def login(
             -d '{"email": "user@example.com", "password": "Secure123!"}'
         ```
     """
-    return await service.login(data.email, data.password)
+    result = await service.login(data.email, data.password)
+
+    # TOTP aktif değilse cookie set et
+    if isinstance(result, TokenResponse):
+        set_auth_cookies(response, result.access_token, result.refresh_token)
+
+    return result
 
 
 @router.post("/totp-challenge", response_model=TokenResponse)
 @limiter.limit(settings.RATE_LIMIT_AUTH)
 async def totp_challenge(
-    request: Request, data: TOTPChallengeRequest, service: AuthServiceDep
+    request: Request, response: Response, data: TOTPChallengeRequest, service: AuthServiceDep
 ) -> TokenResponse:
     """
     TOTP challenge'ı doğrulayarak login'i tamamlar (ikinci adım).
@@ -167,6 +175,7 @@ async def totp_challenge(
 
     Args:
         request: FastAPI Request nesnesi (rate limiting için).
+        response: FastAPI Response nesnesi (cookie için).
         data: Challenge bilgileri.
             - partial_token (str): /auth/login'den alınan kısa ömürlü token.
             - code (str): 6 haneli TOTP kodu veya 8 karakterli backup kodu.
@@ -189,11 +198,15 @@ async def totp_challenge(
             -d '{"partial_token": "xyz...", "code": "123456"}'
         ```
     """
-    return await service.complete_totp_login(data.partial_token, data.code)
+    result = await service.complete_totp_login(data.partial_token, data.code)
+    set_auth_cookies(response, result.access_token, result.refresh_token)
+    return result
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(data: RefreshRequest, service: AuthServiceDep) -> TokenResponse:
+async def refresh_token(
+    response: Response, data: RefreshRequest, service: AuthServiceDep
+) -> TokenResponse:
     """
     Refresh token ile yeni access token alır.
 
@@ -202,6 +215,7 @@ async def refresh_token(data: RefreshRequest, service: AuthServiceDep) -> TokenR
     tekrar kullanılmasını engeller.
 
     Args:
+        response: FastAPI Response nesnesi (cookie için).
         data: Yenileme isteği.
             - refresh_token (str): Geçerli refresh token.
 
@@ -222,11 +236,14 @@ async def refresh_token(data: RefreshRequest, service: AuthServiceDep) -> TokenR
             -d '{"refresh_token": "eyJhbGciOiJSUzI1NiIs..."}'
         ```
     """
-    return await service.refresh(data.refresh_token)
+    result = await service.refresh(data.refresh_token)
+    set_auth_cookies(response, result.access_token, result.refresh_token)
+    return result
 
 
 @router.post("/logout", response_model=MessageResponse)
 async def logout(
+    response: Response,
     data: LogoutRequest,
     current_user: CurrentUserDep,
     credentials: Annotated[HTTPAuthorizationCredentials, Security(bearer_scheme)],
@@ -239,6 +256,7 @@ async def logout(
     Bu token'lar artık hiçbir işlemde kullanılamaz.
 
     Args:
+        response: FastAPI Response nesnesi (cookie temizleme için).
         data: Çıkış isteği.
             - refresh_token (str): İptal edilecek refresh token.
         current_user: Oturum açmış kullanıcı (otomatik enjekte edilir).
@@ -264,6 +282,7 @@ async def logout(
         ```
     """
     await service.logout(credentials.credentials, data.refresh_token, user_id=current_user.id)
+    clear_auth_cookies(response)
     return MessageResponse(message="Basariyla cikis yapildi.")
 
 

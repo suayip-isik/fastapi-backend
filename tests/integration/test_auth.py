@@ -67,6 +67,31 @@ async def test_login_success(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_login_sets_cookies(client: AsyncClient):
+    """Login başarılı olduğunda httpOnly cookie'ler set edilmeli."""
+    await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "cookie_login@example.com",
+            "password": "StrongPass1",
+        },
+    )
+    res = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "cookie_login@example.com",
+            "password": "StrongPass1",
+        },
+    )
+    assert res.status_code == 200
+
+    # Cookie'lerin set edildiğini kontrol et
+    cookies = res.cookies
+    assert "access_token" in cookies
+    assert "refresh_token" in cookies
+
+
+@pytest.mark.asyncio
 async def test_login_wrong_password(client: AsyncClient):
     """test_login_wrong_password senaryosunu test eder."""
     res = await client.post(
@@ -362,6 +387,32 @@ async def test_logout_invalidates_refresh_token(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_logout_clears_cookies(client: AsyncClient):
+    """Logout response'unda cookie'ler temizlenmeli (max-age=0)."""
+    tokens = await _register_and_login(client, "logout_cookie@example.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    res = await client.post(
+        "/api/v1/auth/logout",
+        json={"refresh_token": tokens["refresh_token"]},
+        headers=headers,
+    )
+    assert res.status_code == 200
+
+    # Cookie'lerin silinmesi için Set-Cookie header'larını kontrol et
+    # delete_cookie max-age=0 veya expires ile cookie'yi siler
+    set_cookie_headers = res.headers.get_list("set-cookie")
+    access_cookie_cleared = any(
+        "access_token" in h and "Max-Age=0" in h for h in set_cookie_headers
+    )
+    refresh_cookie_cleared = any(
+        "refresh_token" in h and "Max-Age=0" in h for h in set_cookie_headers
+    )
+    assert access_cookie_cleared, "access_token cookie should be cleared"
+    assert refresh_cookie_cleared, "refresh_token cookie should be cleared"
+
+
+@pytest.mark.asyncio
 async def test_refresh_token_rotation(client: AsyncClient):
     """Refresh sonrası eski refresh token geçersiz kılınmalı (rotation)."""
     tokens = await _register_and_login(client, "rotation@example.com")
@@ -374,6 +425,20 @@ async def test_refresh_token_rotation(client: AsyncClient):
     # Eski refresh token artık kullanılamamalı
     res = await client.post("/api/v1/auth/refresh", json={"refresh_token": old_refresh})
     assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_refresh_sets_cookies(client: AsyncClient):
+    """Refresh başarılı olduğunda yeni cookie'ler set edilmeli."""
+    tokens = await _register_and_login(client, "refresh_cookie@example.com")
+
+    res = await client.post("/api/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+    assert res.status_code == 200
+
+    # Cookie'lerin set edildiğini kontrol et
+    cookies = res.cookies
+    assert "access_token" in cookies
+    assert "refresh_token" in cookies
 
 
 @pytest.mark.asyncio
@@ -699,3 +764,37 @@ async def test_totp_two_step_login_success(client: AsyncClient) -> None:
     data2 = step2.json()
     assert "access_token" in data2
     assert "refresh_token" in data2
+
+
+@pytest.mark.asyncio
+async def test_totp_challenge_sets_cookies(client: AsyncClient) -> None:
+    """TOTP challenge başarılı olduğunda httpOnly cookie'ler set edilmeli."""
+    import pyotp
+
+    email = "totp_cookie@example.com"
+    password = "StrongPass1"
+    tokens = await _register_and_login(client, email)
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    setup_res = await client.post("/api/v1/auth/totp/setup", headers=headers)
+    secret = setup_res.json()["secret"]
+    valid_code = pyotp.TOTP(secret).now()
+    await client.post("/api/v1/auth/totp/verify", json={"code": valid_code}, headers=headers)
+
+    # Adım 1: partial_token al (cookie yok, requires_totp)
+    step1 = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": password},
+    )
+    assert step1.status_code == 200
+    # TOTP aktif olduğunda cookie set edilmemeli
+    assert "access_token" not in step1.cookies
+
+    # Adım 2: TOTP challenge (cookie set edilmeli)
+    step2 = await client.post(
+        "/api/v1/auth/totp-challenge",
+        json={"partial_token": step1.json()["partial_token"], "code": pyotp.TOTP(secret).now()},
+    )
+    assert step2.status_code == 200
+    assert "access_token" in step2.cookies
+    assert "refresh_token" in step2.cookies

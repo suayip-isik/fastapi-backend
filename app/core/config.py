@@ -157,6 +157,12 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
+    # ── Cookie ────────────────────────────────────────────────────────────────
+    COOKIE_DOMAIN: str | None = None
+    COOKIE_SECURE: bool = True
+    COOKIE_SAMESITE: str = "lax"
+    COOKIE_PATH: str = "/"
+
     @property
     def JWT_PRIVATE_KEY(self) -> str:
         """JWT token imzalama için RSA private key'i okur.

@@ -44,6 +44,9 @@ ignore = [
 "app/core/config.py" = [
     "N802",  # uppercase property names: Pydantic Settings convention (DATABASE_URL, REDIS_URL vb.)
 ]
+"app/core/cookies.py" = [
+    "S105",  # cookie name sabitleri: access_token, refresh_token gerçek şifre değil
+]
 "app/admin/views.py" = [
     "RUF012",  # sqladmin ModelView class attributes: framework pattern
 ]
