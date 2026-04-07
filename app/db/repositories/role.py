@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import delete, exists, select
+from sqlalchemy import delete, exists, insert, select
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -35,10 +35,13 @@ class RoleRepository(SoftDeleteRepository[Role]):
         return list(result.scalars().all())
 
     async def set_permissions(self, role_id: UUID, permissions: list[str]) -> None:
-        """Rolün permission setini toptan günceller (sil + ekle)."""
+        """Rolün permission setini toptan günceller (sil + toplu ekle)."""
         await self._session.execute(delete(RolePermission).where(RolePermission.role_id == role_id))
-        for perm in permissions:
-            self._session.add(RolePermission(role_id=role_id, permission=perm))
+        if permissions:
+            await self._session.execute(
+                insert(RolePermission),
+                [{"role_id": role_id, "permission": p} for p in permissions],
+            )
         await self._session.flush()
 
     async def add_permission(self, role_id: UUID, permission: str) -> None:

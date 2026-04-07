@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import CurrentUserDep
+from app.api.dependencies.services import AuditServiceDep
 from app.db.session import get_db
 from app.schemas.common import MessageResponse
 from app.services.totp import TOTPService
@@ -22,9 +23,12 @@ from app.services.totp import TOTPService
 router = APIRouter(prefix="/auth/totp", tags=["2FA / TOTP"])
 
 
-def get_totp_service(db: Annotated[AsyncSession, Depends(get_db)]) -> TOTPService:
+def get_totp_service(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    audit: AuditServiceDep,
+) -> TOTPService:
     """TOTPService dependency factory'si."""
-    return TOTPService(db)
+    return TOTPService(db, audit=audit)
 
 
 TOTPServiceDep = Annotated[TOTPService, Depends(get_totp_service)]

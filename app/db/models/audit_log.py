@@ -38,6 +38,18 @@ class AuditAction(str, PyEnum):
         USER_RESTORED: Silinen kullanıcı geri yüklendi
         FILE_UPLOADED: Dosya yüklendi
         FILE_DELETED: Dosya silindi
+        API_KEY_CREATED: API key oluşturuldu
+        API_KEY_REVOKED: API key iptal edildi
+        API_KEY_USED: API key ile kimlik doğrulaması yapıldı
+        TOTP_SETUP_STARTED: TOTP 2FA kurulumu başlatıldı
+        TOTP_ENABLED: TOTP 2FA aktif edildi
+        TOTP_DISABLED: TOTP 2FA devre dışı bırakıldı
+        TOTP_BACKUP_CODES_REGENERATED: TOTP backup kodları yenilendi
+        ROLE_CREATED: Yeni rol oluşturuldu
+        ROLE_UPDATED: Rol güncellendi
+        ROLE_DELETED: Rol silindi
+        NOTIFICATION_READ: Bildirim okundu olarak işaretlendi
+        NOTIFICATION_DELETED: Bildirim silindi
     """
 
     # Auth
@@ -62,6 +74,22 @@ class AuditAction(str, PyEnum):
     # File
     FILE_UPLOADED = "file_uploaded"
     FILE_DELETED = "file_deleted"
+    # API Key
+    API_KEY_CREATED = "api_key_created"
+    API_KEY_REVOKED = "api_key_revoked"
+    API_KEY_USED = "api_key_used"
+    # TOTP / 2FA
+    TOTP_SETUP_STARTED = "totp_setup_started"
+    TOTP_ENABLED = "totp_enabled"
+    TOTP_DISABLED = "totp_disabled"
+    TOTP_BACKUP_CODES_REGENERATED = "totp_backup_codes_regenerated"
+    # Role management
+    ROLE_CREATED = "role_created"
+    ROLE_UPDATED = "role_updated"
+    ROLE_DELETED = "role_deleted"
+    # Notification
+    NOTIFICATION_READ = "notification_read"
+    NOTIFICATION_DELETED = "notification_deleted"
 
 
 class AuditLog(BaseModel):

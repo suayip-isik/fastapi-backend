@@ -253,6 +253,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_AUTH_EMAIL: str = "3/hour"  # forgot-password, resend-verification
     RATE_LIMIT_REGISTER: str = "3/hour"  # register
     RATE_LIMIT_UPLOAD: str = "20/hour"
+    RATE_LIMIT_API_KEYS: str = "20/minute"  # API key create/revoke
 
     # ── Token TTLs ────────────────────────────────────────────────────────────
     EMAIL_VERIFY_TTL: int = 86400  # 24 hours in seconds

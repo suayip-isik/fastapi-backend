@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.core.exceptions import AlreadyExistsError, BusinessRuleError, NotFoundError
+from app.db.models.audit_log import AuditAction
 from app.db.repositories.role import RoleRepository
 from app.services.base import AuditableMixin
 
@@ -74,6 +75,10 @@ class RoleService(AuditableMixin):
             await self._repo.set_permissions(role.id, permissions)
             # Bulk DML identity map'i güncellemez; permissions koleksiyonunu tazele.
             await self._repo._session.refresh(role, attribute_names=["permissions"])
+        await self._audit_log(
+            AuditAction.ROLE_CREATED,
+            extra={"role_name": name, "permissions": permissions},
+        )
         return role
 
     async def update(
@@ -98,6 +103,15 @@ class RoleService(AuditableMixin):
             await self._repo.update(role_id, description=description)
         if permissions is not None:
             await self._repo.set_permissions(role_id, permissions)
+        await self._audit_log(
+            AuditAction.ROLE_UPDATED,
+            extra={
+                "role_id": str(role_id),
+                "role_name": role.name,
+                "updated_description": description,
+                "updated_permissions": permissions,
+            },
+        )
         # Cached role nesnesini expire et; get_by_id taze veri çeksin.
         self._repo._session.expire(role)
         return await self.get_by_id(role_id)
@@ -117,4 +131,8 @@ class RoleService(AuditableMixin):
             raise BusinessRuleError(
                 "Bu role atanmış kullanıcılar var. Önce kullanıcıların rolünü değiştirin."
             )
+        await self._audit_log(
+            AuditAction.ROLE_DELETED,
+            extra={"role_id": str(role_id), "role_name": role.name},
+        )
         await self._repo.soft_delete(role_id)

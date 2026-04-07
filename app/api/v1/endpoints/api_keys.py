@@ -6,17 +6,18 @@ GET    /api-keys         → Kendi key'lerini listele
 DELETE /api-keys/{id}   → Key iptal et
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import CurrentUserDep
+from app.api.dependencies.services import AuditServiceDep
+from app.core.config import settings
+from app.core.limiter import limiter
 from app.db.session import get_db
 from app.schemas.common import MessageResponse
 from app.services.api_key import APIKeyService
@@ -24,9 +25,12 @@ from app.services.api_key import APIKeyService
 router = APIRouter(prefix="/api-keys", tags=["API Keys"])
 
 
-def get_api_key_service(db: Annotated[AsyncSession, Depends(get_db)]) -> APIKeyService:
+def get_api_key_service(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    audit: AuditServiceDep,
+) -> APIKeyService:
     """APIKeyService dependency factory'si."""
-    return APIKeyService(db)
+    return APIKeyService(db, audit=audit)
 
 
 APIKeyServiceDep = Annotated[APIKeyService, Depends(get_api_key_service)]
@@ -67,7 +71,7 @@ class APIKeyCreatedResponse(BaseModel):
     )
 
     @classmethod
-    def from_api_key(cls, raw_key: str, api_key: object) -> APIKeyCreatedResponse:
+    def from_api_key(cls, raw_key: str, api_key: object) -> "APIKeyCreatedResponse":
         """APIKey model'inden response şeması oluşturur."""
         scopes_str: str = getattr(api_key, "scopes", "") or ""
         return cls(
@@ -96,7 +100,7 @@ class APIKeyResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     @classmethod
-    def model_validate(cls, obj: object, **kwargs: object) -> APIKeyResponse:
+    def model_validate(cls, obj: object, **kwargs: object) -> "APIKeyResponse":
         """APIKey model'inden response şeması oluşturur."""
         scopes_str: str = getattr(obj, "scopes", "") or ""
         return cls(
@@ -114,8 +118,12 @@ class APIKeyResponse(BaseModel):
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
-@router.post("", response_model=APIKeyCreatedResponse, status_code=201)
+@router.post(
+    "", response_model=APIKeyCreatedResponse, status_code=201, summary="Yeni API key oluştur"
+)
+@limiter.limit(settings.RATE_LIMIT_API_KEYS)
 async def create_api_key(
+    request: Request,
     data: CreateAPIKeyRequest,
     current_user: CurrentUserDep,
     service: APIKeyServiceDep,
@@ -145,7 +153,7 @@ async def create_api_key(
     return APIKeyCreatedResponse.from_api_key(raw_key, api_key)
 
 
-@router.get("", response_model=list[APIKeyResponse])
+@router.get("", response_model=list[APIKeyResponse], summary="API key'lerini listele")
 async def list_api_keys(
     current_user: CurrentUserDep,
     service: APIKeyServiceDep,
@@ -170,8 +178,10 @@ async def list_api_keys(
     return [APIKeyResponse.model_validate(k) for k in keys]
 
 
-@router.delete("/{key_id}", response_model=MessageResponse)
+@router.delete("/{key_id}", response_model=MessageResponse, summary="API key iptal et")
+@limiter.limit(settings.RATE_LIMIT_API_KEYS)
 async def revoke_api_key(
+    request: Request,
     key_id: UUID,
     current_user: CurrentUserDep,
     service: APIKeyServiceDep,

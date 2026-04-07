@@ -18,6 +18,8 @@ from app.db.models.api_key import APIKey  # noqa: F401
 from app.db.models.audit_log import AuditLog  # noqa: F401
 from app.db.models.base import Base
 from app.db.models.notification import Notification  # noqa: F401
+from app.db.models.role import Role, RolePermission  # noqa: F401
+from app.db.models.totp_backup_code import TOTPBackupCode  # noqa: F401
 from app.db.models.user import User  # noqa: F401
 from app.core.config import settings
 

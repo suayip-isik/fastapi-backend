@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import CurrentUserDep
+from app.api.dependencies.services import AuditServiceDep
 from app.db.session import get_db
 from app.schemas.common import MessageResponse, PaginatedResponse, calculate_pages
 from app.services.notification import NotificationService
@@ -26,9 +27,12 @@ from app.services.notification import NotificationService
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 
-def get_notification_service(db: Annotated[AsyncSession, Depends(get_db)]) -> NotificationService:
+def get_notification_service(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    audit: AuditServiceDep,
+) -> NotificationService:
     """NotificationService dependency factory'si."""
-    return NotificationService(db)
+    return NotificationService(db, audit=audit)
 
 
 NotificationServiceDep = Annotated[NotificationService, Depends(get_notification_service)]

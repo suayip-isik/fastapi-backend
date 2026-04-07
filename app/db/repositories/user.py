@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import NoResultFound
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -32,8 +33,14 @@ class UserRepository(SoftDeleteRepository[User]):
     model = User
 
     async def _get_default_role_id(self) -> UUID:
-        result = await self._session.execute(select(Role.id).where(Role.name == "user"))
-        return result.scalar_one()
+        try:
+            result = await self._session.execute(select(Role.id).where(Role.name == "user"))
+            return result.scalar_one()
+        except NoResultFound as exc:
+            raise RuntimeError(
+                "Varsayılan 'user' rolü veritabanında bulunamadı. "
+                "Seed verilerinin uygulandığından emin olun."
+            ) from exc
 
     async def create(self, **data: Any) -> User:
         if "role_id" not in data:

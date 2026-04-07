@@ -6,9 +6,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from app.core.exceptions import AlreadyExistsError, BusinessRuleError, UserNotFoundError
+from app.core.exceptions import (
+    AlreadyExistsError,
+    BusinessRuleError,
+    NotFoundError,
+    UserNotFoundError,
+)
 from app.core.security import hash_password
 from app.db.models.audit_log import AuditAction
+from app.db.repositories.role import RoleRepository
 from app.db.repositories.user import UserRepository
 from app.services._keys import (
     USER_CACHE_KEY,
@@ -49,6 +55,7 @@ class UserService(AuditableMixin):
             audit: Audit log servisi. None ise audit logları atlanır.
         """
         self._repo = UserRepository(session)
+        self._role_repo = RoleRepository(session)
         self._audit = audit
 
     async def get_by_id(self, user_id: UUID) -> User:
@@ -315,15 +322,10 @@ class UserService(AuditableMixin):
             UserNotFoundError: Kullanıcı bulunamadığında.
             NotFoundError: Belirtilen isimde rol bulunamadığında.
         """
-        from app.db.repositories.role import RoleRepository
-
         current = await self._repo.get_by_id_or_raise(user_id)
 
-        role_repo = RoleRepository(self._repo._session)
-        new_role = await role_repo.get_by_name(role_name)
+        new_role = await self._role_repo.get_by_name(role_name)
         if not new_role:
-            from app.core.exceptions import NotFoundError
-
             raise NotFoundError(f"'{role_name}' adında bir rol bulunamadı.")
 
         old_role_name = current.role.name if current.role else None

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,7 +31,11 @@ class TOTPBackupCode(BaseModel):
     """
 
     __tablename__ = "totp_backup_codes"
-    __table_args__ = (Index("ix_totp_backup_user_used", "user_id", "is_used"),)
+    __table_args__ = (
+        Index("ix_totp_backup_user_used", "user_id", "is_used"),
+        Index("ix_totp_backup_code_hash", "user_id", "code_hash"),
+        UniqueConstraint("user_id", "code_hash", name="uq_totp_backup_user_hash"),
+    )
 
     user_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),

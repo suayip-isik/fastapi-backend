@@ -10,23 +10,27 @@ from typing import TYPE_CHECKING, Any
 
 from app.core.exceptions import NotFoundError
 from app.core.logging import get_logger
+from app.db.models.audit_log import AuditAction
 from app.db.models.notification import Notification, NotificationType
 from app.db.repositories.notification import NotificationRepository
+from app.services.base import AuditableMixin
 
 if TYPE_CHECKING:
     from uuid import UUID
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
+    from app.services.audit import AuditService
+
 logger = get_logger(__name__)
 
 
-class NotificationService:
+class NotificationService(AuditableMixin):
     """Bildirim olusturma/listeleme ve durum guncelleme servisidir."""
 
-    def __init__(self, session: AsyncSession) -> None:
-        """NotificationService nesnesini repository baglantisiyla olusturur."""
+    def __init__(self, session: AsyncSession, audit: AuditService | None = None) -> None:
         self._repo = NotificationRepository(session)
+        self._audit = audit
 
     async def create(
         self,
@@ -128,7 +132,13 @@ class NotificationService:
         notification = await self._repo.get_by_id(notification_id)
         if not notification or notification.user_id != user_id:
             raise NotFoundError("Bildirim bulunamadı.")
-        return await self._repo.update(notification_id, is_read=True)
+        result = await self._repo.update(notification_id, is_read=True)
+        await self._audit_log(
+            AuditAction.NOTIFICATION_READ,
+            user_id=user_id,
+            extra={"notification_id": str(notification_id)},
+        )
+        return result
 
     async def mark_all_read(self, user_id: UUID) -> int:
         """Kullanıcının tüm bildirimlerini okundu olarak işaretler.
@@ -155,6 +165,11 @@ class NotificationService:
         if not notification or notification.user_id != user_id:
             raise NotFoundError("Bildirim bulunamadı.")
         await self._repo.delete(notification_id)
+        await self._audit_log(
+            AuditAction.NOTIFICATION_DELETED,
+            user_id=user_id,
+            extra={"notification_id": str(notification_id)},
+        )
 
     async def count_unread(self, user_id: UUID) -> int:
         """Kullanıcının okunmamış bildirim sayısını döndürür.

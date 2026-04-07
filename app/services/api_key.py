@@ -16,7 +16,9 @@ from typing import TYPE_CHECKING
 from app.core.exceptions import AuthenticationError, NotFoundError
 from app.core.logging import get_logger
 from app.core.security import hash_password, verify_password
+from app.db.models.audit_log import AuditAction
 from app.db.repositories.api_key import APIKeyRepository
+from app.services.base import AuditableMixin
 
 _logger = get_logger(__name__)
 
@@ -26,6 +28,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.db.models.api_key import APIKey
+    from app.services.audit import AuditService
 
 _KEY_PREFIX = "sk_live_"
 _KEY_BYTES = 40  # raw random bytes → hex = 80 chars
@@ -41,7 +44,7 @@ def _split_key(raw_key: str) -> tuple[str, str]:
     return raw_key[:12], raw_key[12:]
 
 
-class APIKeyService:
+class APIKeyService(AuditableMixin):
     """API key yönetimi için servis sınıfı.
 
     Bu servis, API key oluşturma, listeleme, iptal etme ve doğrulama
@@ -50,15 +53,12 @@ class APIKeyService:
 
     Attributes:
         _repo: API key veritabanı işlemleri için repository.
+        _audit: Audit log servisi (opsiyonel).
     """
 
-    def __init__(self, session: AsyncSession) -> None:
-        """APIKeyService örneği oluşturur.
-
-        Args:
-            session: Veritabanı işlemleri için async SQLAlchemy oturumu.
-        """
+    def __init__(self, session: AsyncSession, audit: AuditService | None = None) -> None:
         self._repo = APIKeyRepository(session)
+        self._audit = audit
 
     async def create(
         self,
@@ -103,6 +103,11 @@ class APIKeyService:
             expires_at=expires_at,
             is_active=True,
         )
+        await self._audit_log(
+            AuditAction.API_KEY_CREATED,
+            user_id=user_id,
+            extra={"key_name": name, "key_prefix": prefix},
+        )
         return raw_key, api_key
 
     async def list_for_user(self, user_id: UUID) -> list[APIKey]:
@@ -138,6 +143,11 @@ class APIKeyService:
         if not api_key or api_key.user_id != user_id:
             raise NotFoundError("API key bulunamadı.")
         await self._repo.update(key_id, is_active=False)
+        await self._audit_log(
+            AuditAction.API_KEY_REVOKED,
+            user_id=user_id,
+            extra={"key_name": api_key.name, "key_prefix": api_key.key_prefix},
+        )
 
     async def authenticate(self, raw_key: str) -> APIKey:
         """Ham API key'i doğrular ve ilişkili APIKey nesnesini döndürür.
@@ -183,6 +193,11 @@ class APIKeyService:
             with contextlib.suppress(Exception):
                 await self._repo.update(api_key.id, last_used_at=datetime.now(UTC))
 
+            await self._audit_log(
+                AuditAction.API_KEY_USED,
+                user_id=api_key.user_id,
+                extra={"key_prefix": api_key.key_prefix},
+            )
             return api_key
 
         _logger.warning("api_key_auth_failed", prefix=prefix)

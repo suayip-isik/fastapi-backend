@@ -19,9 +19,11 @@ from app.core.config import settings
 from app.core.exceptions import AuthenticationError, BusinessRuleError, TOTPNotConfiguredError
 from app.core.redis import get_redis_client
 from app.core.security import decrypt_secret, encrypt_secret, hash_password, verify_password
+from app.db.models.audit_log import AuditAction
 from app.db.repositories.totp_backup_code import TOTPBackupCodeRepository
 from app.db.repositories.user import UserRepository
 from app.services._keys import TOTP_BACKUP_KEY
+from app.services.base import AuditableMixin
 
 if TYPE_CHECKING:
     from uuid import UUID as _UUID
@@ -29,6 +31,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.db.models.user import User
+    from app.services.audit import AuditService
 
 _BACKUP_CODE_COUNT = 8
 _BACKUP_CODE_TTL = 30 * 24 * 60 * 60  # 30 gün
@@ -39,13 +42,13 @@ def _generate_backup_codes() -> list[str]:
     return [secrets.token_hex(4).upper() for _ in range(_BACKUP_CODE_COUNT)]
 
 
-class TOTPService:
+class TOTPService(AuditableMixin):
     """TOTP tabanli iki faktorlu kimlik dogrulama servisidir."""
 
-    def __init__(self, session: AsyncSession) -> None:
-        """TOTPService nesnesini gerekli repository'lerle olusturur."""
+    def __init__(self, session: AsyncSession, audit: AuditService | None = None) -> None:
         self._repo = UserRepository(session)
         self._backup_repo = TOTPBackupCodeRepository(session)
+        self._audit = audit
 
     async def setup(self, user: User) -> dict[str, str]:
         """Kullanıcı için TOTP 2FA kurulumunu başlatır.
@@ -81,6 +84,7 @@ class TOTPService:
 
         # Secret'ı şifrele, DB'ye geçici olarak kaydet (totp_enabled=False)
         await self._repo.update(user.id, totp_secret=encrypt_secret(secret), totp_enabled=False)
+        await self._audit_log(AuditAction.TOTP_SETUP_STARTED, user_id=user.id)
 
         return {
             "secret": secret,
@@ -121,6 +125,7 @@ class TOTPService:
             raise AuthenticationError("Geçersiz doğrulama kodu.")
 
         await self._repo.update(user.id, totp_enabled=True)
+        await self._audit_log(AuditAction.TOTP_ENABLED, user_id=user.id)
 
         backup_codes = _generate_backup_codes()
         await self._persist_backup_codes(user.id, backup_codes)
@@ -151,6 +156,7 @@ class TOTPService:
             raise AuthenticationError("Geçersiz doğrulama kodu.")
 
         await self._repo.update(user.id, totp_secret=None, totp_enabled=False)
+        await self._audit_log(AuditAction.TOTP_DISABLED, user_id=user.id)
 
         redis = await get_redis_client()
         await redis.delete(TOTP_BACKUP_KEY.format(str(user.id)))
@@ -285,12 +291,12 @@ class TOTPService:
         await redis.expire(key, _BACKUP_CODE_TTL)
 
         await self._backup_repo.delete_all_for_user(user_id)
-        for code in codes:
-            await self._backup_repo.create(
-                user_id=user_id,
-                code_hash=hash_password(code),
-                is_used=False,
-            )
+        await self._backup_repo.bulk_create(
+            [
+                {"user_id": user_id, "code_hash": hash_password(code), "is_used": False}
+                for code in codes
+            ]
+        )
 
     async def regenerate_backup_codes(self, user: User, totp_code: str) -> list[str]:
         """Yeni backup kodları oluşturur ve eskileri geçersiz kılar.
@@ -318,6 +324,7 @@ class TOTPService:
             raise AuthenticationError("Geçersiz doğrulama kodu.")
         new_codes = _generate_backup_codes()
         await self._persist_backup_codes(user.id, new_codes)
+        await self._audit_log(AuditAction.TOTP_BACKUP_CODES_REGENERATED, user_id=user.id)
         return new_codes
 
     async def get_backup_code_count(self, user: User) -> int:
