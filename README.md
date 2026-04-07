@@ -148,8 +148,9 @@ fastapi-backend/
 │   │       ├── router.py               # Ana router (tüm endpoint'leri birleştirir)
 │   │       └── endpoints/
 │   │           ├── auth.py             # Kayıt, giriş, çıkış, e-posta doğrulama, şifre sıfırlama
-│   │           ├── totp.py             # 2FA kurulum, doğrulama, devre dışı bırakma
-│   │           ├── users.py            # Kullanıcı profili ve yönetimi
+│   │           ├── totp.py             # 2FA kurulum, doğrulama, yedek kod yönetimi
+│   │           ├── users.py            # Kullanıcı profili ve yönetimi (soft-delete dahil)
+│   │           ├── roles.py            # Rol yönetimi (CRUD, sistem rolü koruma)
 │   │           ├── api_keys.py         # API key oluşturma, listeleme, iptal
 │   │           ├── audit_logs.py       # Audit log listeleme ve sorgulama (admin)
 │   │           ├── notifications.py    # Uygulama içi bildirimler
@@ -169,22 +170,27 @@ fastapi-backend/
 │   │   ├── session.py                  # Async DB session factory ve engine
 │   │   ├── models/
 │   │   │   ├── base.py                 # BaseModel (UUID PK, created_at, updated_at)
-│   │   │   ├── user.py                 # User modeli (rol, TOTP)
+│   │   │   ├── user.py                 # User modeli (rol, TOTP, soft-delete)
+│   │   │   ├── role.py                 # Role ve RolePermission modelleri (RBAC)
 │   │   │   ├── api_key.py              # API key saklama (bcrypt hash)
-│   │   │   ├── audit_log.py            # Denetim kayıtları
-│   │   │   └── notification.py         # Uygulama içi bildirimler
+│   │   │   ├── audit_log.py            # Denetim kayıtları (AuditAction enum)
+│   │   │   ├── notification.py         # Uygulama içi bildirimler
+│   │   │   └── totp_backup_code.py     # TOTP yedek kodlar (tek kullanımlık, bcrypt)
 │   │   └── repositories/
 │   │       ├── base.py                 # Generic BaseRepository[T] (get_page window fn)
 │   │       ├── user.py                 # UserRepository
+│   │       ├── oauth_account.py        # OAuthAccountRepository (upsert, provider bazlı)
 │   │       ├── api_key.py              # APIKeyRepository
 │   │       ├── audit_log.py            # AuditLogRepository
 │   │       └── notification.py         # NotificationRepository
 │   ├── services/
 │   │   ├── base.py                     # AuditableMixin (audit log paylaşımlı helper)
 │   │   ├── _keys.py                    # Redis key sabitleri (magic string'leri önler)
+│   │   ├── cache.py                    # Redis cache yardımcıları (get/set/delete)
 │   │   ├── auth.py                     # AuthService — kayıt, giriş, çıkış, token yönetimi
 │   │   ├── account.py                  # AccountService — e-posta doğrulama, şifre sıfırlama
-│   │   ├── user.py                     # UserService — kullanıcı CRUD + sayfalama
+│   │   ├── user.py                     # UserService — kullanıcı CRUD + soft-delete + sayfalama
+│   │   ├── role.py                     # RoleService — rol CRUD, izin yönetimi
 │   │   ├── api_key.py                  # APIKeyService — key oluşturma, doğrulama, iptal
 │   │   ├── notification.py             # NotificationService — bildirim + WebSocket push
 │   │   ├── totp.py                     # TOTPService — 2FA kurulum, doğrulama, yedek kodlar
@@ -456,6 +462,14 @@ Tüm değerleri `.env.example`'dan `.env`'e kopyaladıktan sonra ihtiyacına gö
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30`                 | Access token geçerlilik süresi  | Hayır   |
 | `REFRESH_TOKEN_EXPIRE_DAYS`   | `30`                 | Refresh token geçerlilik süresi | Hayır   |
 
+### Cookie
+
+| Değişken          | Varsayılan | Açıklama                                                      |
+| ----------------- | ---------- | ------------------------------------------------------------- |
+| `COOKIE_DOMAIN`   | (boş)      | Cookie domain (boş = request domain)                          |
+| `COOKIE_SECURE`   | `true`     | Secure flag — HTTPS zorunluluğu (production'da `true` olmalı) |
+| `COOKIE_SAMESITE` | `lax`      | SameSite politikası (`lax`, `strict`, `none`)                 |
+
 ### Depolama (S3 / MinIO)
 
 | Değişken               | Örnek Değer                                    | Açıklama                               | Zorunlu |
@@ -485,6 +499,7 @@ Tüm değerleri `.env.example`'dan `.env`'e kopyaladıktan sonra ihtiyacına gö
 | `RATE_LIMIT_AUTH_EMAIL` | `3/hour`     | E-posta doğrulama, şifremi unuttum |
 | `RATE_LIMIT_REGISTER`   | `3/hour`     | Kayıt                              |
 | `RATE_LIMIT_UPLOAD`     | `20/hour`    | Dosya yükleme                      |
+| `RATE_LIMIT_API_KEYS`   | `20/minute`  | API key oluşturma                  |
 
 ### E-posta (SMTP)
 
@@ -516,9 +531,9 @@ Tüm değerleri `.env.example`'dan `.env`'e kopyaladıktan sonra ihtiyacına gö
 
 Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt şemaları ve deneme için: **http://localhost:8000/docs**
 
-> **Toplam:** 45 endpoint (Auth: 15, TOTP: 4, Users: 10, API Keys: 3, Notifications: 5, Uploads: 2, Audit Logs: 3, WebSocket: 1, Health: 2)
+> **Toplam:** ~53 endpoint (Auth: 10, TOTP: 5, Users: 11, Roles: 5, API Keys: 3, Notifications: 5, Uploads: 2, Audit Logs: 3, WebSocket: 1, Health: 3)
 
-### 1. Auth (`/auth`) — 11 endpoint
+### 1. Auth (`/auth`) — 10 endpoint
 
 | Method | Path                        | Açıklama                                                          | Auth  |
 | ------ | --------------------------- | ----------------------------------------------------------------- | ----- |
@@ -532,25 +547,26 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 | POST   | `/auth/forgot-password`     | Şifre sıfırlama e-postası gönder                                  | Hayır |
 | POST   | `/auth/reset-password`      | Token ile şifre sıfırla                                           | Hayır |
 | GET    | `/auth/me`                  | Mevcut kullanıcı bilgileri                                        | Evet  |
-| POST   | `/auth/logout-all`          | Tüm oturumlardan çıkış                                            | Evet  |
 
-### 2. TOTP / 2FA (`/auth/totp`) — 4 endpoint
+### 2. TOTP / 2FA (`/auth/totp`) — 5 endpoint
 
-| Method | Path                            | Açıklama                                             | Auth |
-| ------ | ------------------------------- | ---------------------------------------------------- | ---- |
-| POST   | `/auth/totp/setup`              | 2FA kurulumu başlat (QR kodu + secret döner)         | Evet |
-| POST   | `/auth/totp/verify`             | Kodu doğrula ve 2FA'yı aktif et (yedek kodlar döner) | Evet |
-| POST   | `/auth/totp/disable`            | 2FA'yı devre dışı bırak                              | Evet |
-| GET    | `/auth/totp/backup-codes/count` | Kalan yedek kod sayısını getir                       | Evet |
+| Method | Path                                 | Açıklama                                             | Auth |
+| ------ | ------------------------------------ | ---------------------------------------------------- | ---- |
+| POST   | `/auth/totp/setup`                   | 2FA kurulumu başlat (QR kodu + secret döner)         | Evet |
+| POST   | `/auth/totp/verify`                  | Kodu doğrula ve 2FA'yı aktif et (yedek kodlar döner) | Evet |
+| POST   | `/auth/totp/disable`                 | 2FA'yı devre dışı bırak                              | Evet |
+| GET    | `/auth/totp/backup-codes/count`      | Kalan yedek kod sayısını getir                       | Evet |
+| POST   | `/auth/totp/backup-codes/regenerate` | Yeni yedek kodlar üret (eskiler geçersizleşir)       | Evet |
 
-### 3. Kullanıcılar (`/users`) — 10 endpoint
+### 3. Kullanıcılar (`/users`) — 11 endpoint
 
 | Method | Path                          | Açıklama                                    | Auth  |
 | ------ | ----------------------------- | ------------------------------------------- | ----- |
 | GET    | `/users/me`                   | Mevcut kullanıcı profili                    | Evet  |
 | PATCH  | `/users/me`                   | Profili güncelle                            | Evet  |
-| GET    | `/users`                      | Tüm kullanıcıları listele                   | Admin |
+| GET    | `/users`                      | Tüm kullanıcıları listele (filtreli)        | Admin |
 | GET    | `/users/stats`                | Aktif/pasif/toplam kullanıcı istatistikleri | Admin |
+| GET    | `/users/deleted`              | Soft-delete kullanıcıları listele           | Admin |
 | GET    | `/users/{user_id}`            | Belirli kullanıcıyı getir                   | Admin |
 | POST   | `/users/{user_id}/activate`   | Kullanıcıyı aktif et                        | Admin |
 | POST   | `/users/{user_id}/deactivate` | Kullanıcıyı deaktif et                      | Admin |
@@ -558,7 +574,17 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 | DELETE | `/users/{user_id}`            | Kullanıcıyı soft-delete et                  | Admin |
 | POST   | `/users/{user_id}/restore`    | Soft-delete kullanıcıyı geri al             | Admin |
 
-### 4. API Keys (`/api-keys`) — 3 endpoint
+### 4. Roller (`/roles`) — 5 endpoint
+
+| Method | Path               | Açıklama                                           | Auth  |
+| ------ | ------------------ | -------------------------------------------------- | ----- |
+| GET    | `/roles`           | Tüm rolleri listele (izinlerle birlikte)           | Admin |
+| POST   | `/roles`           | Yeni özel rol oluştur                              | Admin |
+| GET    | `/roles/{role_id}` | Rol detayını getir                                 | Admin |
+| PATCH  | `/roles/{role_id}` | Rol açıklamasını veya izinlerini güncelle          | Admin |
+| DELETE | `/roles/{role_id}` | Özel rolü sil (sistem rolleri korumalı, silinemez) | Admin |
+
+### 5. API Keys (`/api-keys`) — 3 endpoint
 
 | Method | Path                 | Açıklama             | Auth |
 | ------ | -------------------- | -------------------- | ---- |
@@ -566,7 +592,7 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 | GET    | `/api-keys`          | API key'leri listele | Evet |
 | DELETE | `/api-keys/{key_id}` | API key'i iptal et   | Evet |
 
-### 5. Bildirimler (`/notifications`) — 5 endpoint
+### 6. Bildirimler (`/notifications`) — 5 endpoint
 
 | Method | Path                               | Açıklama                         | Auth |
 | ------ | ---------------------------------- | -------------------------------- | ---- |
@@ -576,14 +602,14 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 | PATCH  | `/notifications/{notification_id}` | Tek bildirimi okundu işaretle    | Evet |
 | DELETE | `/notifications/{notification_id}` | Bildirimi sil                    | Evet |
 
-### 6. Dosya Yükleme (`/uploads`) — 2 endpoint
+### 7. Dosya Yükleme (`/uploads`) — 2 endpoint
 
 | Method | Path       | Açıklama                                    | Auth |
 | ------ | ---------- | ------------------------------------------- | ---- |
 | POST   | `/uploads` | Dosya yükle (max 10MB, izinli MIME türleri) | Evet |
 | DELETE | `/uploads` | Dosya sil (sahip veya admin)                | Evet |
 
-### 7. Audit Loglar (`/audit-logs`) — 3 endpoint
+### 8. Audit Loglar (`/audit-logs`) — 3 endpoint
 
 | Method | Path                   | Açıklama                                   | Auth  |
 | ------ | ---------------------- | ------------------------------------------ | ----- |
@@ -593,7 +619,7 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 
 **Sorgu parametreleri:** `page`, `size`, `user_id`, `action`, `date_from`, `date_to`, `ip_address`
 
-### 8. WebSocket (`/ws`) — 1 endpoint
+### 9. WebSocket (`/ws`) — 1 endpoint
 
 | Tip       | Path                   | Açıklama                            | Auth              |
 | --------- | ---------------------- | ----------------------------------- | ----------------- |
@@ -607,12 +633,13 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 - Max mesaj boyutu: 64 KB
 - Auth timeout: 10 saniye
 
-### 9. Health & Sistem — 2 endpoint
+### 10. Health & Sistem — 3 endpoint
 
-| Method | Path           | Açıklama                               | Auth  |
-| ------ | -------------- | -------------------------------------- | ----- |
-| GET    | `/health`      | Tam sağlık durumu (DB, Redis, Storage) | Hayır |
-| GET    | `/health/live` | Kubernetes liveness probe              | Hayır |
+| Method | Path            | Açıklama                                         | Auth  |
+| ------ | --------------- | ------------------------------------------------ | ----- |
+| GET    | `/health`       | Tam sağlık durumu (DB, Redis, Storage)           | Hayır |
+| GET    | `/health/live`  | Kubernetes liveness probe (hafif)                | Hayır |
+| GET    | `/health/ready` | Kubernetes readiness probe (DB + Redis kontrolü) | Hayır |
 
 **Diğer Sistem Endpoint'leri:**
 
@@ -792,41 +819,54 @@ CORS_ALLOW_HEADERS = ["Authorization", "Content-Type", "X-API-Key", "X-Request-I
 Tüm güvenlik açısından kritik işlemler `audit_logs` tablosuna kaydedilir:
 
 ```python
-# Kaydedilen olaylar
-AUDIT_EVENTS = [
-    "user.login",           # Başarılı/başarısız giriş
-    "user.logout",          # Çıkış
-    "user.register",        # Kayıt
-    "user.password_reset",  # Şifre sıfırlama
-    "user.password_change", # Şifre değiştirme
-    "user.2fa_enable",      # 2FA etkinleştirme
-    "user.2fa_disable",     # 2FA devre dışı
-    "api_key.create",       # API key oluşturma
-    "api_key.revoke",       # API key iptal
-    "file.upload",          # Dosya yükleme
-    "file.delete",          # Dosya silme
-    "admin.user_update",    # Admin kullanıcı güncelleme
-    "admin.role_change",    # Rol değişikliği
-]
+# Kaydedilen olaylar (app/db/models/audit_log.py — AuditAction enum)
+AuditAction.LOGIN_SUCCESS          # Başarılı giriş
+AuditAction.LOGIN_FAILED           # Başarısız giriş denemesi
+AuditAction.LOGOUT                 # Çıkış
+AuditAction.REGISTER               # Yeni kayıt
+AuditAction.EMAIL_VERIFIED         # E-posta doğrulama
+AuditAction.PASSWORD_RESET_REQUESTED  # Şifre sıfırlama talebi
+AuditAction.PASSWORD_RESET         # Şifre sıfırlama tamamlandı
+AuditAction.PASSWORD_CHANGED       # Şifre değiştirme
+AuditAction.TOKEN_REFRESHED        # Token yenileme
+AuditAction.PROFILE_UPDATED        # Profil güncelleme
+AuditAction.USER_DEACTIVATED       # Kullanıcı deaktif edildi
+AuditAction.USER_ACTIVATED         # Kullanıcı aktif edildi
+AuditAction.USER_DELETED           # Soft-delete
+AuditAction.USER_RESTORED          # Geri yükleme
+AuditAction.ROLE_CHANGED           # Rol değişikliği
+AuditAction.ROLE_CREATED           # Yeni rol oluşturuldu
+AuditAction.ROLE_UPDATED           # Rol güncellendi
+AuditAction.ROLE_DELETED           # Rol silindi
+AuditAction.TOTP_SETUP_STARTED     # 2FA kurulumu başlatıldı
+AuditAction.TOTP_ENABLED           # 2FA aktif edildi
+AuditAction.TOTP_DISABLED          # 2FA devre dışı bırakıldı
+AuditAction.TOTP_BACKUP_CODES_REGENERATED  # Yedek kodlar yenilendi
+AuditAction.API_KEY_CREATED        # API key oluşturuldu
+AuditAction.API_KEY_REVOKED        # API key iptal edildi
+AuditAction.API_KEY_USED           # API key ile doğrulama yapıldı
+AuditAction.FILE_UPLOADED          # Dosya yüklendi
+AuditAction.FILE_DELETED           # Dosya silindi
+AuditAction.NOTIFICATION_READ      # Bildirim okundu
+AuditAction.NOTIFICATION_DELETED   # Bildirim silindi
 ```
 
-| Alan         | Açıklama                      |
-| ------------ | ----------------------------- |
-| `event`      | Olay tipi (örn: `user.login`) |
-| `user_id`    | İşlemi yapan kullanıcı        |
-| `target_id`  | Etkilenen kaynak (opsiyonel)  |
-| `ip_address` | İstek IP adresi               |
-| `user_agent` | Tarayıcı/client bilgisi       |
-| `metadata`   | JSON formatında ek detaylar   |
-| `created_at` | Zaman damgası (UTC)           |
+| Alan         | Açıklama                              |
+| ------------ | ------------------------------------- |
+| `action`     | Olay tipi (`AuditAction` enum değeri) |
+| `user_id`    | İşlemi yapan kullanıcı (nullable)     |
+| `ip_address` | İstek IP adresi (IPv6 uyumlu)         |
+| `user_agent` | Tarayıcı/client bilgisi               |
+| `extra`      | JSONB formatında ek detaylar          |
+| `created_at` | Zaman damgası (UTC, değiştirilemez)   |
 
 ```python
-# Audit log kullanımı (app/services/audit.py)
-await audit_service.log(
-    event="user.login",
+# Audit log kullanımı (AuditableMixin üzerinden)
+await self._audit_log(
+    action=AuditAction.LOGIN_SUCCESS,
     user_id=user.id,
     ip_address=request.client.host,
-    metadata={"method": "password", "success": True}
+    extra={"method": "password"}
 )
 ```
 
@@ -1097,7 +1137,10 @@ make test-k k=test_login               # İsim desenine göre
 | `tests/integration/test_auth.py`            | Integration | Kayıt, giriş, çıkış, token refresh, e-posta doğrulama, şifre sıfırlama, zaten-doğrulanmış senaryosu                      |
 | `tests/integration/test_oauth.py`           | Integration | Google ve GitHub OAuth akışları, state CSRF koruması, geçersiz/eksik state                                               |
 | `tests/integration/test_users.py`           | Integration | Profil güncelleme, şifre değiştirme, yetki kontrolleri                                                                   |
-| `tests/integration/test_new_features.py`    | Integration | TOTP/2FA (setup/verify/disable/backup code), API key (CRUD, expiry), bildirimler (sahiplik kontrolü dahil)               |
+| `tests/integration/test_totp.py`            | Integration | TOTP setup/verify/disable, yedek kod sayımı ve yenileme                                                                  |
+| `tests/integration/test_api_keys.py`        | Integration | API key CRUD, X-API-Key ile auth, expiry, iptal sonrası erişim reddi                                                     |
+| `tests/integration/test_roles.py`           | Integration | Rol CRUD, sistem rolü koruma, kullanıcıya rol atama                                                                      |
+| `tests/integration/test_notifications.py`   | Integration | Bildirim CRUD, okundu işaretleme, sahiplik kontrolü                                                                      |
 | `tests/integration/test_uploads.py`         | Integration | Dosya yükleme, silme, sahiplik kontrolü                                                                                  |
 | `tests/integration/test_websocket.py`       | Integration | Auth hata senaryoları, ping/pong, broadcast, echo kontrolü                                                               |
 | `tests/integration/test_audit_log.py`       | Integration | REGISTER, LOGIN_SUCCESS/FAILED, LOGOUT, TOKEN_REFRESHED aksiyonları audit edilmeli                                       |
@@ -1329,11 +1372,11 @@ ssl_session_cache shared:SSL:10m;
 
 API, servis durumunu kontrol etmek için health endpoint'leri sunar:
 
-| Endpoint                  | Amaç                                         | Rate Limit |
-| ------------------------- | -------------------------------------------- | ---------- |
-| `GET /health`             | Basit liveness probe (API çalışıyor mu?)     | Yok        |
-| `GET /health/ready`       | Readiness probe (DB, Redis bağlantıları OK?) | Yok        |
-| `GET /api/v1/system/info` | Sistem bilgisi (admin only)                  | Standart   |
+| Endpoint            | Amaç                                                    | Rate Limit |
+| ------------------- | ------------------------------------------------------- | ---------- |
+| `GET /health`       | Tam sağlık durumu (DB, Redis, Storage kontrolü)         | Yok        |
+| `GET /health/live`  | Kubernetes liveness probe — hafif, sadece API yanıtı    | Yok        |
+| `GET /health/ready` | Kubernetes readiness probe (DB, Redis bağlantıları OK?) | Yok        |
 
 ```bash
 # Kubernetes / Docker health check örneği
