@@ -19,6 +19,7 @@ from app.core.exceptions import (
     TokenExpiredError,
     UserAlreadyExistsError,
 )
+from app.core.i18n import language_var, t
 from app.core.redis import get_redis_client
 from app.core.security import (
     TokenType,
@@ -135,7 +136,7 @@ class AuthService(AuditableMixin):
         token = secrets.token_urlsafe(32)
         redis = await get_redis_client()
         await redis.setex(EMAIL_VERIFY_KEY.format(token), settings.EMAIL_VERIFY_TTL, str(user.id))
-        await enqueue(send_verification_email, user.email, token)
+        await enqueue(send_verification_email, user.email, token, language_var.get())
 
         await self._audit_log(AuditAction.REGISTER, user_id=user.id)
         return user
@@ -159,11 +160,11 @@ class AuthService(AuditableMixin):
         user = await self._repo.get_active_by_email(email)
         if not user or not user.hashed_password:
             await self._audit_log(AuditAction.LOGIN_FAILED, extra={"email": email})
-            raise AuthenticationError("E-posta veya şifre hatalı.")
+            raise AuthenticationError(t("error.auth.invalid_credentials"))
 
         if not verify_password(password, user.hashed_password):
             await self._audit_log(AuditAction.LOGIN_FAILED, user_id=user.id)
-            raise AuthenticationError("E-posta veya şifre hatalı.")
+            raise AuthenticationError(t("error.auth.invalid_credentials"))
 
         if user.totp_enabled:
             partial_token = secrets.token_urlsafe(32)
@@ -197,13 +198,13 @@ class AuthService(AuditableMixin):
         redis = await get_redis_client()
         user_id_str = await redis.get(LOGIN_PARTIAL_KEY.format(partial_token))
         if not user_id_str:
-            raise AuthenticationError("Geçersiz veya süresi dolmuş oturum.")
+            raise AuthenticationError(t("error.auth.invalid_session"))
 
         await redis.delete(LOGIN_PARTIAL_KEY.format(partial_token))
 
         user = await self._repo.get_by_id(UUID(user_id_str))
         if not user or not user.is_active:
-            raise AuthenticationError("Hesap aktif değil.")
+            raise AuthenticationError(t("error.auth.account_inactive"))
 
         totp_svc = TOTPService(self._session)
         await totp_svc.check_login(user, code)
@@ -255,15 +256,15 @@ class AuthService(AuditableMixin):
         """
         payload = decode_token(refresh_token)
         if payload.type != TokenType.REFRESH:
-            raise InvalidTokenError("Geçersiz token türü.")
+            raise InvalidTokenError(t("error.auth.token_type_invalid"))
 
         redis = await get_redis_client()
         if await redis.exists(BLACKLIST_KEY.format(payload.jti)):
-            raise InvalidTokenError("Refresh token geçersiz kılınmış.")
+            raise InvalidTokenError(t("error.auth.token_revoked"))
 
         user = await self._repo.get_by_id(UUID(payload.sub))
         if not user or not user.is_active:
-            raise AuthenticationError("Kullanıcı bulunamadı.")
+            raise AuthenticationError(t("error.auth.user_not_found"))
 
         # Eski refresh token'ı blacklist'e ekle (rotation)
         remaining = int((payload.exp - datetime.now(UTC)).total_seconds())

@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import CurrentUserDep
 from app.api.dependencies.services import AuditServiceDep
+from app.core.i18n import t
 from app.db.session import get_db
 from app.schemas.common import MessageResponse, PaginatedResponse, calculate_pages
 from app.services.notification import NotificationService
@@ -136,7 +137,7 @@ async def mark_all_read(
         MessageResponse: İşaretlenen bildirim sayısını içeren mesaj.
     """
     count = await service.mark_all_read(current_user.id)
-    return MessageResponse(message=f"{count} bildirim okundu olarak işaretlendi.")
+    return MessageResponse(message=t("notification.mark_all_read.success", count=count))
 
 
 @router.patch("/{notification_id}", response_model=NotificationResponse)
@@ -187,4 +188,4 @@ async def delete_notification(
         HTTPException: Bildirim bulunamazsa 404 hatası döner.
     """
     await service.delete(notification_id, current_user.id)
-    return MessageResponse(message="Bildirim silindi.")
+    return MessageResponse(message=t("notification.delete.success"))

@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies.auth import CurrentUserDep
 from app.api.dependencies.services import AuditServiceDep
 from app.core.config import settings
+from app.core.i18n import t
 from app.core.limiter import limiter
 from app.db.session import get_db
 from app.schemas.common import MessageResponse
@@ -66,9 +67,7 @@ class APIKeyCreatedResponse(BaseModel):
     scopes: list[str]
     expires_at: datetime | None
     created_at: datetime
-    message: str = (
-        "API key oluşturuldu. Bu değeri güvenli bir yerde saklayın — bir daha gösterilmez."
-    )
+    message: str = ""
 
     @classmethod
     def from_api_key(cls, raw_key: str, api_key: object) -> "APIKeyCreatedResponse":
@@ -82,6 +81,7 @@ class APIKeyCreatedResponse(BaseModel):
             scopes=scopes_str.split() if scopes_str else [],
             expires_at=api_key.expires_at,  # type: ignore[attr-defined]
             created_at=api_key.created_at,  # type: ignore[attr-defined]
+            message=t("api_key.create.message"),
         )
 
 
@@ -203,4 +203,4 @@ async def revoke_api_key(
         HTTPException: Key bulunamazsa veya kullanıcıya ait değilse (404).
     """
     await service.revoke(key_id, current_user.id)
-    return MessageResponse(message="API key iptal edildi.")
+    return MessageResponse(message=t("api_key.revoke.success"))

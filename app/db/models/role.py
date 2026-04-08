@@ -32,7 +32,7 @@ class Role(SoftDeleteMixin, BaseModel):
 
     __tablename__ = "roles"
 
-    name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 

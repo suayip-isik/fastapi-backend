@@ -382,50 +382,7 @@ eyJhbGci...  .eyJzdWIi...  .SflKxwRJ...
 **Bu projede:** `app/core/security.py` — `create_access_token`, `decode_token`
 Anahtarlar: `keys/private.pem`, `keys/public.pem`
 
-### 7.3 OAuth2 Social Login
-
-"Google ile giriş" akışı:
-
-```
-1. Kullanıcı "Google ile giriş"e tıklar
-2. Google'ın login sayfasına yönlendirilir (URL'de state parametresi var)
-3. Kullanıcı izin verir, Google code + state ile callback'e yönlendirir
-4. Backend state'i doğrular (Redis'teki ile karşılaştırır), sonra siler
-5. Backend, code ile Google'dan kullanıcı bilgisi alır
-6. Backend kendi JWT'sini oluşturur ve döner
-```
-
-**CSRF Koruması — State Parametresi:**
-
-OAuth callback'i sahte bir siteden tetiklenebilir (CSRF saldırısı). Bunu önlemek için:
-
-```python
-from urllib.parse import urlencode
-
-# 1. Yönlendirme sırasında: rastgele state üret, Redis'e kaydet
-state = secrets.token_urlsafe(32)
-await redis.setex(f"oauth_state:{state}", 600, "1")  # 10 dk TTL
-
-# URL parametreleri urlencode ile oluşturulur — redirect_uri içindeki
-# ":", "/" gibi karakterlerin OAuth URL'ini bozmaması için zorunludur
-params = {"client_id": "...", "redirect_uri": "...", "state": state, ...}
-redirect_url = f"https://accounts.google.com/o/oauth2/auth?{urlencode(params)}"
-
-# 2. Callback sırasında: state'i atomik GETDEL ile doğrula ve tüket
-# GET + DELETE yerine GETDEL kullanmak kritiktir:
-# İki ayrı komut arasındaki sürede iki eş zamanlı istek aynı state'i
-# kullanabilir (race condition → replay saldırısı). GETDEL atomiktir.
-if not await redis.getdel(f"oauth_state:{state}"):
-    raise InvalidTokenError("Geçersiz OAuth state.")
-```
-
-**Bu projede:**
-
-- `app/services/oauth.py` — Google ve GitHub akışları (state üretim + doğrulama)
-- `app/services/_keys.py` — `OAUTH_STATE_KEY = "oauth_state:{}"` sabiti
-- `app/db/repositories/oauth_account.py` — provider hesabı kaydı
-
-### 7.4 Güvenlik Başlıkları
+### 7.3 Güvenlik Başlıkları
 
 - `Strict-Transport-Security` (HSTS)
 - `X-Content-Type-Options`
@@ -538,7 +495,7 @@ class WorkerSettings:
 - `app/tasks/worker.py` — worker tanımları ve görev fonksiyonları
 - `send_welcome_email` — kayıt sonrası hoşgeldiniz e-postası (SMTP)
 - `send_verification_email` / `send_password_reset_email` — hesap doğrulama e-postaları
-- `cleanup_expired_tokens` — her gece yarısı çalışır, TTL'siz orphaned Redis key'lerini temizler (`blacklist:*`, `email_verify:*`, `password_reset:*`, `oauth_state:*`); log event: `cleaning_orphaned_redis_keys`
+- `cleanup_expired_tokens` — her gece yarısı çalışır, TTL'siz orphaned Redis key'lerini temizler (`blacklist:*`, `email_verify:*`, `password_reset:*`); log event: `cleaning_orphaned_redis_keys`
 
 ### 8.4 Bildirimler ve WebSocket Push
 
@@ -854,13 +811,13 @@ Neden bu ayrım? Bir katmanı değiştirdiğinizde diğerleri etkilenmez.
 
 ### 11.2 SOLID Prensipleri
 
-| Prensip                       | Açıklama                               | Bu Projede                                           |
-| ----------------------------- | -------------------------------------- | ---------------------------------------------------- |
-| **S** — Single Responsibility | Bir sınıf tek işi yapar                | `AuthService`, `OAuthService`, `AccountService` ayrı |
-| **O** — Open/Closed           | Genişletmeye açık, değiştirmeye kapalı | `BaseRepository` — extend et, değiştirme             |
-| **L** — Liskov Substitution   | Alt sınıf üst sınıfın yerine geçebilir | Repository miras zinciri                             |
-| **I** — Interface Segregation | Büyük interface yerine küçük olanlar   | Ayrı repository'ler                                  |
-| **D** — Dependency Inversion  | Somut değil, soyuta bağımlı ol         | `Depends()` ile injection                            |
+| Prensip                       | Açıklama                               | Bu Projede                               |
+| ----------------------------- | -------------------------------------- | ---------------------------------------- |
+| **S** — Single Responsibility | Bir sınıf tek işi yapar                | `AuthService`, `AccountService` ayrı     |
+| **O** — Open/Closed           | Genişletmeye açık, değiştirmeye kapalı | `BaseRepository` — extend et, değiştirme |
+| **L** — Liskov Substitution   | Alt sınıf üst sınıfın yerine geçebilir | Repository miras zinciri                 |
+| **I** — Interface Segregation | Büyük interface yerine küçük olanlar   | Ayrı repository'ler                      |
+| **D** — Dependency Inversion  | Somut değil, soyuta bağımlı ol         | `Depends()` ile injection                |
 
 ### 11.3 DRY (Don't Repeat Yourself)
 
@@ -1031,7 +988,7 @@ class UserAdmin(ModelView, model=User):
 
 **Bu projede:**
 
-- `app/admin/views.py` — `UserAdmin`, `OAuthAccountAdmin` view'ları
+- `app/admin/views.py` — `UserAdmin` view'ları
 - `app/admin/auth.py` — JWT doğrulamalı authentication backend
 - `app/admin/seed.py` — `ADMIN_EMAIL`/`ADMIN_PASSWORD` ile ilk admin oluşturur
 - Erişim: http://localhost:8000/admin (yalnızca `ADMIN` rolü)
@@ -1107,7 +1064,7 @@ Hafta 3:     Async programlama (Seviye 2)
 Hafta 4:     HTTP ve REST (Seviye 3)
 Hafta 5:     Pydantic + FastAPI (Seviye 4-5)
 Hafta 6-7:   Veritabanı — SQL + SQLAlchemy (Seviye 6)
-Hafta 8:     Güvenlik — JWT + OAuth2 + bcrypt + TOTP + API Key (Seviye 7)
+Hafta 8:     Güvenlik — JWT + bcrypt + TOTP + API Key (Seviye 7)
 Hafta 9:     Redis + ARQ + Bildirimler (Seviye 8)
 Hafta 10:    Docker + Dosya Depolama S3/MinIO (Seviye 9, 13.1)
 Hafta 11:    Test yazımı (Seviye 10)

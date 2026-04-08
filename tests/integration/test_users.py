@@ -306,7 +306,10 @@ async def test_deactivate_user_as_admin(client: AsyncClient, db_session: AsyncSe
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res = await client.delete(f"/api/v1/users/{target_id}", headers=headers)
+    res = await client.delete(
+        f"/api/v1/users/{target_id}",
+        headers={**headers, "Accept-Language": "tr"},
+    )
     assert res.status_code == 200
     assert "silindi" in res.json()["message"]
 

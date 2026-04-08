@@ -1,5 +1,6 @@
 """
 Custom middleware'ler:
+- LanguageMiddleware: Accept-Language header'dan dil algılar
 - RequestIDMiddleware: Her isteğe UUID atar
 - TimingMiddleware: İşlem süresini loglar
 - SecurityHeadersMiddleware: Güvenlik header'ları ekler (/docs hariç)
@@ -13,6 +14,7 @@ from uuid import uuid4
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
+from app.core.i18n import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, language_var
 from app.core.logging import get_logger, ip_address_var, request_id_var, user_agent_var
 
 if TYPE_CHECKING:
@@ -20,6 +22,32 @@ if TYPE_CHECKING:
     from starlette.responses import Response
 
 logger = get_logger(__name__)
+
+
+def _parse_accept_language(header: str) -> str:
+    """Accept-Language header'ını parse eder, desteklenen ilk dili döndürür."""
+    for part in header.replace(" ", "").split(","):
+        lang = part.split(";")[0].split("-")[0].lower()
+        if lang in SUPPORTED_LANGUAGES:
+            return lang
+    return DEFAULT_LANGUAGE
+
+
+class LanguageMiddleware(BaseHTTPMiddleware):
+    """Accept-Language header'dan dil algılar ve context var'a yazar.
+
+    Örn: Accept-Language: tr-TR,tr;q=0.9,en;q=0.8 → language_var = "tr"
+    Desteklenmeyen veya eksik header → DEFAULT_LANGUAGE ("en")
+    """
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        lang = _parse_accept_language(request.headers.get("Accept-Language", ""))
+        token = language_var.set(lang)
+        try:
+            return await call_next(request)
+        finally:
+            language_var.reset(token)
+
 
 # /docs, /redoc ve audience-specific schema docs için CSP gevşetilir
 DOCS_PATHS = {"/docs", "/redoc", "/openapi.json"}

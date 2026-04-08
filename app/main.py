@@ -25,6 +25,7 @@ from app.core.exceptions import register_exception_handlers
 from app.core.limiter import limiter
 from app.core.logging import setup_logging
 from app.core.middleware import (
+    LanguageMiddleware,
     RequestIDMiddleware,
     SecurityHeadersMiddleware,
     TimingMiddleware,
@@ -134,6 +135,7 @@ def create_app() -> FastAPI:
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(TimingMiddleware)
     app.add_middleware(RequestIDMiddleware)
+    app.add_middleware(LanguageMiddleware)
 
     # Exception Handlers
     register_exception_handlers(app)

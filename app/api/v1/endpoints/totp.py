@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import CurrentUserDep
 from app.api.dependencies.services import AuditServiceDep
+from app.core.i18n import t
 from app.db.session import get_db
 from app.schemas.common import MessageResponse
 from app.services.totp import TOTPService
@@ -74,7 +75,7 @@ async def setup_totp(current_user: CurrentUserDep, service: TOTPServiceDep) -> d
     """
     result = await service.setup(current_user)
     return {
-        "message": "QR kodu oluşturuldu. Authenticator uygulamanızla tarayın.",
+        "message": t("totp.setup.success"),
         **result,
     }
 
@@ -109,7 +110,7 @@ async def verify_totp(
     """
     backup_codes = await service.verify_and_enable(current_user, data.code)
     return {
-        "message": "2FA başarıyla aktif edildi.",
+        "message": t("totp.verify.success"),
         "backup_codes": backup_codes,
     }
 
@@ -137,7 +138,7 @@ async def disable_totp(
         HTTPException: Kod geçersizse veya 2FA aktif değilse 400 hatası.
     """
     await service.disable(current_user, data.code)
-    return MessageResponse(message="2FA başarıyla devre dışı bırakıldı.")
+    return MessageResponse(message=t("totp.disable.success"))
 
 
 class BackupCodeCountResponse(BaseModel):
@@ -174,7 +175,7 @@ async def get_backup_code_count(
     count = await service.get_backup_code_count(current_user)
     return BackupCodeCountResponse(
         count=count,
-        message=f"{count} adet kullanılmamış backup kodunuz var.",
+        message=t("totp.backup_count", count=count),
     )
 
 
@@ -194,6 +195,6 @@ async def regenerate_backup_codes(
     """
     new_codes = await service.regenerate_backup_codes(current_user, data.code)
     return {
-        "message": "Backup kodlar yenilendi. Eski kodlar artık geçersiz.",
+        "message": t("totp.backup_regenerate.success"),
         "backup_codes": new_codes,
     }

@@ -12,6 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.i18n import t
 from app.core.logging import get_logger, request_id_var
 
 _logger = get_logger(__name__)
@@ -45,9 +46,11 @@ class AppError(Exception):
     status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR
     code: str = "INTERNAL_ERROR"
     message: str = "Beklenmeyen bir hata oluştu."
+    message_key: str = "error.internal"
 
     def __init__(self, message: str | None = None, details: Any = None):
         """AppError nesnesini olusturur."""
+        self._custom_message = message  # None ise class default kullanılır
         self.message = message or self.__class__.message
         self.details = details
         super().__init__(self.message)
@@ -55,10 +58,16 @@ class AppError(Exception):
     def to_dict(self) -> dict[str, Any]:
         """Hata nesnesini standart API error formatina cevirir."""
         rid = request_id_var.get()
+        # Özel mesaj varsa (service katmanından t() ile gelir), direkt kullan.
+        # Yoksa class message_key üzerinden çevir.
+        if self._custom_message is not None:
+            msg = self._custom_message
+        else:
+            msg = t(self.__class__.message_key)
         return {
             "error": {
                 "code": self.code,
-                "message": self.message,
+                "message": msg,
                 "request_id": rid if rid != "-" else None,
                 **({"details": self.details} if self.details else {}),
             }
@@ -81,6 +90,7 @@ class AuthenticationError(AppError):
     status_code = status.HTTP_401_UNAUTHORIZED
     code = "AUTHENTICATION_FAILED"
     message = "Kimlik doğrulama başarısız."
+    message_key = "error.auth.failed"
 
 
 class InvalidTokenError(AuthenticationError):
@@ -97,6 +107,7 @@ class InvalidTokenError(AuthenticationError):
 
     code = "INVALID_TOKEN"
     message = "Geçersiz token."
+    message_key = "error.auth.invalid_token"
 
 
 class TokenExpiredError(AuthenticationError):
@@ -115,6 +126,7 @@ class TokenExpiredError(AuthenticationError):
 
     code = "TOKEN_EXPIRED"
     message = "Token süresi dolmuş."
+    message_key = "error.auth.token_expired"
 
 
 class InsufficientPermissionsError(AppError):
@@ -136,6 +148,7 @@ class InsufficientPermissionsError(AppError):
     status_code = status.HTTP_403_FORBIDDEN
     code = "INSUFFICIENT_PERMISSIONS"
     message = "Bu işlem için yetkiniz yok."
+    message_key = "error.auth.insufficient_permissions"
 
 
 # ── Resource Errors ───────────────────────────────────────────────────────────
@@ -157,6 +170,7 @@ class NotFoundError(AppError):
     status_code = status.HTTP_404_NOT_FOUND
     code = "NOT_FOUND"
     message = "Kaynak bulunamadı."
+    message_key = "error.not_found"
 
 
 class AlreadyExistsError(AppError):
@@ -175,6 +189,7 @@ class AlreadyExistsError(AppError):
     status_code = status.HTTP_409_CONFLICT
     code = "ALREADY_EXISTS"
     message = "Bu kaynak zaten mevcut."
+    message_key = "error.already_exists"
 
 
 # ── Validation / Business ─────────────────────────────────────────────────────
@@ -200,6 +215,7 @@ class ValidationError(AppError):
     status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
     code = "VALIDATION_ERROR"
     message = "Girdi doğrulama hatası."
+    message_key = "error.validation"
 
 
 class BusinessRuleError(AppError):
@@ -222,6 +238,7 @@ class BusinessRuleError(AppError):
     status_code = status.HTTP_400_BAD_REQUEST
     code = "BUSINESS_RULE_VIOLATION"
     message = "İş kuralı ihlali."
+    message_key = "error.business_rule"
 
 
 # ── External / Infrastructure ─────────────────────────────────────────────────
@@ -245,6 +262,7 @@ class ExternalServiceError(AppError):
     status_code = status.HTTP_502_BAD_GATEWAY
     code = "EXTERNAL_SERVICE_ERROR"
     message = "Dış servis hatası."
+    message_key = "error.external_service"
 
 
 class ConfigurationError(AppError):
@@ -266,6 +284,7 @@ class ConfigurationError(AppError):
     status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
     code = "CONFIGURATION_ERROR"
     message = "Uygulama yapılandırma hatası."
+    message_key = "error.configuration"
 
 
 # ── Storage ───────────────────────────────────────────────────────────────────
@@ -289,6 +308,7 @@ class StorageError(AppError):
     status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
     code = "STORAGE_ERROR"
     message = "Dosya depolama hatası."
+    message_key = "error.storage"
 
 
 class FileTooLargeError(AppError):
@@ -309,6 +329,7 @@ class FileTooLargeError(AppError):
     status_code = status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
     code = "FILE_TOO_LARGE"
     message = "Dosya boyutu çok büyük."
+    message_key = "error.file_too_large"
 
 
 class InvalidFileTypeError(AppError):
@@ -329,6 +350,7 @@ class InvalidFileTypeError(AppError):
     status_code = status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
     code = "INVALID_FILE_TYPE"
     message = "Desteklenmeyen dosya türü."
+    message_key = "error.invalid_file_type"
 
 
 # ── Rate Limit ────────────────────────────────────────────────────────────────
@@ -353,6 +375,7 @@ class RateLimitError(AppError):
     status_code = status.HTTP_429_TOO_MANY_REQUESTS
     code = "RATE_LIMIT_EXCEEDED"
     message = "Çok fazla istek gönderildi. Lütfen bekleyin."
+    message_key = "error.rate_limit"
 
 
 # ── Domain-Specific Subclasses ────────────────────────────────────────────────
@@ -375,6 +398,7 @@ class UserNotFoundError(NotFoundError):
 
     code = "USER_NOT_FOUND"
     message = "Kullanıcı bulunamadı."
+    message_key = "error.user.not_found"
 
 
 class UserAlreadyExistsError(AlreadyExistsError):
@@ -394,6 +418,7 @@ class UserAlreadyExistsError(AlreadyExistsError):
 
     code = "USER_ALREADY_EXISTS"
     message = "Bu e-posta adresi zaten kayıtlı."
+    message_key = "error.user.already_exists"
 
 
 class UserDeletedError(AuthenticationError):
@@ -414,6 +439,7 @@ class UserDeletedError(AuthenticationError):
 
     code = "USER_DELETED"
     message = "Bu hesap silinmiş."
+    message_key = "error.user.deleted"
 
 
 class APIKeyNotFoundError(NotFoundError):
@@ -433,6 +459,7 @@ class APIKeyNotFoundError(NotFoundError):
 
     code = "API_KEY_NOT_FOUND"
     message = "API anahtarı bulunamadı."
+    message_key = "error.api_key.not_found"
 
 
 class TOTPNotConfiguredError(BusinessRuleError):
@@ -451,6 +478,7 @@ class TOTPNotConfiguredError(BusinessRuleError):
 
     code = "TOTP_NOT_CONFIGURED"
     message = "2FA yapılandırılmamış."
+    message_key = "error.totp.not_configured"
 
 
 class TOTPAlreadyEnabledError(BusinessRuleError):
@@ -469,9 +497,32 @@ class TOTPAlreadyEnabledError(BusinessRuleError):
 
     code = "TOTP_ALREADY_ENABLED"
     message = "2FA zaten aktif."
+    message_key = "error.totp.already_enabled"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+_VALIDATION_TYPE_KEYS: dict[str, str] = {
+    "missing": "validation.missing",
+    "string_type": "validation.string_type",
+    "int_type": "validation.int_type",
+    "float_type": "validation.float_type",
+    "bool_type": "validation.bool_type",
+    "value_error": "validation.value_error",
+    "string_too_short": "validation.string_too_short",
+    "string_too_long": "validation.string_too_long",
+    "greater_than": "validation.greater_than",
+    "greater_than_equal": "validation.greater_than_equal",
+    "less_than": "validation.less_than",
+    "less_than_equal": "validation.less_than_equal",
+    "list_type": "validation.list_type",
+    "url_parsing": "validation.url_parsing",
+    "url_type": "validation.url_type",
+    "datetime_type": "validation.datetime_type",
+    "uuid_type": "validation.uuid_type",
+    "enum": "validation.enum",
+}
 
 
 def _serialize_validation_errors(errors: list[Any]) -> list[dict[str, Any]]:
@@ -479,26 +530,27 @@ def _serialize_validation_errors(errors: list[Any]) -> list[dict[str, Any]]:
 
     FastAPI RequestValidationError içindeki Pydantic error dict'lerini
     client-friendly formata dönüştürür. Field path, message ve type içerir.
+    Bilinen error type'lar için çevrilmiş mesaj kullanılır.
 
     Args:
         errors: Pydantic ValidationError.errors() listesi
 
     Returns:
         JSON-serializable error dict listesi
-
-    Example:
-        >>> errors = [{"loc": ("body", "email"), "msg": "invalid email", "type": "value_error.email"}]
-        >>> _serialize_validation_errors(errors)
-        [{"field": "body -> email", "message": "invalid email", "type": "value_error.email"}]
     """
-    return [
-        {
-            "field": " -> ".join(str(loc) for loc in error.get("loc", [])),
-            "message": str(error.get("msg", "")),
-            "type": str(error.get("type", "")),
-        }
-        for error in errors
-    ]
+    result = []
+    for error in errors:
+        error_type = str(error.get("type", ""))
+        translation_key = _VALIDATION_TYPE_KEYS.get(error_type)
+        message = t(translation_key) if translation_key else str(error.get("msg", ""))
+        result.append(
+            {
+                "field": " -> ".join(str(loc) for loc in error.get("loc", [])),
+                "message": message,
+                "type": error_type,
+            }
+        )
+    return result
 
 
 def _error_response(
@@ -578,7 +630,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         return _error_response(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             "VALIDATION_ERROR",
-            "İstek doğrulama hatası.",
+            t("error.validation.request"),
             details=_serialize_validation_errors(list(exc.errors())),
         )
 
@@ -596,5 +648,5 @@ def register_exception_handlers(app: FastAPI) -> None:
         return _error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "INTERNAL_ERROR",
-            "Beklenmeyen bir hata oluştu.",
+            t("error.internal"),
         )

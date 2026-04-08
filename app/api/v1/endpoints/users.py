@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies.auth import CurrentUserDep, require_permissions
 from app.api.dependencies.services import get_audit_service
 from app.core.exceptions import InsufficientPermissionsError
+from app.core.i18n import t
 from app.core.permissions import Permission
 from app.db.models.user import User
 from app.db.session import get_db
@@ -250,7 +251,7 @@ async def activate_user(
         NotFoundError: Belirtilen ID'ye sahip kullanıcı bulunamazsa.
     """
     if user_id == current_user.id:
-        raise InsufficientPermissionsError("Kendi hesabınız üzerinde bu işlemi yapamazsınız.")
+        raise InsufficientPermissionsError(t("error.user.self_action"))
     return await service.activate(user_id)
 
 
@@ -281,7 +282,7 @@ async def assign_user_role(
         NotFoundError: Kullanıcı veya rol bulunamazsa.
     """
     if user_id == current_user.id:
-        raise InsufficientPermissionsError("Kendi hesabınız üzerinde bu işlemi yapamazsınız.")
+        raise InsufficientPermissionsError(t("error.user.self_action"))
     return await service.assign_role(user_id, data.role_name)
 
 
@@ -308,7 +309,7 @@ async def deactivate_user(
         NotFoundError: Belirtilen ID'ye sahip kullanıcı bulunamazsa.
     """
     if user_id == current_user.id:
-        raise InsufficientPermissionsError("Kendi hesabınız üzerinde bu işlemi yapamazsınız.")
+        raise InsufficientPermissionsError(t("error.user.self_action"))
     return await service.deactivate(user_id)
 
 
@@ -335,9 +336,9 @@ async def delete_user(
         NotFoundError: Belirtilen ID'ye sahip kullanıcı bulunamazsa.
     """
     if user_id == current_user.id:
-        raise InsufficientPermissionsError("Kendi hesabınız üzerinde bu işlemi yapamazsınız.")
+        raise InsufficientPermissionsError(t("error.user.self_action"))
     await service.soft_delete(user_id)
-    return MessageResponse(message="Kullanici silindi.")
+    return MessageResponse(message=t("user.delete.success"))
 
 
 @router.post("/{user_id}/restore", response_model=UserResponse)
@@ -363,5 +364,5 @@ async def restore_user(
         NotFoundError: Belirtilen ID'ye sahip silinmiş kullanıcı bulunamazsa.
     """
     if user_id == current_user.id:
-        raise InsufficientPermissionsError("Kendi hesabınız üzerinde bu işlemi yapamazsınız.")
+        raise InsufficientPermissionsError(t("error.user.self_action"))
     return await service.restore(user_id)

@@ -179,7 +179,6 @@ fastapi-backend/
 │   │   └── repositories/
 │   │       ├── base.py                 # Generic BaseRepository[T] (get_page window fn)
 │   │       ├── user.py                 # UserRepository
-│   │       ├── oauth_account.py        # OAuthAccountRepository (upsert, provider bazlı)
 │   │       ├── api_key.py              # APIKeyRepository
 │   │       ├── audit_log.py            # AuditLogRepository
 │   │       └── notification.py         # NotificationRepository
@@ -1135,7 +1134,6 @@ make test-k k=test_login               # İsim desenine göre
 | `tests/unit/test_repository_base.py`        | Unit        | `BaseRepository.get_page()` sayfalama: boş tablo, ilk/son sayfa, limit > toplam                                          |
 | `tests/unit/test_health.py`                 | Unit        | `check_redis`, `check_storage` — başarılı ve hatalı senaryolar; degraded/503 endpoint                                    |
 | `tests/integration/test_auth.py`            | Integration | Kayıt, giriş, çıkış, token refresh, e-posta doğrulama, şifre sıfırlama, zaten-doğrulanmış senaryosu                      |
-| `tests/integration/test_oauth.py`           | Integration | Google ve GitHub OAuth akışları, state CSRF koruması, geçersiz/eksik state                                               |
 | `tests/integration/test_users.py`           | Integration | Profil güncelleme, şifre değiştirme, yetki kontrolleri                                                                   |
 | `tests/integration/test_totp.py`            | Integration | TOTP setup/verify/disable, yedek kod sayımı ve yenileme                                                                  |
 | `tests/integration/test_api_keys.py`        | Integration | API key CRUD, X-API-Key ile auth, expiry, iptal sonrası erişim reddi                                                     |
@@ -1278,22 +1276,21 @@ openssl rand -hex 32   # → SECRET_KEY değeri olarak kullan
 
 ### 3. .env Production Değerleri
 
-| Değişken                                      | Dev                     | Production                              |
-| --------------------------------------------- | ----------------------- | --------------------------------------- |
-| `APP_ENV`                                     | `development`           | `production`                            |
-| `APP_DEBUG`                                   | `true`                  | `false`                                 |
-| `APP_URL`                                     | `http://localhost:8000` | `https://api.yourdomain.com`            |
-| `SECRET_KEY`                                  | rastgele                | `openssl rand -hex 32` çıktısı          |
-| `POSTGRES_PASSWORD`                           | zayıf                   | güçlü, rastgele                         |
-| `REDIS_PASSWORD`                              | boş                     | güçlü şifre                             |
-| `CORS_ORIGINS`                                | `["*"]`                 | `["https://yourdomain.com"]`            |
-| `ALLOWED_HOSTS`                               | `["*"]`                 | `["api.yourdomain.com"]`                |
-| `SMTP_HOST`                                   | boş                     | `smtp.provider.com` (SES, SendGrid vb.) |
-| `STORAGE_BACKEND`                             | `minio`                 | `s3`                                    |
-| `S3_ENDPOINT_URL`                             | `http://minio:9000`     | boş bırak (AWS otomatik)                |
-| `S3_ACCESS_KEY` / `S3_SECRET_KEY`             | `minioadmin`            | AWS IAM credentials                     |
-| `ADMIN_PASSWORD`                              | `changeme`              | güçlü şifre (`changeme` → hata verir)   |
-| `GOOGLE_REDIRECT_URI` / `GITHUB_REDIRECT_URI` | `localhost`             | production domain                       |
+| Değişken                          | Dev                     | Production                              |
+| --------------------------------- | ----------------------- | --------------------------------------- |
+| `APP_ENV`                         | `development`           | `production`                            |
+| `APP_DEBUG`                       | `true`                  | `false`                                 |
+| `APP_URL`                         | `http://localhost:8000` | `https://api.yourdomain.com`            |
+| `SECRET_KEY`                      | rastgele                | `openssl rand -hex 32` çıktısı          |
+| `POSTGRES_PASSWORD`               | zayıf                   | güçlü, rastgele                         |
+| `REDIS_PASSWORD`                  | boş                     | güçlü şifre                             |
+| `CORS_ORIGINS`                    | `["*"]`                 | `["https://yourdomain.com"]`            |
+| `ALLOWED_HOSTS`                   | `["*"]`                 | `["api.yourdomain.com"]`                |
+| `SMTP_HOST`                       | boş                     | `smtp.provider.com` (SES, SendGrid vb.) |
+| `STORAGE_BACKEND`                 | `minio`                 | `s3`                                    |
+| `S3_ENDPOINT_URL`                 | `http://minio:9000`     | boş bırak (AWS otomatik)                |
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | `minioadmin`            | AWS IAM credentials                     |
+| `ADMIN_PASSWORD`                  | `changeme`              | güçlü şifre (`changeme` → hata verir)   |
 
 ### 4. docker-compose.prod.yml Kullanımı
 
@@ -1600,7 +1597,6 @@ Canlıya almadan önce:
 - [ ] `keys/` ve `.env` dosyalarının `.gitignore`'da olduğu doğrulandı
 - [ ] `SMTP_HOST` gerçek bir SMTP sağlayıcısıyla dolduruldu
 - [ ] `STORAGE_BACKEND=s3`, `S3_ENDPOINT_URL` boş, S3 credentials doğru
-- [ ] OAuth redirect URI'leri production domain'ine güncellendi
 - [ ] Nginx SSL sertifikası aktif ve yenilenebilir (Let's Encrypt vb.)
 - [ ] Rate limit eşikleri gözden geçirildi ve gerekirse sıkılaştırıldı
 - [ ] Health check endpoint'leri load balancer'a tanımlandı

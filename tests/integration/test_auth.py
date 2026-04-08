@@ -168,7 +168,11 @@ async def test_verify_email_success(
     # enqueue(send_verification_email, email, token) çağrısından token'ı al
     token = mock_enqueue.call_args.args[2]
 
-    res = await client.post("/api/v1/auth/verify-email", json={"token": token})
+    res = await client.post(
+        "/api/v1/auth/verify-email",
+        json={"token": token},
+        headers={"Accept-Language": "tr"},
+    )
     assert res.status_code == 200
     assert "doğrulandı" in res.json()["message"]
 

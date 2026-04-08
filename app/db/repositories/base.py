@@ -510,6 +510,14 @@ class SoftDeleteRepository(BaseRepository[SoftModelType]):
         total = rows[0][1] if rows else 0
         return items, total
 
+    async def exists(self, **filters: Any) -> bool:
+        query = select(func.count()).select_from(self.model)
+        query = query.where(self.model.deleted_at.is_(None))  # type: ignore[attr-defined]
+        for key, value in filters.items():
+            query = query.where(getattr(self.model, key) == value)
+        result = await self._session.execute(query)
+        return result.scalar_one() > 0
+
     async def soft_delete(self, id: UUID) -> bool:
         """Kaydı soft-delete ile siler.
 

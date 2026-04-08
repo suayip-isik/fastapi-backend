@@ -15,6 +15,7 @@ from uuid import UUID
 
 from app.core.config import settings
 from app.core.exceptions import AuthenticationError, InvalidTokenError, NotFoundError
+from app.core.i18n import language_var, t
 from app.core.redis import get_redis_client
 from app.core.security import hash_password, verify_password
 from app.db.models.audit_log import AuditAction
@@ -44,13 +45,13 @@ class AccountService(AuditableMixin):
         redis = await get_redis_client()
         user_id = await redis.get(EMAIL_VERIFY_KEY.format(token))
         if not user_id:
-            raise InvalidTokenError("Geçersiz veya süresi dolmuş doğrulama token'ı.")
+            raise InvalidTokenError(t("error.auth.invalid_verify_token"))
 
         await redis.delete(EMAIL_VERIFY_KEY.format(token))
 
         user = await self._repo.get_by_id(UUID(user_id))
         if not user:
-            raise InvalidTokenError("Kullanıcı bulunamadı.")
+            raise InvalidTokenError(t("error.auth.user_not_found"))
 
         if not user.is_verified:
             await self._repo.update(user.id, is_verified=True)
@@ -66,7 +67,7 @@ class AccountService(AuditableMixin):
         token = secrets.token_urlsafe(32)
         redis = await get_redis_client()
         await redis.setex(EMAIL_VERIFY_KEY.format(token), settings.EMAIL_VERIFY_TTL, str(user.id))
-        await enqueue(send_verification_email, user.email, token)
+        await enqueue(send_verification_email, user.email, token, language_var.get())
 
     # ── Password Reset ────────────────────────────────────────────────────────
 
@@ -81,7 +82,7 @@ class AccountService(AuditableMixin):
         await redis.setex(
             PASSWORD_RESET_KEY.format(token), settings.PASSWORD_RESET_TTL, str(user.id)
         )
-        await enqueue(send_password_reset_email, user.email, token)
+        await enqueue(send_password_reset_email, user.email, token, language_var.get())
 
         await self._audit_log(AuditAction.PASSWORD_RESET_REQUESTED, user_id=user.id)
 
@@ -90,13 +91,13 @@ class AccountService(AuditableMixin):
         redis = await get_redis_client()
         user_id = await redis.get(PASSWORD_RESET_KEY.format(token))
         if not user_id:
-            raise InvalidTokenError("Geçersiz veya süresi dolmuş şifre sıfırlama token'ı.")
+            raise InvalidTokenError(t("error.auth.invalid_reset_token"))
 
         await redis.delete(PASSWORD_RESET_KEY.format(token))
 
         user = await self._repo.get_by_id(UUID(user_id))
         if not user or not user.is_active:
-            raise InvalidTokenError("Kullanıcı bulunamadı.")
+            raise InvalidTokenError(t("error.auth.user_not_found"))
 
         await self._repo.update(user.id, hashed_password=hash_password(new_password))
         await self._audit_log(AuditAction.PASSWORD_RESET, user_id=user.id)
@@ -133,7 +134,7 @@ class AccountService(AuditableMixin):
         """
         user = await self._repo.get_by_id(user_id)
         if not user:
-            raise NotFoundError("Kullanıcı bulunamadı.")
+            raise NotFoundError(t("error.auth.user_not_found"))
 
         update_data: dict[str, str] = {}
         if username is not None:
@@ -175,13 +176,13 @@ class AccountService(AuditableMixin):
         """
         user = await self._repo.get_by_id(user_id)
         if not user:
-            raise NotFoundError("Kullanıcı bulunamadı.")
+            raise NotFoundError(t("error.auth.user_not_found"))
 
         if not user.hashed_password:
-            raise AuthenticationError("Bu hesap için şifre değiştirilemez.")
+            raise AuthenticationError(t("error.auth.no_password"))
 
         if not verify_password(current_password, user.hashed_password):
-            raise AuthenticationError("Mevcut şifre hatalı.")
+            raise AuthenticationError(t("error.auth.wrong_password"))
 
         await self._repo.update(user_id, hashed_password=hash_password(new_password))
         await self._audit_log(AuditAction.PASSWORD_CHANGED, user_id=user_id)
@@ -211,14 +212,14 @@ class AccountService(AuditableMixin):
         """
         user = await self._repo.get_by_id(user_id)
         if not user:
-            raise NotFoundError("Kullanıcı bulunamadı.")
+            raise NotFoundError(t("error.auth.user_not_found"))
 
         if (
             user.hashed_password
             and password
             and not verify_password(password, user.hashed_password)
         ):
-            raise AuthenticationError("Şifre hatalı.")
+            raise AuthenticationError(t("error.auth.password_wrong"))
 
         await self._audit_log(AuditAction.ACCOUNT_DELETED, user_id=user_id)
         await self._repo.delete(user_id)

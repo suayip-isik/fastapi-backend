@@ -10,7 +10,6 @@ import pytest
 
 if TYPE_CHECKING:
     from httpx import AsyncClient
-    from sqlalchemy.ext.asyncio import AsyncSession
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -207,7 +206,10 @@ async def test_revoke_api_key_success(client: AsyncClient):
     created = await _create_key(client, headers, "Revoke Me")
     key_id = created["id"]
 
-    res = await client.delete(f"/api/v1/api-keys/{key_id}", headers=headers)
+    res = await client.delete(
+        f"/api/v1/api-keys/{key_id}",
+        headers={**headers, "Accept-Language": "tr"},
+    )
 
     assert res.status_code == 200
     assert "iptal" in res.json()["message"].lower()

@@ -13,6 +13,7 @@ from arq.connections import ArqRedis, RedisSettings
 
 from app.core.config import settings
 from app.core.email import send_email
+from app.core.i18n import DEFAULT_LANGUAGE, t
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -41,7 +42,9 @@ def get_redis_settings() -> RedisSettings:
 # ── Task Functions ────────────────────────────────────────────────────────────
 
 
-async def send_welcome_email(ctx: dict[str, Any], user_id: str, email: str) -> dict[str, Any]:
+async def send_welcome_email(
+    ctx: dict[str, Any], user_id: str, email: str, language: str = DEFAULT_LANGUAGE
+) -> dict[str, Any]:
     """Yeni kullanıcıya hoş geldiniz emaili gönderir (background task).
 
     Kayıt sonrası ARQ worker tarafından çalıştırılır. HTML formatlı
@@ -51,30 +54,22 @@ async def send_welcome_email(ctx: dict[str, Any], user_id: str, email: str) -> d
         ctx: ARQ worker context (DB, Redis vb. bağlantılar)
         user_id: Kullanıcı UUID (string formatında)
         email: Hedef email adresi
+        language: Kullanıcının dil tercihi (varsayılan: "en")
 
     Returns:
         Dict içinde gönderim durumu ve kullanıcı ID'si.
-
-    Note:
-        - SMTP hatası durumunda ARQ otomatik retry yapar
-        - Email template inline HTML olarak oluşturulur
-        - APP_URL ve APP_NAME ayarları config'den gelir
-
-    Example:
-        >>> # Endpoint'te enqueue edilir:
-        >>> await enqueue(send_welcome_email, user_id=str(user.id), email=user.email)
     """
     logger.info("sending_welcome_email", user_id=user_id, email=email)
     try:
         login_url = settings.APP_URL
         await send_email(
             to=email,
-            subject=f"{settings.APP_NAME}'a hoş geldiniz!",
-            html_body=(
-                f"<p>Merhaba,</p>"
-                f"<p><strong>{settings.APP_NAME}</strong>'a hoş geldiniz! "
-                f"Hesabınız başarıyla oluşturuldu.</p>"
-                f"<p>Giriş yapmak için <a href='{login_url}'>tıklayın</a>.</p>"
+            subject=t("email.welcome.subject", lang=language, app_name=settings.APP_NAME),
+            html_body=t(
+                "email.welcome.body",
+                lang=language,
+                app_name=settings.APP_NAME,
+                login_url=login_url,
             ),
         )
     except Exception as exc:
@@ -107,7 +102,9 @@ async def process_file_upload(ctx: dict[str, Any], file_key: str, user_id: str) 
     return {"status": "processed", "file_key": file_key}
 
 
-async def send_verification_email(ctx: dict[str, Any], email: str, token: str) -> dict[str, Any]:
+async def send_verification_email(
+    ctx: dict[str, Any], email: str, token: str, language: str = DEFAULT_LANGUAGE
+) -> dict[str, Any]:
     """Email doğrulama linki içeren email gönderir (background task).
 
     Kullanıcı kaydı veya email değişikliği sonrası ARQ worker tarafından
@@ -117,32 +114,18 @@ async def send_verification_email(ctx: dict[str, Any], email: str, token: str) -
         ctx: ARQ worker context (DB, Redis vb. bağlantılar)
         email: Doğrulanacak email adresi
         token: JWT doğrulama token'ı (24 saat geçerli)
+        language: Kullanıcının dil tercihi (varsayılan: "en")
 
     Returns:
         Dict içinde gönderim durumu ve email adresi.
-
-    Note:
-        - Token verify-email endpoint'inde doğrulanır
-        - Link 24 saat geçerlidir (token TTL)
-        - Token Redis'te email_verify:* prefix ile saklanır
-        - SMTP hatası durumunda ARQ otomatik retry yapar
-
-    Example:
-        >>> # Auth service'te enqueue edilir:
-        >>> token = create_verification_token(user.email)
-        >>> await enqueue(send_verification_email, email=user.email, token=token)
     """
     logger.info("sending_verification_email", email=email)
     try:
         verify_url = f"{settings.APP_URL}/api/v1/auth/verify-email?token={token}"
         await send_email(
             to=email,
-            subject="E-posta adresinizi doğrulayın",
-            html_body=(
-                f"<p>Hesabınızı doğrulamak için "
-                f"<a href='{verify_url}'>buraya tıklayın</a>.</p>"
-                f"<p>Bu link 24 saat geçerlidir.</p>"
-            ),
+            subject=t("email.verify.subject", lang=language),
+            html_body=t("email.verify.body", lang=language, verify_url=verify_url),
         )
     except Exception as exc:
         logger.error("verification_email_failed", email=email, error=str(exc))
@@ -151,7 +134,9 @@ async def send_verification_email(ctx: dict[str, Any], email: str, token: str) -
     return {"status": "sent", "email": email}
 
 
-async def send_password_reset_email(ctx: dict[str, Any], email: str, token: str) -> dict[str, Any]:
+async def send_password_reset_email(
+    ctx: dict[str, Any], email: str, token: str, language: str = DEFAULT_LANGUAGE
+) -> dict[str, Any]:
     """Şifre sıfırlama linki içeren email gönderir (background task).
 
     Şifre sıfırlama talebi sonrası ARQ worker tarafından çalıştırılır.
@@ -161,33 +146,18 @@ async def send_password_reset_email(ctx: dict[str, Any], email: str, token: str)
         ctx: ARQ worker context (DB, Redis vb. bağlantılar)
         email: Şifresi sıfırlanacak kullanıcının email adresi
         token: JWT sıfırlama token'ı (15 dakika geçerli)
+        language: Kullanıcının dil tercihi (varsayılan: "en")
 
     Returns:
         Dict içinde gönderim durumu ve email adresi.
-
-    Note:
-        - Token reset-password endpoint'inde kullanılır
-        - Link 15 dakika geçerlidir (token TTL)
-        - Token Redis'te password_reset:* prefix ile saklanır
-        - SMTP hatası durumunda ARQ otomatik retry yapar
-        - Güvenlik: Token tek kullanımlık (kullanıldıktan sonra silinir)
-
-    Example:
-        >>> # Auth endpoint'te enqueue edilir:
-        >>> token = create_password_reset_token(user.email)
-        >>> await enqueue(send_password_reset_email, email=user.email, token=token)
     """
     logger.info("sending_password_reset_email", email=email)
     try:
         reset_url = f"{settings.APP_URL}/api/v1/auth/reset-password?token={token}"
         await send_email(
             to=email,
-            subject="Şifre sıfırlama isteği",
-            html_body=(
-                f"<p>Şifrenizi sıfırlamak için "
-                f"<a href='{reset_url}'>buraya tıklayın</a>.</p>"
-                f"<p>Bu link 15 dakika geçerlidir.</p>"
-            ),
+            subject=t("email.reset.subject", lang=language),
+            html_body=t("email.reset.body", lang=language, reset_url=reset_url),
         )
     except Exception as exc:
         logger.error("password_reset_email_failed", email=email, error=str(exc))

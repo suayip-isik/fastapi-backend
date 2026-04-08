@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies.auth import CurrentUserDep, bearer_scheme
 from app.core.config import settings
 from app.core.cookies import clear_auth_cookies, set_auth_cookies
+from app.core.i18n import t
 from app.core.limiter import limiter
 from app.db.models.user import User
 from app.db.session import get_db
@@ -283,7 +284,7 @@ async def logout(
     """
     await service.logout(credentials.credentials, data.refresh_token, user_id=current_user.id)
     clear_auth_cookies(response)
-    return MessageResponse(message="Basariyla cikis yapildi.")
+    return MessageResponse(message=t("auth.logout.success"))
 
 
 # ── Email Verification ────────────────────────────────────────────────────────
@@ -326,7 +327,7 @@ async def verify_email(
         ```
     """
     await service.verify_email(data.token)
-    return MessageResponse(message="E-posta adresiniz başarıyla doğrulandı.")
+    return MessageResponse(message=t("auth.verify_email.success"))
 
 
 @router.post("/resend-verification", response_model=MessageResponse)
@@ -365,7 +366,7 @@ async def resend_verification(
         ```
     """
     await service.resend_verification(data.email)
-    return MessageResponse(message="Dogrulama e-postasi gonderildi.")
+    return MessageResponse(message=t("auth.resend_verification.success"))
 
 
 # ── Password Reset ────────────────────────────────────────────────────────────
@@ -407,7 +408,7 @@ async def forgot_password(
         ```
     """
     await service.forgot_password(data.email)
-    return MessageResponse(message="Sifre sifirlama talimatlari e-posta adresinize gonderildi.")
+    return MessageResponse(message=t("auth.forgot_password.success"))
 
 
 @router.post("/reset-password", response_model=MessageResponse)
@@ -449,7 +450,7 @@ async def reset_password(
         ```
     """
     await service.reset_password(data.token, data.new_password)
-    return MessageResponse(message="Sifreniz basariyla sifirlandi.")
+    return MessageResponse(message=t("auth.reset_password.success"))
 
 
 # ── Me ────────────────────────────────────────────────────────────────────────
