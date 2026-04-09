@@ -18,6 +18,7 @@ services:
       - APP_ENV=production
       - LOG_FORMAT=json
       - LOG_LEVEL=INFO
+      - RATE_LIMIT_ENABLED=true
     # Production'da kod mount edilmez
     volumes: []
 

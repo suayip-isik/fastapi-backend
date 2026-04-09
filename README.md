@@ -427,6 +427,7 @@ Tüm değerleri `.env.example`'dan `.env`'e kopyaladıktan sonra ihtiyacına gö
 | `APP_DEBUG`     | `true`                      | Debug modu (production'da `false` olmalı) | Hayır   |
 | `APP_VERSION`   | `1.0.0`                     | Versiyon string'i                         | Hayır   |
 | `APP_URL`       | `http://localhost:8000`     | Base URL                                  | Evet    |
+| `FRONTEND_URL`  | `http://localhost:3000`     | Kullanıcıya gönderilen frontend base URL  | Evet    |
 | `SECRET_KEY`    | `change-this-...`           | Session/CSRF için rastgele anahtar        | Evet    |
 | `ALLOWED_HOSTS` | `["*"]`                     | İzin verilen host'lar (JSON array)        | Evet    |
 | `CORS_ORIGINS`  | `["http://localhost:3000"]` | CORS izin verilen origin'ler (JSON array) | Evet    |
@@ -511,6 +512,8 @@ Tüm değerleri `.env.example`'dan `.env`'e kopyaladıktan sonra ihtiyacına gö
 | `SMTP_PASSWORD`     | (SMTP şifresi)          | SMTP şifresi                            |
 | `EMAILS_FROM_EMAIL` | `noreply@example.com`   | Gönderen e-posta adresi                 |
 
+> `SMTP_HOST` boş bırakılırsa geliştirme/test ortamında e-posta gönderilmez; bunun yerine doğrulama veya şifre sıfırlama linki log'a yazılır. SMTP gönderimi hata verirse exception worker'a propagate edilir ve job başarısız sayılır.
+
 ### Sentry (opsiyonel)
 
 | Değişken                    | Örnek Değer | Açıklama                            |
@@ -547,6 +550,8 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 | POST   | `/auth/forgot-password`     | Şifre sıfırlama e-postası gönder                                  | Hayır |
 | POST   | `/auth/reset-password`      | Token ile şifre sıfırla                                           | Hayır |
 | GET    | `/auth/me`                  | Mevcut kullanıcı bilgileri                                        | Evet  |
+
+> Şifre sıfırlama e-postasındaki link frontend'e yönlenir: `FRONTEND_URL/reset-password?token=...`. E-posta doğrulama linki ise backend doğrulama endpoint'ini kullanır: `APP_URL/api/v1/auth/verify-email?token=...`.
 
 ### 2. TOTP / 2FA (`/auth/totp`) — 5 endpoint
 
@@ -1282,6 +1287,7 @@ openssl rand -hex 32   # → SECRET_KEY değeri olarak kullan
 | `APP_ENV`                         | `development`           | `production`                            |
 | `APP_DEBUG`                       | `true`                  | `false`                                 |
 | `APP_URL`                         | `http://localhost:8000` | `https://api.yourdomain.com`            |
+| `FRONTEND_URL`                    | `http://localhost:3000` | `https://yourdomain.com`                |
 | `SECRET_KEY`                      | rastgele                | `openssl rand -hex 32` çıktısı          |
 | `POSTGRES_PASSWORD`               | zayıf                   | güçlü, rastgele                         |
 | `REDIS_PASSWORD`                  | boş                     | güçlü şifre                             |
@@ -1325,6 +1331,8 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --scale ap
 | DB/Redis ports  | Host'a açık                   | Sadece internal network                |
 | Nginx           | Yok                           | Aktif (SSL termination, rate limit)    |
 | Log format      | `text`                        | `json` (log aggregation için)          |
+
+> `docker-compose.prod.yml` production ortamında `RATE_LIMIT_ENABLED=true` değerini zorunlu olarak set eder.
 
 ### 5. SSL/TLS Setup (Nginx + Let's Encrypt)
 
@@ -1592,12 +1600,14 @@ Canlıya almadan önce:
 - [ ] `ADMIN_PASSWORD` güçlü bir değerle değiştirildi (`changeme` production'da hata verir)
 - [ ] `POSTGRES_PASSWORD` ve `REDIS_PASSWORD` rastgele üretildi
 - [ ] `APP_ENV=production` ve `APP_DEBUG=false` ayarlandı
+- [ ] `FRONTEND_URL` gerçek frontend domain'i ile ayarlandı
 - [ ] `CORS_ORIGINS` yalnızca gerçek domain'i içeriyor (`["*"]` production'da hata verir)
 - [ ] `ALLOWED_HOSTS` yalnızca gerçek domain'i içeriyor (`["*"]` production'da hata verir)
 - [ ] JWT key dosyaları (`keys/private.pem`, `keys/public.pem`) yeniden üretildi
 - [ ] `keys/` ve `.env` dosyalarının `.gitignore`'da olduğu doğrulandı
 - [ ] `SMTP_HOST` gerçek bir SMTP sağlayıcısıyla dolduruldu
 - [ ] `STORAGE_BACKEND=s3`, `S3_ENDPOINT_URL` boş, S3 credentials doğru
+- [ ] Production'da rate limiting etkin (`RATE_LIMIT_ENABLED` otomatik açık)
 - [ ] Nginx SSL sertifikası aktif ve yenilenebilir (Let's Encrypt vb.)
 - [ ] Rate limit eşikleri gözden geçirildi ve gerekirse sıkılaştırıldı
 - [ ] Health check endpoint'leri load balancer'a tanımlandı

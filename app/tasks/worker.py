@@ -153,7 +153,7 @@ async def send_password_reset_email(
     """
     logger.info("sending_password_reset_email", email=email)
     try:
-        reset_url = f"{settings.APP_URL}/api/v1/auth/reset-password?token={token}"
+        reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
         await send_email(
             to=email,
             subject=t("email.reset.subject", lang=language),

@@ -1,0 +1,27 @@
+"""Worker task unit testleri."""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from app.tasks.worker import send_password_reset_email
+
+
+@pytest.mark.asyncio
+async def test_send_password_reset_email_uses_frontend_reset_route() -> None:
+    """Password reset email frontend reset sayfasına yönlenmeli."""
+    with (
+        patch("app.tasks.worker.settings.FRONTEND_URL", "http://localhost:3000"),
+        patch("app.tasks.worker.send_email", new_callable=AsyncMock) as mock_send_email,
+    ):
+        await send_password_reset_email({}, "user@example.com", "token-123", "en")
+
+    mock_send_email.assert_awaited_once()
+    assert (
+        mock_send_email.await_args.kwargs["html_body"].find(
+            "http://localhost:3000/reset-password?token=token-123"
+        )
+        != -1
+    )

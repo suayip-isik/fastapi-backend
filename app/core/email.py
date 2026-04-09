@@ -53,8 +53,9 @@ async def send_email(*, to: str, subject: str, html_body: str) -> None:
     bunun yerine HTML içeriğindeki linkler parse edilip ilk link log'a yazılır.
     Bu sayede geliştirme ortamında doğrulama/sıfırlama linkleri console'da görünür.
 
-    Email gönderimi başarısız olursa exception fırlatmaz, sadece log yazılır.
-    Bu davranış API akışının email hatalarından etkilenmemesini sağlar.
+    SMTP gönderimi başarısız olursa exception fırlatır. Bu exception worker
+    tarafından loglanır ve job başarısız sayılır; API akışı yine etkilenmez
+    çünkü email işi background task ile yürütülür.
 
     Args:
         to: Alıcı email adresi (tek alıcı)
@@ -63,7 +64,7 @@ async def send_email(*, to: str, subject: str, html_body: str) -> None:
             içerebilir, güvenlik nedeniyle asla loglanmaz)
 
     Returns:
-        None: Fonksiyon asla exception fırlatmaz, başarısız durumda sadece log yazılır
+        None
 
     Example:
         >>> await send_email(
@@ -77,7 +78,7 @@ async def send_email(*, to: str, subject: str, html_body: str) -> None:
         - Development'ta SMTP_HOST boşsa console'a dev_link log yazılır
         - Email body asla loglanmaz (güvenlik - token içerebilir)
         - Retry mechanism yok, background task (ARQ) ile kullanılmalı
-        - SMTP hatalarında exception fırlatılmaz, sadece error log yazılır
+        - SMTP hataları worker katmanına propagate edilir
     """
     if not settings.SMTP_HOST:
         links = _HREF_RE.findall(html_body)
@@ -107,3 +108,4 @@ async def send_email(*, to: str, subject: str, html_body: str) -> None:
         logger.info("email_sent", to=to, subject=subject)
     except Exception as exc:
         logger.error("email_send_failed", to=to, subject=subject, error=str(exc))
+        raise

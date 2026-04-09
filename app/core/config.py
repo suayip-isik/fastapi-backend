@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     APP_DEBUG: bool = False
     APP_VERSION: str = "1.0.0"
     APP_URL: str = "http://localhost:8000"
+    FRONTEND_URL: str = "http://localhost:3000"
     SECRET_KEY: str
     ALLOWED_HOSTS: list[str] = ["*"]
     CORS_ORIGINS: list[AnyHttpUrl | str] = []
@@ -372,9 +373,15 @@ class Settings(BaseSettings):
                 raise ValueError("Production'da SECRET_KEY değiştirilmeli!")
             if self.APP_DEBUG:
                 raise ValueError("Production'da DEBUG kapalı olmalı!")
+            frontend_url = (self.FRONTEND_URL or "").strip().lower()
+            if not frontend_url:
+                raise ValueError("Production'da FRONTEND_URL ayarlanmalı!")
+            if "localhost" in frontend_url or "127.0.0.1" in frontend_url:
+                raise ValueError("Production'da FRONTEND_URL gerçek frontend domain'i olmalı!")
             insecure_passwords = {"changeme", "admin", "password", "123456", ""}
             if (self.ADMIN_PASSWORD or "").strip().lower() in insecure_passwords:
                 raise ValueError("Production'da ADMIN_PASSWORD güvenli bir değere ayarlanmalı!")
+            self.RATE_LIMIT_ENABLED = True
             if not self.JWT_PRIVATE_KEY_PATH.exists():
                 raise ValueError(
                     f"JWT private key bulunamadı: {self.JWT_PRIVATE_KEY_PATH}. "
