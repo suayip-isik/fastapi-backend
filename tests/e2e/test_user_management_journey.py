@@ -76,7 +76,10 @@ async def test_full_user_management_journey(client: AsyncClient, db_session: Asy
     assert get_user.json()["is_active"] is True
 
     # Adım 7: Kullanıcıyı soft-delete ile sil
-    deact = await client.delete(f"/api/v1/users/{user_id}", headers=admin_headers)
+    deact = await client.delete(
+        f"/api/v1/users/{user_id}",
+        headers={**admin_headers, "Accept-Language": "tr"},
+    )
     assert deact.status_code == 200
     assert "silindi" in deact.json()["message"]
 
