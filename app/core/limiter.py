@@ -24,6 +24,7 @@ limiter = Limiter(
     key_func=get_remote_address,
     storage_uri=settings.REDIS_URL,
     default_limits=[settings.RATE_LIMIT_DEFAULT],
+    enabled=settings.RATE_LIMIT_ENABLED,
 )
 """SlowAPI rate limiter singleton instance.
 

@@ -249,6 +249,7 @@ class Settings(BaseSettings):
 
     # ── Rate Limiting ─────────────────────────────────────────────────────────
     RATE_LIMIT_DEFAULT: str = "100/minute"
+    RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_AUTH: str = "5/minute"  # login, reset-password
     RATE_LIMIT_AUTH_EMAIL: str = "3/hour"  # forgot-password, resend-verification
     RATE_LIMIT_REGISTER: str = "3/hour"  # register

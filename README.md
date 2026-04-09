@@ -493,6 +493,7 @@ Tüm değerleri `.env.example`'dan `.env`'e kopyaladıktan sonra ihtiyacına gö
 
 | Değişken                | Varsayılan   | Uygulanan Endpoint'ler             |
 | ----------------------- | ------------ | ---------------------------------- |
+| `RATE_LIMIT_ENABLED`    | `true`       | Global rate limiting aç/kapat      |
 | `RATE_LIMIT_DEFAULT`    | `100/minute` | Tüm endpoint'ler                   |
 | `RATE_LIMIT_AUTH`       | `5/minute`   | Login, şifre sıfırlama             |
 | `RATE_LIMIT_AUTH_EMAIL` | `3/hour`     | E-posta doğrulama, şifremi unuttum |
