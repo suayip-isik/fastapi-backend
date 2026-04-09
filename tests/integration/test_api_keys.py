@@ -8,6 +8,8 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.permissions import Permission
+
 if TYPE_CHECKING:
     from httpx import AsyncClient
 
@@ -51,7 +53,7 @@ async def test_create_api_key_success(client: AsyncClient):
 
     res = await client.post(
         "/api/v1/api-keys",
-        json={"name": "Production Key", "scopes": ["read", "write"]},
+        json={"name": "Production Key", "scopes": ["api_keys:read", "api_keys:write"]},
         headers=headers,
     )
 
@@ -60,8 +62,8 @@ async def test_create_api_key_success(client: AsyncClient):
     assert "key" in data
     assert data["key"].startswith("sk_live_")
     assert data["name"] == "Production Key"
-    assert "read" in data["scopes"]
-    assert "write" in data["scopes"]
+    assert Permission.API_KEYS_READ.value in data["scopes"]
+    assert Permission.API_KEYS_WRITE.value in data["scopes"]
     assert "key_prefix" in data
     assert "message" in data
 
@@ -126,6 +128,20 @@ async def test_create_api_key_name_too_long(client: AsyncClient):
     res = await client.post(
         "/api/v1/api-keys",
         json={"name": "A" * 101},
+        headers=headers,
+    )
+
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_api_key_with_invalid_scope_fails(client: AsyncClient):
+    """Permission enum'unda olmayan scope değeri reddedilmeli."""
+    headers = await _auth_headers(client, "apikey_invalid_scope@example.com")
+
+    res = await client.post(
+        "/api/v1/api-keys",
+        json={"name": "Invalid Scope Key", "scopes": ["read"]},
         headers=headers,
     )
 
@@ -258,6 +274,49 @@ async def test_revoke_api_key_unauthorized(client: AsyncClient):
     """Token olmadan API key iptal edilemez."""
     res = await client.delete(f"/api/v1/api-keys/{uuid4()}")
     assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_api_key_without_scopes_cannot_access_protected_endpoint(client: AsyncClient):
+    """Boş scope'lu API key protected endpoint'e erişememeli."""
+    headers = await _auth_headers(client, "apikey_scope_deny@example.com")
+    created = await _create_key(client, headers, "No Scope Key", scopes=[])
+
+    res = await client.get("/api/v1/api-keys", headers={"X-API-Key": created["key"]})
+
+    assert res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_api_key_with_matching_scope_can_access_protected_endpoint(client: AsyncClient):
+    """Scope kullanıcı permission'ı ile kesişiyorsa endpoint erişimi verilmeli."""
+    headers = await _auth_headers(client, "apikey_scope_allow@example.com")
+    created = await _create_key(
+        client,
+        headers,
+        "Scoped Key",
+        scopes=["api_keys:read"],
+    )
+
+    res = await client.get("/api/v1/api-keys", headers={"X-API-Key": created["key"]})
+
+    assert res.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_api_key_scope_cannot_escalate_beyond_user_permissions(client: AsyncClient):
+    """API key scope'u kullanıcıda olmayan permission'ı tek başına verememeli."""
+    headers = await _auth_headers(client, "apikey_scope_escalate@example.com")
+    created = await _create_key(
+        client,
+        headers,
+        "Escalation Key",
+        scopes=["users:read"],
+    )
+
+    res = await client.get("/api/v1/users", headers={"X-API-Key": created["key"]})
+
+    assert res.status_code == 403
 
 
 # ── X-API-Key Authentication ──────────────────────────────────────────────────

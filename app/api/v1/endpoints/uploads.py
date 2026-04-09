@@ -4,7 +4,7 @@ File upload endpoint'leri.
 
 from fastapi import APIRouter, File, Request, UploadFile
 
-from app.api.dependencies.auth import CurrentUserDep
+from app.api.dependencies.auth import CurrentAuthDep, get_effective_permissions
 from app.api.dependencies.services import AuditServiceDep
 from app.core.config import settings
 from app.core.exceptions import InvalidFileTypeError
@@ -27,7 +27,7 @@ class UploadResponse(MessageResponse):
 @limiter.limit(settings.RATE_LIMIT_UPLOAD)
 async def upload_file(
     request: Request,
-    current_user: CurrentUserDep,
+    current_user: CurrentAuthDep,
     audit: AuditServiceDep,
     file: UploadFile = File(...),
 ) -> UploadResponse:
@@ -76,12 +76,12 @@ async def upload_file(
             f"'{file.content_type}' tipi desteklenmiyor. "
             f"İzin verilenler: {', '.join(settings.ALLOWED_UPLOAD_TYPES)}"
         )
-    folder = f"users/{current_user.id}"
+    folder = f"users/{current_user.user.id}"
     key = await storage.upload(file, folder=folder)
     url = await storage.get_url(key)
     await audit.log(
         AuditAction.FILE_UPLOADED,
-        user_id=current_user.id,
+        user_id=current_user.user.id,
         extra={"key": key, "filename": file.filename},
     )
     return UploadResponse(message="Dosya başarıyla yüklendi.", key=key, url=url)
@@ -92,7 +92,7 @@ async def upload_file(
 async def delete_file(
     request: Request,
     key: str,
-    current_user: CurrentUserDep,
+    current_user: CurrentAuthDep,
     audit: AuditServiceDep,
 ) -> MessageResponse:
     """Dosya siler (authenticated + permission check).
@@ -133,17 +133,19 @@ async def delete_file(
         - Audit log: FILE_DELETED action ile kaydedilir
     """
     from app.core.exceptions import InsufficientPermissionsError
+    from app.core.permissions import Permission
 
-    is_admin = current_user.role is not None and current_user.role.name == "admin"
-    is_owner = key.startswith(f"users/{current_user.id!s}/")
+    is_owner = key.startswith(f"users/{current_user.user.id!s}/")
+    effective_perms = await get_effective_permissions(current_user)
+    can_delete_any = Permission.ADMIN_ACCESS.value in effective_perms
 
-    if not is_admin and not is_owner:
+    if not can_delete_any and not is_owner:
         raise InsufficientPermissionsError("Bu dosyayı silme yetkiniz yok.")
 
     await storage.delete(key)
     await audit.log(
         AuditAction.FILE_DELETED,
-        user_id=current_user.id,
+        user_id=current_user.user.id,
         extra={"key": key},
     )
     return MessageResponse(message="Dosya silindi.")

@@ -14,16 +14,20 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies.auth import CurrentUserDep
+from app.api.dependencies.auth import CurrentUserDep, require_permissions
 from app.api.dependencies.services import AuditServiceDep
 from app.core.config import settings
 from app.core.i18n import t
 from app.core.limiter import limiter
+from app.core.permissions import Permission
 from app.db.session import get_db
 from app.schemas.common import MessageResponse
 from app.services.api_key import APIKeyService
 
 router = APIRouter(prefix="/api-keys", tags=["API Keys"])
+
+_APIKeysReadDep = Annotated[object, Depends(require_permissions(Permission.API_KEYS_READ))]
+_APIKeysWriteDep = Annotated[object, Depends(require_permissions(Permission.API_KEYS_WRITE))]
 
 
 def get_api_key_service(
@@ -44,7 +48,7 @@ class CreateAPIKeyRequest(BaseModel):
     """API key oluşturma istek şeması."""
 
     name: str = Field(min_length=1, max_length=100)
-    scopes: list[str] = Field(default_factory=list)
+    scopes: list[Permission] = Field(default_factory=list)
     expires_at: datetime | None = None
 
     @field_validator("name")
@@ -55,6 +59,12 @@ class CreateAPIKeyRequest(BaseModel):
         if not v:
             raise ValueError("İsim sadece boşluktan oluşamaz.")
         return v
+
+    @field_validator("scopes")
+    @classmethod
+    def _normalize_scopes(cls, scopes: list[Permission]) -> list[Permission]:
+        """Duplicate scope'ları kaldır ve deterministic sırala."""
+        return sorted(set(scopes), key=lambda scope: scope.value)
 
 
 class APIKeyCreatedResponse(BaseModel):
@@ -125,6 +135,7 @@ class APIKeyResponse(BaseModel):
 async def create_api_key(
     request: Request,
     data: CreateAPIKeyRequest,
+    _: _APIKeysWriteDep,
     current_user: CurrentUserDep,
     service: APIKeyServiceDep,
 ) -> APIKeyCreatedResponse:
@@ -147,7 +158,7 @@ async def create_api_key(
     raw_key, api_key = await service.create(
         user_id=current_user.id,
         name=data.name,
-        scopes=data.scopes,
+        scopes=[scope.value for scope in data.scopes],
         expires_at=data.expires_at,
     )
     return APIKeyCreatedResponse.from_api_key(raw_key, api_key)
@@ -155,6 +166,7 @@ async def create_api_key(
 
 @router.get("", response_model=list[APIKeyResponse], summary="API key'lerini listele")
 async def list_api_keys(
+    _: _APIKeysReadDep,
     current_user: CurrentUserDep,
     service: APIKeyServiceDep,
 ) -> list[APIKeyResponse]:
@@ -183,6 +195,7 @@ async def list_api_keys(
 async def revoke_api_key(
     request: Request,
     key_id: UUID,
+    _: _APIKeysWriteDep,
     current_user: CurrentUserDep,
     service: APIKeyServiceDep,
 ) -> MessageResponse:

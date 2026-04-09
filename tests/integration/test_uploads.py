@@ -8,8 +8,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy import update as sa_update
 
+from app.core.permissions import Permission
 from app.core.exceptions import FileTooLargeError, InvalidFileTypeError
-from app.db.models.role import Role
+from app.db.models.role import Role, RolePermission
 from app.db.models.user import User
 
 if TYPE_CHECKING:
@@ -47,6 +48,27 @@ async def _promote_to_admin(db_session: AsyncSession, email: str) -> None:
     await db_session.execute(
         sa_update(User).where(User.email == email).values(role_id=admin_role_id)
     )
+    await db_session.commit()
+    db_session.expire_all()
+
+
+async def _assign_role_by_name(db_session: AsyncSession, email: str, role_name: str) -> None:
+    """Kullanıcıya isme göre rol atar."""
+    from sqlalchemy import select
+
+    result = await db_session.execute(select(Role.id).where(Role.name == role_name))
+    role_id = result.scalar_one()
+    await db_session.execute(sa_update(User).where(User.email == email).values(role_id=role_id))
+    await db_session.commit()
+    db_session.expire_all()
+
+
+async def _create_custom_role_with_admin_access(db_session: AsyncSession, role_name: str) -> None:
+    """Sadece admin:access permission'ı taşıyan özel rol oluşturur."""
+    role = Role(name=role_name, description="Custom admin access role", is_system=False)
+    db_session.add(role)
+    await db_session.flush()
+    db_session.add(RolePermission(role_id=role.id, permission=Permission.ADMIN_ACCESS))
     await db_session.commit()
     db_session.expire_all()
 
@@ -191,6 +213,26 @@ async def test_delete_file_as_admin(client: AsyncClient, db_session: AsyncSessio
     admin_email = "admin_del@example.com"
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
+
+    other_key = "users/00000000-0000-0000-0000-000000000000/anyfile.jpg"
+    mock = _mock_storage()
+
+    with patch("app.api.v1.endpoints.uploads.storage", mock):
+        res = await client.delete(f"/api/v1/uploads?key={other_key}", headers=headers)
+
+    assert res.status_code == 200
+    mock.delete.assert_called_once_with(other_key)
+
+
+@pytest.mark.asyncio
+async def test_delete_file_with_custom_admin_access_role(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """admin:access permission'ı taşıyan özel rol de başkasının dosyasını silebilmeli."""
+    email = "custom_admin_access_del@example.com"
+    headers = await _auth_headers(client, email)
+    await _create_custom_role_with_admin_access(db_session, "file_admin")
+    await _assign_role_by_name(db_session, email, "file_admin")
 
     other_key = "users/00000000-0000-0000-0000-000000000000/anyfile.jpg"
     mock = _mock_storage()

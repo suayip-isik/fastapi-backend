@@ -6,7 +6,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 from sqlalchemy import update as sa_update
+from fakeredis.aioredis import FakeRedis
 
+from app.api.dependencies.auth import get_user_permissions
+from app.core.permissions import Permission
 from app.db.models.role import Role
 from app.db.models.user import User
 
@@ -355,6 +358,56 @@ async def test_delete_nonexistent_role(client: AsyncClient, db_session: AsyncSes
 
     res = await client.delete("/api/v1/roles/00000000-0000-0000-0000-000000000000", headers=headers)
     assert res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_role_permissions_invalidates_assigned_user_cache(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    fake_redis: FakeRedis,
+):
+    """Role permission değişikliğinde atanmış kullanıcının permission cache'i temizlenmeli."""
+    admin_email = "admin_role_cache_update@example.com"
+    target_email = "role_cache_target@example.com"
+
+    target_headers = await _auth_headers(client, target_email)
+    target_id = (await client.get("/api/v1/users/me", headers=target_headers)).json()["id"]
+
+    headers = await _auth_headers(client, admin_email)
+    await _promote_to_admin(db_session, admin_email)
+
+    create_res = await client.post(
+        "/api/v1/roles",
+        json={
+            "name": "cache_role",
+            "description": "Cache role",
+            "permissions": ["notifications:read"],
+        },
+        headers=headers,
+    )
+    role_id = create_res.json()["id"]
+
+    assign_res = await client.patch(
+        f"/api/v1/users/{target_id}/role",
+        json={"role_name": "cache_role"},
+        headers=headers,
+    )
+    assert assign_res.status_code == 200
+
+    perms_before = await get_user_permissions(target_id)
+    assert Permission.NOTIFICATIONS_READ.value in perms_before
+    assert await fake_redis.keys(f"user_permissions:{target_id}") != []
+
+    update_res = await client.patch(
+        f"/api/v1/roles/{role_id}",
+        json={"permissions": ["api_keys:read"]},
+        headers=headers,
+    )
+    assert update_res.status_code == 200
+
+    perms_after = await get_user_permissions(target_id)
+    assert Permission.NOTIFICATIONS_READ.value not in perms_after
+    assert Permission.API_KEYS_READ.value in perms_after
 
 
 @pytest.mark.asyncio

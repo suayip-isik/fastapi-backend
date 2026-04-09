@@ -93,13 +93,14 @@ class APIKeyService(AuditableMixin):
         """
         raw_key = _generate_raw_key()
         prefix, secret_part = _split_key(raw_key)
+        normalized_scopes = sorted(set(scopes or []))
 
         api_key = await self._repo.create(
             user_id=user_id,
             name=name,
             key_prefix=prefix,
             key_hash=hash_password(secret_part),
-            scopes=" ".join(scopes or []),
+            scopes=" ".join(normalized_scopes),
             expires_at=expires_at,
             is_active=True,
         )

@@ -56,6 +56,13 @@ class RoleRepository(SoftDeleteRepository[Role]):
         )
         return result.scalar()
 
+    async def get_active_user_ids(self, role_id: UUID) -> list[UUID]:
+        """Role atanmış aktif kullanıcı ID'lerini döner."""
+        result = await self._session.execute(
+            select(User.id).where(User.role_id == role_id, User.deleted_at.is_(None))
+        )
+        return list(result.scalars().all())
+
     async def remove_permission(self, role_id: UUID, permission: str) -> None:
         """Mevcut permission setinden tek bir permission çıkarır."""
         await self._session.execute(

@@ -21,14 +21,15 @@ class APIKey(BaseModel):
 
     Programmatic API erişimi için kullanıcıların API key'lerini saklar.
     Key'ler bcrypt ile hash'lenerek saklanır. X-API-Key header ile
-    authentication yapılabilir. Scope-based yetkilendirme desteklenir.
+    authentication yapılabilir. Scope'lar kullanıcının yetkilerini
+    daraltmak için uygulanır.
 
     Attributes:
         user_id: Key sahibi User ID (foreign key, CASCADE delete)
         name: Key'e verilen isim/tanımlayıcı (max 100 karakter)
         key_prefix: Key'in ilk 8 karakteri (gösterim/tanımlama için)
         key_hash: bcrypt ile hash'lenmiş key değeri
-        scopes: Boşlukla ayrılmış scope listesi (örn: "read write admin")
+        scopes: Boşlukla ayrılmış permission scope listesi
         last_used_at: Son kullanım zamanı (nullable, otomatik güncellenir)
         expires_at: Key expiration zamanı (nullable)
         is_active: Key'in aktif olup olmadığı (soft delete için)

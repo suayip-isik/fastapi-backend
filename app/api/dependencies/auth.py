@@ -6,6 +6,8 @@ Tüm ortak bağımlılıklar burada tanımlanır.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
+from enum import StrEnum
 from typing import TYPE_CHECKING, Annotated, Any
 from uuid import UUID
 
@@ -82,12 +84,28 @@ async def get_user_permissions(user_id: UUID) -> set[str]:
 # ── Auth Dependencies ─────────────────────────────────────────────────────────
 
 
-async def get_current_user(
+class AuthMethod(StrEnum):
+    """Kimlik doğrulama kaynağı."""
+
+    BEARER = "bearer"
+    API_KEY = "api_key"
+
+
+@dataclass(slots=True)
+class AuthContext:
+    """Authorization kararları için request auth bağlamı."""
+
+    user: User
+    auth_method: AuthMethod
+    api_key_scopes: set[str] | None = None
+
+
+async def get_current_auth(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Security(bearer_scheme)],
     user_repo: UserRepoDep,
     db: DBDep,
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
-) -> User:
+) -> AuthContext:
     """Bearer token veya X-API-Key header'ından kullanıcıyı çözer.
 
     JWT access token veya API Key kullanarak kimlik doğrulama yapar.
@@ -114,7 +132,8 @@ async def get_current_user(
         user = await user_repo.get_by_id(api_key_obj.user_id)
         if not user or not user.is_active:
             raise AuthenticationError("Kullanıcı bulunamadı veya pasif.")
-        return user
+        scopes = {scope for scope in api_key_obj.scopes.split() if scope}
+        return AuthContext(user=user, auth_method=AuthMethod.API_KEY, api_key_scopes=scopes)
 
     # Bearer token auth
     if not credentials:
@@ -133,7 +152,21 @@ async def get_current_user(
     if not user or not user.is_active:
         raise AuthenticationError("Kullanıcı bulunamadı veya pasif.")
 
-    return user
+    return AuthContext(user=user, auth_method=AuthMethod.BEARER)
+
+
+async def get_current_user(
+    auth: Annotated[AuthContext, Depends(get_current_auth)],
+) -> User:
+    """Backward compatible aktif kullanıcı dependency'si."""
+    return auth.user
+
+
+async def get_current_active_auth(
+    auth: Annotated[AuthContext, Depends(get_current_auth)],
+) -> AuthContext:
+    """Aktif auth context'ini döner."""
+    return auth
 
 
 async def get_current_active_user(
@@ -155,7 +188,34 @@ async def get_optional_current_user(
     """
     if not credentials and not x_api_key:
         return None
-    return await get_current_user(credentials, user_repo, db, x_api_key)
+    auth = await get_current_auth(credentials, user_repo, db, x_api_key)
+    return auth.user
+
+
+async def get_effective_permissions(auth: AuthContext) -> set[str]:
+    """Auth kaynağına göre etkili permission setini döner."""
+    user_perms = await get_user_permissions(auth.user.id)
+    if auth.auth_method is AuthMethod.API_KEY:
+        if not auth.api_key_scopes:
+            return set()
+        return user_perms & auth.api_key_scopes
+    return user_perms
+
+
+def require_permissions_all(*perms: Permission) -> Any:
+    """Tüm permission'ları zorunlu kılan dependency factory."""
+
+    async def check(
+        auth: Annotated[AuthContext, Depends(get_current_active_auth)],
+    ) -> User:
+        effective_perms = await get_effective_permissions(auth)
+        if not all(p.value in effective_perms for p in perms):
+            raise InsufficientPermissionsError(
+                f"Bu işlem için gerekli yetki: {', '.join(p.value for p in perms)}"
+            )
+        return auth.user
+
+    return check
 
 
 def require_permissions(*perms: Permission) -> Any:
@@ -182,19 +242,22 @@ def require_permissions(*perms: Permission) -> Any:
     """
 
     async def check(
-        current_user: Annotated[User, Depends(get_current_active_user)],
+        auth: Annotated[AuthContext, Depends(get_current_active_auth)],
     ) -> User:
-        user_perms = await get_user_permissions(current_user.id)
-        if not any(p.value in user_perms for p in perms):
+        effective_perms = await get_effective_permissions(auth)
+        if not any(p.value in effective_perms for p in perms):
             raise InsufficientPermissionsError(
                 f"Bu işlem için gerekli yetki: {', '.join(p.value for p in perms)}"
             )
-        return current_user
+        return auth.user
 
     return check
 
 
 # ── Type Aliases ──────────────────────────────────────────────────────────────
+
+CurrentAuthDep = Annotated[AuthContext, Depends(get_current_active_auth)]
+"""Aktif auth context dependency type alias."""
 
 CurrentUserDep = Annotated[User, Depends(get_current_active_user)]
 """Aktif kullanıcı dependency type alias."""

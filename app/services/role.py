@@ -7,7 +7,9 @@ from typing import TYPE_CHECKING
 from app.core.exceptions import AlreadyExistsError, BusinessRuleError, NotFoundError
 from app.db.models.audit_log import AuditAction
 from app.db.repositories.role import RoleRepository
+from app.services._keys import USER_PERMISSIONS_KEY
 from app.services.base import AuditableMixin
+from app.services.cache import CacheService
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -97,12 +99,15 @@ class RoleService(AuditableMixin):
             BusinessRuleError: Sistem rolünün permissionları değiştirilmeye çalışılırsa.
         """
         role = await self.get_by_id(role_id)
+        affected_user_ids: list[UUID] = []
         if permissions is not None and role.is_system:
             raise BusinessRuleError("Sistem rollerinin yetki seti değiştirilemez.")
         if description is not None:
             await self._repo.update(role_id, description=description)
         if permissions is not None:
+            affected_user_ids = await self._repo.get_active_user_ids(role_id)
             await self._repo.set_permissions(role_id, permissions)
+            await self._invalidate_permission_cache(affected_user_ids)
         await self._audit_log(
             AuditAction.ROLE_UPDATED,
             extra={
@@ -115,6 +120,14 @@ class RoleService(AuditableMixin):
         # Cached role nesnesini expire et; get_by_id taze veri çeksin.
         self._repo._session.expire(role)
         return await self.get_by_id(role_id)
+
+    async def _invalidate_permission_cache(self, user_ids: list[UUID]) -> None:
+        """Role bağlı kullanıcıların permission cache'ini temizler."""
+        if not user_ids:
+            return
+        await CacheService.delete(
+            *(USER_PERMISSIONS_KEY.format(str(user_id)) for user_id in user_ids)
+        )
 
     async def delete(self, role_id: UUID) -> None:
         """Özel rolü siler.
