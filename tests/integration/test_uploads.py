@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy import update as sa_update
 
-from app.core.permissions import Permission
 from app.core.exceptions import FileTooLargeError, InvalidFileTypeError
+from app.core.permissions import Permission
 from app.db.models.role import Role, RolePermission
 from app.db.models.user import User
 

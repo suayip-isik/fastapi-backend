@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy import update as sa_update
 from fakeredis.aioredis import FakeRedis
+from sqlalchemy import update as sa_update
 
 from app.api.dependencies.auth import get_user_permissions
 from app.core.permissions import Permission
