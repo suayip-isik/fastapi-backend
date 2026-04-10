@@ -34,7 +34,7 @@ Follow the layered architecture defined in `CLAUDE.md`:
    - `admin`
    - `shared`
 8. **Router** → Register in `app/api/v1/router.py`
-9. **Docs** → README/CHANGELOG ilgiliyse aynı PR'da güncellenmeli
+9. **Docs** → README/CHANGELOG ve etkilenen diğer referans dokümanlar (`LEARNING_ROADMAP.md`, `.env.example` vb.) aynı PR'da güncellenmeli
 10. **Tests** → `tests/integration/test_myfeature.py`
 
 ## Code Standards

@@ -356,6 +356,47 @@ async def test_reset_password_success(
 
 
 @pytest.mark.asyncio
+async def test_reset_password_marks_invited_admin_verified(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    mock_enqueue: AsyncMock,
+):
+    """Davet edilen admin kullanıcı şifre kurunca verified olmalı."""
+    creator_email = "creator@example.com"
+    headers = await _register_and_login(client, creator_email)
+
+    result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
+    admin_role_id = result.scalar_one()
+    await db_session.execute(
+        sa_update(User)
+        .where(User.email == creator_email)
+        .values(role_id=admin_role_id, account_type=AccountType.ADMIN.value)
+    )
+    await db_session.commit()
+    admin_headers = {"Authorization": f"Bearer {headers['access_token']}"}
+
+    mock_enqueue.reset_mock()
+    create_res = await client.post(
+        "/api/v1/admin/users",
+        json={"email": "invited_admin@example.com", "role_name": "admin"},
+        headers=admin_headers,
+    )
+    assert create_res.status_code == 201
+    token = mock_enqueue.call_args.args[2]
+
+    reset_res = await client.post(
+        "/api/v1/client/auth/reset-password",
+        json={"token": token, "new_password": "NewStrongPass2"},
+    )
+    assert reset_res.status_code == 200
+
+    invited = await db_session.execute(
+        select(User).where(User.email == "invited_admin@example.com")
+    )
+    assert invited.scalar_one().is_verified is True
+
+
+@pytest.mark.asyncio
 async def test_reset_password_invalid_token(client: AsyncClient):
     """Geçersiz token 401 döndürmeli."""
     res = await client.post(

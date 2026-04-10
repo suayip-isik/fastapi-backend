@@ -3,8 +3,6 @@ FastAPI Dependency Injection katmanı.
 Tüm ortak bağımlılıklar burada tanımlanır.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Annotated, Any
@@ -17,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.infrastructure import RedisAdapter
+from app.api.dependencies.infrastructure import PermissionProviderDep, RedisPortDep
 from app.api.policies.authz import (
     ensure_permissions_all,
     ensure_permissions_any,
@@ -29,6 +28,7 @@ from app.core.exceptions import (
     InvalidTokenError,
 )
 from app.core.logging import get_logger
+from app.core.permissions import Permission
 from app.core.security import TokenType, decode_token
 from app.db.models.user import AccountType, User
 from app.db.repositories.user import UserRepository
@@ -36,10 +36,6 @@ from app.db.session import get_db
 from app.db.session_provider import get_default_session_factory
 from app.services._keys import BLACKLIST_KEY
 from app.services.permissions import PermissionCache, PermissionProvider, PermissionQueryService
-
-if TYPE_CHECKING:
-    from app.api.dependencies.infrastructure import PermissionProviderDep, RedisPortDep
-    from app.core.permissions import Permission
 
 logger = get_logger(__name__)
 

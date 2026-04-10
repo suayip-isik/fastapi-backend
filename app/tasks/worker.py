@@ -167,6 +167,25 @@ async def send_password_reset_email(
     return {"status": "sent", "email": email}
 
 
+async def send_admin_invite_email(
+    ctx: dict[str, Any], email: str, token: str, language: str = DEFAULT_LANGUAGE
+) -> dict[str, Any]:
+    """Admin kullanıcı davet e-postası gönderir."""
+    logger.info("sending_admin_invite_email", email=email)
+    try:
+        reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+        await send_email(
+            to=email,
+            subject=t("email.admin_invite.subject", lang=language),
+            html_body=t("email.admin_invite.body", lang=language, reset_url=reset_url),
+        )
+    except (aiosmtplib.SMTPException, OSError) as exc:
+        logger.error("admin_invite_email_failed", email=email, error=str(exc))
+        raise
+    logger.info("admin_invite_email_sent", email=email)
+    return {"status": "sent", "email": email}
+
+
 async def cleanup_expired_tokens(ctx: dict[str, Any]) -> dict[str, Any]:
     """TTL'siz kalan orphaned Redis key'lerini temizler (cron job).
 
@@ -238,6 +257,7 @@ class WorkerSettings:
         cleanup_expired_tokens,
         send_verification_email,
         send_password_reset_email,
+        send_admin_invite_email,
     ]
 
     # Cron jobs

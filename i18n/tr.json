@@ -59,8 +59,10 @@
   "auth.resend_verification.success": "Doğrulama e-postası gönderildi.",
   "auth.forgot_password.success": "Şifre sıfırlama talimatları e-posta adresinize gönderildi.",
   "auth.reset_password.success": "Şifreniz başarıyla sıfırlandı.",
+  "auth.admin_invite_resent.success": "Admin davet e-postası gönderildi.",
 
   "user.delete.success": "Kullanıcı silindi.",
+  "user.admin_create.success": "Admin kullanıcı oluşturuldu.",
 
   "totp.setup.success": "QR kodu oluşturuldu. Authenticator uygulamanızla tarayın.",
   "totp.verify.success": "2FA başarıyla aktif edildi.",
@@ -78,6 +80,8 @@
   "email.verify.body": "<p>Hesabınızı doğrulamak için <a href='{verify_url}'>buraya tıklayın</a>.</p><p>Bu link 24 saat geçerlidir.</p>",
   "email.reset.subject": "Şifre sıfırlama isteği",
   "email.reset.body": "<p>Şifrenizi sıfırlamak için <a href='{reset_url}'>buraya tıklayın</a>.</p><p>Bu link 15 dakika geçerlidir.</p>",
+  "email.admin_invite.subject": "Admin hesabınız için şifre belirleyin",
+  "email.admin_invite.body": "<p>Sizin için bir admin hesabı oluşturuldu.</p><p>Şifrenizi belirlemek için <a href='{reset_url}'>buraya tıklayın</a>.</p><p>Bu link 15 dakika geçerlidir.</p>",
   "email.welcome.subject": "{app_name}'a hoş geldiniz!",
   "email.welcome.body": "<p>Merhaba,</p><p><strong>{app_name}</strong>'a hoş geldiniz! Hesabınız başarıyla oluşturuldu.</p><p>Giriş yapmak için <a href='{login_url}'>tıklayın</a>.</p>"
 }

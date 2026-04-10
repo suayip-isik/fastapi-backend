@@ -72,6 +72,11 @@ async def seed_system_roles() -> dict[str, Role]:
                 await session.flush()
                 logger.info("system_role_created", role=role_data["name"])
             else:
+                if hasattr(role, "id"):
+                    existing_permissions = getattr(role, "permission_set", set())
+                    for perm in role_data["permissions"]:
+                        if perm not in existing_permissions:
+                            session.add(RolePermission(role_id=role.id, permission=perm))
                 logger.info("system_role_exists", role=role_data["name"])
 
             roles[role.name] = role

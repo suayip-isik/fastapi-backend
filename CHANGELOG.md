@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `/schema/client/openapi.json`
   - `/schema/admin/openapi.json`
 - Admin panel erişimi için `admin:panel_access`
+- Admin kullanıcı oluşturma ve davet akışı:
+  - `POST /api/v1/admin/users`
+  - `POST /api/v1/admin/users/{user_id}/resend-invite`
+- Yeni permission: `users:create_admin`
+- Yeni worker görevi: `send_admin_invite_email`
+- Admin daveti için yeni audit action'lar:
+  - `admin_user_created`
+  - `admin_invite_resent`
+- Admin invite permission/audit backfill migration'ı
 - Surface ve legacy removal regression testleri
 - Merkezi authorization policy helper'ları
 - Permission provider/cache/query ayrımı
@@ -28,6 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Web ve mobil istemciler artık tek `client` surface üzerinden çalışır
 - Admin panel ve admin API erişimi yalnız `account_type=admin` kullanıcılar için geçerlidir
 - SQLAdmin auth artık `admin:panel_access` gerektirir; `admin:access` compatibility fallback'i kaldırıldı
+- Client kullanıcı oluşturma artık yalnız self-register akışıyla yapılır: `/api/v1/client/auth/register`
+- Admin kullanıcı oluşturma yalnız admin surface altında yapılır ve şifre doğrudan atanmaz
+- Admin davet e-postası mevcut `reset-password` ekranını yeniden kullanır
+- Davet edilen admin kullanıcı ilk şifresini kurduğunda `is_verified=true` olur
 - Shared upload “delete any file” yetkisi artık `account_type=admin` + `admin:panel_access` gerektirir
 - Admin auth, permission çözümleme ve audit servisleri daha düşük coupling ile injectable provider/gateway sınırlarına taşındı
 - Email/worker/websocket exception boundary'leri daraltıldı

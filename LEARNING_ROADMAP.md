@@ -130,14 +130,17 @@ result = await httpx.AsyncClient().get("https://api.example.com")
 
 ### 3.2 REST API Tasarımı
 
-- Resource (kaynak) kavramı: `/users`, `/users/{id}`
-- URL yapısı: `/api/v1/users`
+- Resource (kaynak) kavramı: `/shared/me`, `/admin/users/{id}`
+- URL yapısı: `/api/v1/<surface>/<resource>`
 - Query param vs. path param vs. request body
 - JSON formatı
 
 **Bu projede:**
 
-- `app/api/v1/endpoints/` — tüm endpoint'ler `/api/v1/` prefix'i altında
+- `app/api/v1/endpoints/` — tüm endpoint'ler `/api/v1/` prefix'i altında ve üç canonical surface'e ayrılır:
+  - `/api/v1/client/*`
+  - `/api/v1/admin/*`
+  - `/api/v1/shared/*`
 - `app/api/v1/router.py` — router kayıtları
 
 ### 3.3 OpenAPI / Swagger
@@ -145,7 +148,7 @@ result = await httpx.AsyncClient().get("https://api.example.com")
 - API dokümantasyonunun otomatik üretimi
 - `GET /docs` adresinde interaktif test
 
-**Bu projede:** `app/main.py`'deki `/docs` ve `/redoc` endpoint'leri
+**Bu projede:** `app/main.py`'deki `/docs`, `/redoc`, `/schema/client/docs`, `/schema/admin/docs`
 
 ---
 
@@ -226,9 +229,9 @@ from fastapi import FastAPI
 
 app = FastAPI()
 
-@app.get("/users/{user_id}")
-async def get_user(user_id: int):
-    return {"id": user_id}
+@app.get("/api/v1/shared/me")
+async def get_me():
+    return {"email": "user@example.com"}
 ```
 
 - Route tanımlama: `@app.get`, `@app.post`
@@ -246,7 +249,7 @@ async def get_db():
     async with SessionLocal() as session:
         yield session
 
-@app.get("/users")
+@app.get("/api/v1/admin/users")
 async def list_users(db: AsyncSession = Depends(get_db)):
     ...
 ```
@@ -254,7 +257,7 @@ async def list_users(db: AsyncSession = Depends(get_db)):
 **Bu projede:**
 
 - `app/api/dependencies/` — tüm `Depends()` fonksiyonları
-- `app/api/dependencies/auth.py` — `CurrentUserDep`, `AdminDep`
+- `app/api/dependencies/auth.py` — `CurrentUserDep`, surface access ve permission dependency'leri
 
 ### 5.3 Middleware
 
@@ -433,7 +436,7 @@ Kullanıcı adı/şifre veya JWT yerine uzun ömürlü anahtar ile kimlik doğru
 ```python
 # İstemci kullanımı
 headers = {"X-API-Key": "sk_live_abc123..."}
-response = requests.get("/api/v1/users/me", headers=headers)
+response = requests.get("/api/v1/shared/me", headers=headers)
 ```
 
 **Bu projede:**
@@ -494,7 +497,7 @@ class WorkerSettings:
 
 - `app/tasks/worker.py` — worker tanımları ve görev fonksiyonları
 - `send_welcome_email` — kayıt sonrası hoşgeldiniz e-postası (SMTP)
-- `send_verification_email` / `send_password_reset_email` — hesap doğrulama e-postaları
+- `send_verification_email` / `send_password_reset_email` / `send_admin_invite_email` — hesap e-postaları
 - `cleanup_expired_tokens` — her gece yarısı çalışır, TTL'siz orphaned Redis key'lerini temizler (`blacklist:*`, `email_verify:*`, `password_reset:*`); log event: `cleaning_orphaned_redis_keys`
 
 ### 8.4 Bildirimler ve WebSocket Push
@@ -616,7 +619,7 @@ def mock_audit() -> AsyncMock:
         yield m
 
 async def test_login_audited(client, mock_audit):
-    await client.post("/api/v1/auth/login", json={...})
+    await client.post("/api/v1/client/auth/login", json={...})
     actions = [c.kwargs.get("action") for c in mock_audit.call_args_list]
     assert AuditAction.LOGIN_SUCCESS in actions
 ```
@@ -636,7 +639,7 @@ Gerçek HTTP isteği simüle eder.
 
 ```python
 async def test_login(client: AsyncClient):
-    resp = await client.post("/api/v1/auth/login", json={...})
+    resp = await client.post("/api/v1/client/auth/login", json={...})
     assert resp.status_code == 200
 ```
 
@@ -657,17 +660,17 @@ Integration testlerinden farkı: tek endpoint'i değil, tam bir akışı doğrul
 ```python
 async def test_full_auth_journey(client, fake_redis, mock_enqueue):
     # Adım 1: Kayıt
-    await client.post("/api/v1/auth/register", json={...})
+    await client.post("/api/v1/client/auth/register", json={...})
     # Adım 2: E-posta doğrulama
     token = mock_enqueue.call_args.args[2]
-    await client.post("/api/v1/auth/verify-email", json={"token": token})
+    await client.post("/api/v1/client/auth/verify-email", json={"token": token})
     # Adım 3: Giriş
-    login = await client.post("/api/v1/auth/login", json={...})
+    login = await client.post("/api/v1/client/auth/login", json={...})
     # Adım 4: Token yenileme
-    refresh = await client.post("/api/v1/auth/refresh", ...)
+    refresh = await client.post("/api/v1/shared/auth/refresh", ...)
     # Adım 5: Çıkış + blacklist kontrolü
-    await client.post("/api/v1/auth/logout", ...)
-    me = await client.get("/api/v1/users/me", ...)
+    await client.post("/api/v1/shared/auth/logout", ...)
+    me = await client.get("/api/v1/shared/me", ...)
     assert me.status_code == 401  # token blacklist'te
 ```
 

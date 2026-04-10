@@ -4,19 +4,27 @@ UserService — kullanıcı yönetimi business logic.
 
 from __future__ import annotations
 
+import secrets
 from typing import TYPE_CHECKING
 
+from app.adapters.infrastructure import ARQTaskQueueAdapter, RedisAdapter
+from app.core.config import settings
 from app.core.exceptions import (
     AlreadyExistsError,
     BusinessRuleError,
     NotFoundError,
     UserNotFoundError,
 )
+from app.core.i18n import language_var
+from app.core.permissions import Permission
 from app.core.security import hash_password
 from app.db.models.audit_log import AuditAction
+from app.db.models.user import AccountType
 from app.db.repositories.role import RoleRepository
 from app.db.repositories.user import UserRepository
+from app.ports.infrastructure import RedisPort, TaskQueuePort
 from app.services._keys import (
+    PASSWORD_RESET_KEY,
     USER_CACHE_KEY,
     USER_CACHE_TTL,
     USER_EMAIL_CACHE_KEY,
@@ -24,6 +32,7 @@ from app.services._keys import (
 )
 from app.services.base import AuditableMixin
 from app.services.cache import CacheService
+from app.tasks.worker import send_admin_invite_email
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -31,7 +40,12 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.db.models.user import User
-    from app.schemas.user import UpdateUserRequest, UserResponse, UserStatsResponse
+    from app.schemas.user import (
+        CreateAdminUserRequest,
+        UpdateUserRequest,
+        UserResponse,
+        UserStatsResponse,
+    )
     from app.services.audit import AuditService
 
 
@@ -53,6 +67,8 @@ class UserService(AuditableMixin):
         audit: AuditService | None = None,
         *,
         cache: CacheService | None = None,
+        redis: RedisPort | None = None,
+        task_queue: TaskQueuePort | None = None,
     ) -> None:
         """UserService'i başlatır.
 
@@ -64,6 +80,28 @@ class UserService(AuditableMixin):
         self._role_repo = RoleRepository(session)
         self._audit = audit
         self._cache = cache or CacheService()
+        self._redis = redis or RedisAdapter()
+        self._task_queue = task_queue or ARQTaskQueueAdapter()
+
+    async def _issue_admin_invite(self, user: User) -> None:
+        token = secrets.token_urlsafe(32)
+        await self._redis.setex(
+            PASSWORD_RESET_KEY.format(token), settings.PASSWORD_RESET_TTL, str(user.id)
+        )
+        await self._task_queue.enqueue(
+            send_admin_invite_email,
+            user.email,
+            token,
+            language_var.get(),
+        )
+
+    async def _get_admin_role_or_raise(self, role_name: str):
+        role = await self._role_repo.get_by_name(role_name)
+        if not role:
+            raise NotFoundError(f"'{role_name}' adında bir rol bulunamadı.")
+        if Permission.ADMIN_PANEL_ACCESS.value not in role.permission_set:
+            raise BusinessRuleError("Admin kullanıcıya yalnızca panel erişimi olan rol atanabilir.")
+        return role
 
     async def get_by_id(self, user_id: UUID) -> User:
         """Belirtilen ID'ye sahip kullanıcıyı getirir.
@@ -269,6 +307,50 @@ class UserService(AuditableMixin):
         updated = await self._repo.update(user_id, **update_data)
         await self._audit_log(AuditAction.PROFILE_UPDATED, user_id=user_id)
         return updated
+
+    async def create_admin_user(self, data: CreateAdminUserRequest) -> User:
+        """Yeni bir admin kullanıcı oluşturur ve davet e-postası gönderir."""
+        email = data.email.lower()
+        if await self._repo.email_exists(email):
+            raise AlreadyExistsError("Bu e-posta adresi zaten kullanılıyor.")
+
+        if data.username and await self._repo.get_by_username(data.username):
+            raise AlreadyExistsError("Bu kullanıcı adı zaten kullanılıyor.")
+
+        role = await self._get_admin_role_or_raise(data.role_name)
+        user = await self._repo.create(
+            email=email,
+            username=data.username,
+            full_name=data.full_name,
+            role_id=role.id,
+            account_type=AccountType.ADMIN.value,
+            is_active=True,
+            is_verified=False,
+            hashed_password=None,
+        )
+        await self._issue_admin_invite(user)
+        await self._audit_log(
+            AuditAction.ADMIN_USER_CREATED,
+            user_id=user.id,
+            extra={"email": user.email, "role_name": role.name},
+        )
+        return user
+
+    async def resend_admin_invite(self, user_id: UUID) -> User:
+        """Şifresi henüz belirlenmemiş admin kullanıcıya daveti yeniden gönderir."""
+        user = await self._repo.get_by_id_or_raise(user_id)
+        if user.account_type != AccountType.ADMIN.value:
+            raise BusinessRuleError("Yalnızca admin tipindeki kullanıcılar için davet gönderilebilir.")
+        if user.hashed_password:
+            raise BusinessRuleError("Şifresi belirlenmiş admin kullanıcıya davet yeniden gönderilemez.")
+
+        await self._issue_admin_invite(user)
+        await self._audit_log(
+            AuditAction.ADMIN_INVITE_RESENT,
+            user_id=user.id,
+            extra={"email": user.email},
+        )
+        return user
 
     async def deactivate(self, user_id: UUID) -> User:
         """Kullanıcı hesabını deaktive eder.

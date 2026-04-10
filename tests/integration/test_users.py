@@ -5,9 +5,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy import update as sa_update
 
-from app.db.models.role import Role
+from app.core.permissions import Permission
+from app.db.models.role import Role, RolePermission
 from app.db.models.user import AccountType, User
 
 if TYPE_CHECKING:
@@ -238,6 +240,212 @@ async def test_list_users_default_pagination(client: AsyncClient, db_session: As
     data = res.json()
     assert data["page"] == 1
     assert data["size"] == 20
+
+
+# ── POST /users (Admin invite) ───────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_create_admin_user_as_authorized_admin(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    mock_enqueue,
+):
+    """Yetkili admin yeni admin kullanıcı oluşturabilmeli."""
+    creator_email = "admin_creator@example.com"
+    headers = await _auth_headers(client, creator_email)
+    await _promote_to_admin(db_session, creator_email)
+
+    mock_enqueue.reset_mock()
+    res = await client.post(
+        "/api/v1/admin/users",
+        json={
+            "email": "new_admin@example.com",
+            "role_name": "admin",
+            "full_name": "New Admin",
+            "username": "new_admin",
+        },
+        headers=headers,
+    )
+
+    assert res.status_code == 201
+    data = res.json()
+    assert data["email"] == "new_admin@example.com"
+    assert data["account_type"] == AccountType.ADMIN.value
+    assert data["is_verified"] is False
+    mock_enqueue.assert_called_once()
+
+    created = await db_session.execute(select(User).where(User.email == "new_admin@example.com"))
+    user = created.scalar_one()
+    assert user.hashed_password is None
+    assert user.account_type == AccountType.ADMIN.value
+
+
+@pytest.mark.asyncio
+async def test_create_admin_user_rejects_duplicate_email(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Aynı email ile admin kullanıcı oluşturma 409 dönmeli."""
+    creator_email = "admin_creator_dup@example.com"
+    headers = await _auth_headers(client, creator_email)
+    await _promote_to_admin(db_session, creator_email)
+    await _auth_headers(client, "dup_admin@example.com")
+
+    res = await client.post(
+        "/api/v1/admin/users",
+        json={"email": "dup_admin@example.com", "role_name": "admin"},
+        headers=headers,
+    )
+    assert res.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_create_admin_user_requires_create_permission(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Create_admin yetkisi olmayan admin account_type kullanıcı admin create edememeli."""
+    email = "moderator_admin@example.com"
+    headers = await _auth_headers(client, email)
+
+    result = await db_session.execute(select(Role.id).where(Role.name == "moderator"))
+    moderator_role_id = result.scalar_one()
+    await db_session.execute(
+        sa_update(User)
+        .where(User.email == email)
+        .values(role_id=moderator_role_id, account_type=AccountType.ADMIN.value)
+    )
+    await db_session.commit()
+    db_session.expire_all()
+
+    res = await client.post(
+        "/api/v1/admin/users",
+        json={"email": "blocked_admin@example.com", "role_name": "admin"},
+        headers=headers,
+    )
+    assert res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_create_admin_user_rejects_role_without_panel_access(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Panel erişimi olmayan role admin kullanıcı atanamamalı."""
+    creator_email = "admin_creator_role@example.com"
+    headers = await _auth_headers(client, creator_email)
+    await _promote_to_admin(db_session, creator_email)
+
+    res = await client.post(
+        "/api/v1/admin/users",
+        json={"email": "bad_role_admin@example.com", "role_name": "user"},
+        headers=headers,
+    )
+    assert res.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_admin_user_accepts_custom_panel_role(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """admin:panel_access taşıyan özel rol ile admin kullanıcı oluşturulabilmeli."""
+    creator_email = "admin_creator_custom_role@example.com"
+    headers = await _auth_headers(client, creator_email)
+    await _promote_to_admin(db_session, creator_email)
+
+    custom_role = Role(name="support_admin", description="Support", is_system=False)
+    db_session.add(custom_role)
+    await db_session.flush()
+    db_session.add(
+        RolePermission(role_id=custom_role.id, permission=Permission.ADMIN_PANEL_ACCESS.value)
+    )
+    await db_session.commit()
+
+    res = await client.post(
+        "/api/v1/admin/users",
+        json={"email": "support_admin_user@example.com", "role_name": "support_admin"},
+        headers=headers,
+    )
+    assert res.status_code == 201
+    assert res.json()["role"]["name"] == "support_admin"
+
+
+@pytest.mark.asyncio
+async def test_invited_admin_cannot_login_before_setting_password(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Davet edilen admin şifre belirlemeden admin login yapamamalı."""
+    creator_email = "admin_creator_login@example.com"
+    headers = await _auth_headers(client, creator_email)
+    await _promote_to_admin(db_session, creator_email)
+
+    create_res = await client.post(
+        "/api/v1/admin/users",
+        json={"email": "pending_admin@example.com", "role_name": "admin"},
+        headers=headers,
+    )
+    assert create_res.status_code == 201
+
+    login_res = await client.post(
+        "/api/v1/admin/auth/login",
+        json={"email": "pending_admin@example.com", "password": "StrongPass1"},
+    )
+    assert login_res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_resend_admin_invite_for_pending_admin(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    mock_enqueue,
+):
+    """Şifresi olmayan admin kullanıcı için davet yeniden gönderilebilmeli."""
+    creator_email = "admin_creator_resend@example.com"
+    headers = await _auth_headers(client, creator_email)
+    await _promote_to_admin(db_session, creator_email)
+
+    create_res = await client.post(
+        "/api/v1/admin/users",
+        json={"email": "resend_admin@example.com", "role_name": "admin"},
+        headers=headers,
+    )
+    user_id = create_res.json()["id"]
+    mock_enqueue.reset_mock()
+
+    resend_res = await client.post(f"/api/v1/admin/users/{user_id}/resend-invite", headers=headers)
+    assert resend_res.status_code == 200
+    mock_enqueue.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_resend_admin_invite_rejects_user_with_password(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    mock_enqueue,
+):
+    """Şifresi belirlenmiş admin kullanıcı için resend başarısız olmalı."""
+    creator_email = "admin_creator_resend_done@example.com"
+    headers = await _auth_headers(client, creator_email)
+    await _promote_to_admin(db_session, creator_email)
+
+    create_res = await client.post(
+        "/api/v1/admin/users",
+        json={"email": "resend_done_admin@example.com", "role_name": "admin"},
+        headers=headers,
+    )
+    user_id = create_res.json()["id"]
+    token = mock_enqueue.call_args.args[2]
+    await client.post(
+        "/api/v1/client/auth/reset-password",
+        json={"token": token, "new_password": "NewStrongPass2"},
+    )
+    mock_enqueue.reset_mock()
+
+    resend_res = await client.post(f"/api/v1/admin/users/{user_id}/resend-invite", headers=headers)
+    assert resend_res.status_code == 400
 
 
 # ── GET /users/{id} (Admin only) ──────────────────────────────────────────────

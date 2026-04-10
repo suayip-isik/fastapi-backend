@@ -59,8 +59,10 @@
   "auth.resend_verification.success": "Verification email has been sent.",
   "auth.forgot_password.success": "Password reset instructions have been sent to your email address.",
   "auth.reset_password.success": "Your password has been reset successfully.",
+  "auth.admin_invite_resent.success": "Admin invitation email has been sent.",
 
   "user.delete.success": "User deleted.",
+  "user.admin_create.success": "Admin user created.",
 
   "totp.setup.success": "QR code generated. Scan it with your authenticator app.",
   "totp.verify.success": "2FA has been enabled successfully.",
@@ -78,6 +80,8 @@
   "email.verify.body": "<p>Click <a href='{verify_url}'>here</a> to verify your account.</p><p>This link is valid for 24 hours.</p>",
   "email.reset.subject": "Password reset request",
   "email.reset.body": "<p>Click <a href='{reset_url}'>here</a> to reset your password.</p><p>This link is valid for 15 minutes.</p>",
+  "email.admin_invite.subject": "Set your admin account password",
+  "email.admin_invite.body": "<p>An admin account has been created for you.</p><p>Click <a href='{reset_url}'>here</a> to set your password.</p><p>This link is valid for 15 minutes.</p>",
   "email.welcome.subject": "Welcome to {app_name}!",
   "email.welcome.body": "<p>Hello,</p><p>Welcome to <strong>{app_name}</strong>! Your account has been created successfully.</p><p>Click <a href='{login_url}'>here</a> to log in.</p>"
 }

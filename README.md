@@ -33,9 +33,10 @@ FastAPI tabanlı, production kullanımına hazır bir backend boilerplate. Katma
 ### 👨‍💼 Admin Panel
 
 - **SQLAdmin** entegrasyonu ile görsel veritabanı yönetimi
-- **Role-Based Access**: Sadece `ADMIN` rolüne sahip kullanıcılar erişebilir
+- **Role-Based Access**: Yalnızca `account_type=admin` ve `admin:panel_access` taşıyan hesaplar erişebilir
 - **JWT Authentication**: Admin panel için ayrı authentication backend
-- **Model Yönetimi**: User, AuditLog, Notification, APIKey modelleri
+- **Admin Invite Flow**: Yetkili admin kullanıcı yeni admin hesap açar, kullanıcı şifresini e-posta linki ile belirler
+- **Model Yönetimi**: User, Role, AuditLog modelleri
 - **Güvenlik**: Production validator ile zayıf admin şifreleri reddedilir
 
 ### 🔌 WebSocket Entegrasyonu
@@ -147,9 +148,9 @@ fastapi-backend/
 │   │   └── v1/
 │   │       ├── router.py               # Ana router (tüm endpoint'leri birleştirir)
 │   │       └── endpoints/
-│   │           ├── auth.py             # Kayıt, giriş, çıkış, e-posta doğrulama, şifre sıfırlama
+│   │           ├── auth.py             # Client kayıt, client/admin giriş, doğrulama, şifre sıfırlama
 │   │           ├── totp.py             # 2FA kurulum, doğrulama, yedek kod yönetimi
-│   │           ├── users.py            # Kullanıcı profili ve yönetimi (soft-delete dahil)
+│   │           ├── users.py            # Profil, admin kullanıcı yönetimi ve admin invite akışı
 │   │           ├── roles.py            # Rol yönetimi (CRUD, sistem rolü koruma)
 │   │           ├── api_keys.py         # API key oluşturma, listeleme, iptal
 │   │           ├── audit_logs.py       # Audit log listeleme ve sorgulama (admin)
@@ -186,9 +187,9 @@ fastapi-backend/
 │   │   ├── base.py                     # AuditableMixin (audit log paylaşımlı helper)
 │   │   ├── _keys.py                    # Redis key sabitleri (magic string'leri önler)
 │   │   ├── cache.py                    # Redis cache yardımcıları (get/set/delete)
-│   │   ├── auth.py                     # AuthService — kayıt, giriş, çıkış, token yönetimi
-│   │   ├── account.py                  # AccountService — e-posta doğrulama, şifre sıfırlama
-│   │   ├── user.py                     # UserService — kullanıcı CRUD + soft-delete + sayfalama
+│   │   ├── auth.py                     # AuthService — client kayıt, giriş, çıkış, token yönetimi
+│   │   ├── account.py                  # AccountService — e-posta doğrulama, şifre sıfırlama, ilk şifre kurulumu
+│   │   ├── user.py                     # UserService — kullanıcı CRUD, admin invite, soft-delete, sayfalama
 │   │   ├── role.py                     # RoleService — rol CRUD, izin yönetimi
 │   │   ├── api_key.py                  # APIKeyService — key oluşturma, doğrulama, iptal
 │   │   ├── notification.py             # NotificationService — bildirim + WebSocket push
@@ -492,15 +493,15 @@ Tüm değerleri `.env.example`'dan `.env`'e kopyaladıktan sonra ihtiyacına gö
 
 ### Rate Limiting
 
-| Değişken                | Varsayılan   | Uygulanan Endpoint'ler             |
-| ----------------------- | ------------ | ---------------------------------- |
-| `RATE_LIMIT_ENABLED`    | `true`       | Global rate limiting aç/kapat      |
-| `RATE_LIMIT_DEFAULT`    | `100/minute` | Tüm endpoint'ler                   |
-| `RATE_LIMIT_AUTH`       | `5/minute`   | Login, şifre sıfırlama             |
-| `RATE_LIMIT_AUTH_EMAIL` | `3/hour`     | E-posta doğrulama, şifremi unuttum |
-| `RATE_LIMIT_REGISTER`   | `3/hour`     | Kayıt                              |
-| `RATE_LIMIT_UPLOAD`     | `20/hour`    | Dosya yükleme                      |
-| `RATE_LIMIT_API_KEYS`   | `20/minute`  | API key oluşturma                  |
+| Değişken                | Varsayılan   | Uygulanan Endpoint'ler                          |
+| ----------------------- | ------------ | ----------------------------------------------- |
+| `RATE_LIMIT_ENABLED`    | `true`       | Global rate limiting aç/kapat                   |
+| `RATE_LIMIT_DEFAULT`    | `100/minute` | Tüm endpoint'ler                                |
+| `RATE_LIMIT_AUTH`       | `5/minute`   | Login, şifre sıfırlama                          |
+| `RATE_LIMIT_AUTH_EMAIL` | `3/hour`     | Şifremi unuttum, doğrulama tekrar, admin invite |
+| `RATE_LIMIT_REGISTER`   | `3/hour`     | Sadece client self-register                     |
+| `RATE_LIMIT_UPLOAD`     | `20/hour`    | Dosya yükleme                                   |
+| `RATE_LIMIT_API_KEYS`   | `20/minute`  | API key oluşturma                               |
 
 ### E-posta (SMTP)
 
@@ -534,7 +535,7 @@ Tüm değerleri `.env.example`'dan `.env`'e kopyaladıktan sonra ihtiyacına gö
 
 Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt şemaları ve deneme için: **http://localhost:8000/docs**
 
-> **Toplam:** ~53 endpoint (Auth: 10, TOTP: 5, Users: 11, Roles: 5, API Keys: 3, Notifications: 5, Uploads: 2, Audit Logs: 3, WebSocket: 1, Health: 3)
+> **Toplam:** ~50 endpoint (Auth: 10, TOTP: 5, Users: 13, Roles: 5, API Keys: 3, Notifications: 5, Uploads: 2, Audit Logs: 3, WebSocket: 1, Health: 3)
 
 ### 1. Auth (`/client/auth` + `/admin/auth` + `/shared/auth`) — 10 endpoint
 
@@ -551,7 +552,7 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 | POST   | `/client/auth/forgot-password`     | Şifre sıfırlama e-postası gönder                             | Hayır |
 | POST   | `/client/auth/reset-password`      | Token ile şifre sıfırla                                      | Hayır |
 
-> Şifre sıfırlama e-postasındaki link frontend'e yönlenir: `FRONTEND_URL/reset-password?token=...`. E-posta doğrulama linki ise backend doğrulama endpoint'ini kullanır: `APP_URL/api/v1/client/auth/verify-email?token=...`.
+> Şifre sıfırlama e-postasındaki link frontend'e yönlenir: `FRONTEND_URL/reset-password?token=...`. Aynı ekran, admin davet akışında ilk şifre belirleme için de kullanılır. E-posta doğrulama linki ise backend doğrulama endpoint'ini kullanır: `APP_URL/api/v1/client/auth/verify-email?token=...`.
 
 > Legacy route desteği yoktur. Resmi yüzeyler yalnız `/api/v1/client/*`, `/api/v1/admin/*` ve `/api/v1/shared/*` altındadır.
 
@@ -565,21 +566,27 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 | GET    | `/shared/auth/totp/backup-codes/count`      | Kalan yedek kod sayısını getir               | Evet |
 | POST   | `/shared/auth/totp/backup-codes/regenerate` | Yeni yedek kodlar üret                       | Evet |
 
-### 3. Kullanıcılar (`/shared/me` + `/admin/users`) — 11 endpoint
+### 3. Kullanıcılar (`/shared/me` + `/admin/users`) — 13 endpoint
 
-| Method | Path                                | Açıklama                                    | Auth  |
-| ------ | ----------------------------------- | ------------------------------------------- | ----- |
-| GET    | `/shared/me`                        | Mevcut kullanıcı profili                    | Evet  |
-| PATCH  | `/shared/me`                        | Profili güncelle                            | Evet  |
-| GET    | `/admin/users`                      | Tüm kullanıcıları listele (filtreli)        | Admin |
-| GET    | `/admin/users/stats`                | Aktif/pasif/toplam kullanıcı istatistikleri | Admin |
-| GET    | `/admin/users/deleted`              | Soft-delete kullanıcıları listele           | Admin |
-| GET    | `/admin/users/{user_id}`            | Belirli kullanıcıyı getir                   | Admin |
-| POST   | `/admin/users/{user_id}/activate`   | Kullanıcıyı aktif et                        | Admin |
-| POST   | `/admin/users/{user_id}/deactivate` | Kullanıcıyı deaktif et                      | Admin |
-| PATCH  | `/admin/users/{user_id}/role`       | Kullanıcı rolünü değiştir                   | Admin |
-| DELETE | `/admin/users/{user_id}`            | Kullanıcıyı soft-delete et                  | Admin |
-| POST   | `/admin/users/{user_id}/restore`    | Soft-delete kullanıcıyı geri al             | Admin |
+| Method | Path                                   | Açıklama                                            | Auth  |
+| ------ | -------------------------------------- | --------------------------------------------------- | ----- |
+| GET    | `/shared/me`                           | Mevcut kullanıcı profili                            | Evet  |
+| PATCH  | `/shared/me`                           | Profili güncelle                                    | Evet  |
+| GET    | `/admin/users`                         | Tüm kullanıcıları listele (filtreli)                | Admin |
+| POST   | `/admin/users`                         | Yeni admin kullanıcı oluştur + davet gönder         | Admin |
+| GET    | `/admin/users/stats`                   | Aktif/pasif/toplam kullanıcı istatistikleri         | Admin |
+| GET    | `/admin/users/deleted`                 | Soft-delete kullanıcıları listele                   | Admin |
+| GET    | `/admin/users/{user_id}`               | Belirli kullanıcıyı getir                           | Admin |
+| POST   | `/admin/users/{user_id}/resend-invite` | Şifresi kurulmamış admin için daveti yeniden gönder | Admin |
+| POST   | `/admin/users/{user_id}/activate`      | Kullanıcıyı aktif et                                | Admin |
+| POST   | `/admin/users/{user_id}/deactivate`    | Kullanıcıyı deaktif et                              | Admin |
+| PATCH  | `/admin/users/{user_id}/role`          | Kullanıcı rolünü değiştir                           | Admin |
+| DELETE | `/admin/users/{user_id}`               | Kullanıcıyı soft-delete et                          | Admin |
+| POST   | `/admin/users/{user_id}/restore`       | Soft-delete kullanıcıyı geri al                     | Admin |
+
+> `POST /admin/users` yalnızca `account_type=admin` kullanıcı üretir. Client kullanıcı oluşturma desteklenmez; client hesaplar sadece `/client/auth/register` üzerinden kendilerini kaydeder.
+
+> Admin kullanıcı oluşturma ve davet yeniden gönderme için ek permission gerekir: `users:create_admin`. Atanacak rolün ayrıca `admin:panel_access` taşıması zorunludur.
 
 ### 4. Roller (`/admin/roles`) — 5 endpoint
 
@@ -672,6 +679,13 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 **Adres:** http://localhost:8000/admin
 
 Yalnızca `account_type=admin` olan ve `admin:panel_access` yetkisine sahip kullanıcılar giriş yapabilir. Giriş bilgileri mevcut hesapla (e-posta + şifre) aynıdır; fakat client kullanıcılar admin panele giriş yapamaz.
+
+Yeni admin kullanıcı oluşturma akışı API-first çalışır:
+
+- Yetkili kullanıcı `POST /api/v1/admin/users` ile admin hesabı açar
+- Backend kullanıcıyı şifresiz oluşturur ve davet e-postası yollar
+- Kullanıcı e-postadaki `reset-password` linki üzerinden ilk şifresini belirler
+- İlk şifre kurulumu tamamlandığında hesap `is_verified=true` olur ve `/api/v1/admin/auth/login` ile giriş yapabilir
 
 Authorization kararları policy-first yaklaşımıyla uygulanır:
 
@@ -779,15 +793,11 @@ async def get_data(api_key: APIKey = Depends(require_api_key(scopes=["read"]))):
 `slowapi` + Redis backend ile distributed rate limiting:
 
 ```python
-# Endpoint bazlı limitler (app/core/rate_limit.py)
-RATE_LIMITS = {
-    "login":       "5/minute",    # Brute-force koruması
-    "register":    "3/minute",    # Spam hesap engelleme
-    "password":    "3/minute",    # Şifre sıfırlama abuse önleme
-    "upload":      "10/minute",   # Dosya yükleme limiti
-    "api":         "100/minute",  # Genel API limiti
-    "2fa":         "5/minute",    # 2FA deneme limiti
-}
+# Settings tabanlı limitler (app/core/config.py)
+RATE_LIMIT_AUTH = "5/minute"         # login, reset-password
+RATE_LIMIT_AUTH_EMAIL = "3/hour"     # forgot-password, resend-verification, admin invite
+RATE_LIMIT_REGISTER = "3/hour"       # client register
+RATE_LIMIT_UPLOAD = "20/hour"        # dosya yükleme
 ```
 
 | Özellik   | Detay                                                             |

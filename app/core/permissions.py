@@ -15,6 +15,7 @@ class Permission(str, PyEnum):
 
     Attributes:
         ADMIN_PANEL_ACCESS: Admin paneline erişim
+        USERS_CREATE_ADMIN: Admin kullanıcı oluşturma ve davet yeniden gönderme
         USERS_READ: Kullanıcı listesini görüntüleme
         USERS_WRITE: Kullanıcı bilgilerini güncelleme
         USERS_DELETE: Kullanıcıyı silme / geri yükleme
@@ -32,6 +33,7 @@ class Permission(str, PyEnum):
     ADMIN_PANEL_ACCESS = "admin:panel_access"
 
     # Users
+    USERS_CREATE_ADMIN = "users:create_admin"
     USERS_READ = "users:read"
     USERS_WRITE = "users:write"
     USERS_DELETE = "users:delete"

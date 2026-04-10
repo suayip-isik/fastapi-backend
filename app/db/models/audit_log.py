@@ -34,6 +34,8 @@ class AuditAction(str, PyEnum):
         USER_DEACTIVATED: Kullanıcı hesabı deaktif edildi
         USER_ACTIVATED: Kullanıcı hesabı aktif edildi
         ROLE_CHANGED: Kullanıcı rolü değiştirildi
+        ADMIN_USER_CREATED: Yeni admin kullanıcı oluşturuldu
+        ADMIN_INVITE_RESENT: Admin kullanıcı daveti yeniden gönderildi
         USER_DELETED: Kullanıcı hesabı silindi (soft delete)
         USER_RESTORED: Silinen kullanıcı geri yüklendi
         FILE_UPLOADED: Dosya yüklendi
@@ -66,6 +68,8 @@ class AuditAction(str, PyEnum):
     USER_DEACTIVATED = "user_deactivated"
     USER_ACTIVATED = "user_activated"
     ROLE_CHANGED = "role_changed"
+    ADMIN_USER_CREATED = "admin_user_created"
+    ADMIN_INVITE_RESENT = "admin_invite_resent"
     USER_DELETED = "user_deleted"
     USER_RESTORED = "user_restored"
     # Account

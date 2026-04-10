@@ -111,7 +111,11 @@ class AccountService(AuditableMixin):
         if not user or not user.is_active:
             raise InvalidTokenError(t("error.auth.user_not_found"))
 
-        await self._repo.update(user.id, hashed_password=hash_password(new_password))
+        update_data: dict[str, object] = {"hashed_password": hash_password(new_password)}
+        if user.account_type == "admin" and not user.is_verified:
+            update_data["is_verified"] = True
+
+        await self._repo.update(user.id, **update_data)
         await self._audit_log(AuditAction.PASSWORD_RESET, user_id=user.id)
 
     # ── Profile Management ─────────────────────────────────────────────────────

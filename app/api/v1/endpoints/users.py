@@ -3,12 +3,10 @@ Users endpoint'leri.
 Kullanıcı listeleme, güncelleme, silme işlemleri.
 """
 
-from __future__ import annotations
-
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import (
@@ -17,16 +15,19 @@ from app.api.dependencies.auth import (
     require_permissions,
     require_surface_access,
 )
-from app.api.dependencies.infrastructure import CacheServiceDep
+from app.api.dependencies.infrastructure import CacheServiceDep, RedisPortDep, TaskQueuePortDep
 from app.api.dependencies.services import get_audit_service
+from app.core.config import settings
 from app.core.exceptions import InsufficientPermissionsError
 from app.core.i18n import t
+from app.core.limiter import limiter
 from app.core.permissions import Permission
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.common import MessageResponse, PaginatedResponse, calculate_pages
 from app.schemas.role import AssignRoleRequest
 from app.schemas.user import (
+    CreateAdminUserRequest,
     DeletedUserResponse,
     UpdateUserRequest,
     UserResponse,
@@ -40,6 +41,7 @@ shared_router = APIRouter(prefix="/shared/me", tags=["Shared Profile"])
 
 # Modül yüklendiğinde bir kez oluşturulur — her request'te tek Redis GET maliyeti.
 _AdminSurfaceDep = Annotated[User, Depends(require_surface_access(Surface.ADMIN))]
+_UsersCreateAdminDep = Annotated[User, Depends(require_permissions(Permission.USERS_CREATE_ADMIN))]
 _UsersReadDep = Annotated[User, Depends(require_permissions(Permission.USERS_READ))]
 _UsersWriteDep = Annotated[User, Depends(require_permissions(Permission.USERS_WRITE))]
 _UsersDeleteDep = Annotated[User, Depends(require_permissions(Permission.USERS_DELETE))]
@@ -49,9 +51,11 @@ def get_user_service(
     db: Annotated[AsyncSession, Depends(get_db)],
     audit: Annotated[AuditService, Depends(get_audit_service)],
     cache: CacheServiceDep,
+    redis: RedisPortDep,
+    task_queue: TaskQueuePortDep,
 ) -> UserService:
     """UserService dependency factory'si."""
-    return UserService(db, audit, cache=cache)
+    return UserService(db, audit, cache=cache, redis=redis, task_queue=task_queue)
 
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
@@ -153,6 +157,19 @@ async def list_users(
     )
 
 
+@admin_router.post("", response_model=UserResponse, status_code=201)
+@limiter.limit(settings.RATE_LIMIT_AUTH_EMAIL)
+async def create_admin_user(
+    request: Request,
+    data: CreateAdminUserRequest,
+    _surface: _AdminSurfaceDep,
+    _: _UsersCreateAdminDep,
+    service: UserServiceDep,
+) -> UserResponse:
+    """Yeni bir admin kullanıcı oluşturur ve şifre belirleme daveti yollar."""
+    return await service.create_admin_user(data)
+
+
 @admin_router.get("/stats", response_model=UserStatsResponse)
 async def get_user_stats(
     _surface: _AdminSurfaceDep,
@@ -250,6 +267,20 @@ async def get_user(
         NotFoundError: Belirtilen ID'ye sahip kullanıcı bulunamazsa.
     """
     return await service.get_by_id_cached(user_id)
+
+
+@admin_router.post("/{user_id}/resend-invite", response_model=MessageResponse)
+@limiter.limit(settings.RATE_LIMIT_AUTH_EMAIL)
+async def resend_admin_invite(
+    request: Request,
+    user_id: UUID,
+    _surface: _AdminSurfaceDep,
+    _: _UsersCreateAdminDep,
+    service: UserServiceDep,
+) -> MessageResponse:
+    """Şifresi henüz belirlenmemiş admin kullanıcıya davet e-postasını yeniden yollar."""
+    await service.resend_admin_invite(user_id)
+    return MessageResponse(message=t("auth.admin_invite_resent.success"))
 
 
 @admin_router.post("/{user_id}/activate", response_model=UserResponse)

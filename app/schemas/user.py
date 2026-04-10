@@ -12,6 +12,7 @@ from app.schemas.role import AssignRoleRequest, RoleInfo
 __all__ = [
     "UserResponse",
     "DeletedUserResponse",
+    "CreateAdminUserRequest",
     "UpdateUserRequest",
     "UserStatsResponse",
     "AssignRoleRequest",
@@ -74,6 +75,15 @@ class UpdateUserRequest(BaseModel):
     full_name: str | None = Field(default=None, max_length=255)
     username: str | None = Field(default=None, max_length=50)
     password: str | None = Field(default=None, min_length=8, max_length=128)
+
+
+class CreateAdminUserRequest(BaseModel):
+    """Admin panelinden yeni admin kullanıcı oluşturma isteği."""
+
+    email: EmailStr = Field(..., max_length=255)
+    role_name: str = Field(..., min_length=1, max_length=50)
+    full_name: str | None = Field(default=None, max_length=255)
+    username: str | None = Field(default=None, max_length=50)
 
 
 class UserStatsResponse(BaseModel):
