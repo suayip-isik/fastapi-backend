@@ -237,6 +237,15 @@ def create_refresh_token(user_id: str) -> tuple[str, str]:
     return token, jti
 
 
+def is_token_revoked_after(iat: datetime, revoked_after: datetime | None) -> bool:
+    """Token üretim zamanının kullanıcı cutoff zamanından eski olup olmadığını kontrol et."""
+    if revoked_after is None:
+        return False
+    issued_at = iat.astimezone(UTC)
+    cutoff = revoked_after.astimezone(UTC)
+    return issued_at <= cutoff
+
+
 def decode_token(token: str) -> TokenPayload:
     """JWT token'ı doğrular ve payload'ı parse eder.
 

@@ -13,14 +13,23 @@ from app.adapters.infrastructure import RedisAdapter
 from app.core.exceptions import AppError
 from app.core.logging import get_logger
 from app.core.permissions import has_admin_panel_access
-from app.core.security import TokenType, create_access_token, decode_token, verify_password
+from app.core.security import (
+    TokenType,
+    create_access_token,
+    decode_token,
+    is_token_revoked_after,
+    verify_password,
+)
 from app.db.models.user import AccountType, User
 from app.db.repositories.user import UserRepository
 from app.db.session_provider import AsyncSessionFactoryProtocol, get_default_session_factory
+from app.services._keys import BLACKLIST_KEY
 from app.services.permissions import PermissionCache, PermissionProvider, PermissionQueryService
 
 if TYPE_CHECKING:
     from starlette.requests import Request
+
+    from app.ports.infrastructure import RedisPort
 
 logger = get_logger(__name__)
 
@@ -58,8 +67,10 @@ class AdminAuthUseCase:
         *,
         user_reader: AdminUserReaderProtocol,
         permission_provider: PermissionProvider | None = None,
+        redis: RedisPort | None = None,
     ) -> None:
         self._user_reader = user_reader
+        self._redis = redis or RedisAdapter()
         self._permission_provider = permission_provider or PermissionProvider(
             query_service=PermissionQueryService(get_default_session_factory()),
             cache=PermissionCache(RedisAdapter()),
@@ -102,9 +113,13 @@ class AdminAuthUseCase:
             payload = decode_token(token)
             if payload.type != TokenType.ACCESS:
                 return False
+            if await self._redis.exists(BLACKLIST_KEY.format(payload.jti)):
+                return False
 
             user = await self._user_reader.get_by_id(UUID(payload.sub))
             if not user or not user.is_active:
+                return False
+            if is_token_revoked_after(payload.iat, user.session_revoked_after):
                 return False
 
             if user.account_type != AccountType.ADMIN.value:

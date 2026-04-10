@@ -29,7 +29,7 @@ from app.core.exceptions import (
 )
 from app.core.logging import get_logger
 from app.core.permissions import Permission
-from app.core.security import TokenType, decode_token
+from app.core.security import TokenType, decode_token, is_token_revoked_after
 from app.db.models.user import AccountType, User
 from app.db.repositories.user import UserRepository
 from app.db.session import get_db
@@ -150,6 +150,8 @@ async def get_current_auth(
     user = await user_repo.get_by_id(UUID(payload.sub))
     if not user or not user.is_active:
         raise AuthenticationError("Kullanıcı bulunamadı veya pasif.")
+    if is_token_revoked_after(payload.iat, user.session_revoked_after):
+        raise InvalidTokenError("Token geçersiz kılınmış.")
 
     return AuthContext(user=user, auth_method=AuthMethod.BEARER)
 

@@ -439,7 +439,7 @@ async def test_resend_admin_invite_rejects_user_with_password(
     user_id = create_res.json()["id"]
     token = mock_enqueue.call_args.args[2]
     await client.post(
-        "/api/v1/client/auth/reset-password",
+        "/api/v1/shared/auth/reset-password",
         json={"token": token, "new_password": "NewStrongPass2"},
     )
     mock_enqueue.reset_mock()

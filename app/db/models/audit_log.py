@@ -29,6 +29,8 @@ class AuditAction(str, PyEnum):
         EMAIL_VERIFIED: Email doğrulama tamamlandı
         PASSWORD_RESET_REQUESTED: Şifre sıfırlama talebi
         PASSWORD_RESET: Şifre sıfırlama tamamlandı
+        ADMIN_PASSWORD_RESET_REQUESTED: Admin şifre sıfırlama talebi
+        ADMIN_PASSWORD_RESET: Admin şifre sıfırlama tamamlandı
         TOKEN_REFRESHED: Access token yenilendi
         PROFILE_UPDATED: Kullanıcı profili güncellendi
         USER_DEACTIVATED: Kullanıcı hesabı deaktif edildi
@@ -62,6 +64,8 @@ class AuditAction(str, PyEnum):
     EMAIL_VERIFIED = "email_verified"
     PASSWORD_RESET_REQUESTED = "password_reset_requested"
     PASSWORD_RESET = "password_reset"
+    ADMIN_PASSWORD_RESET_REQUESTED = "admin_password_reset_requested"
+    ADMIN_PASSWORD_RESET = "admin_password_reset"
     TOKEN_REFRESHED = "token_refreshed"
     # User
     PROFILE_UPDATED = "profile_updated"

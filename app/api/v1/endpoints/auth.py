@@ -413,10 +413,10 @@ async def resend_verification(
 # ── Password Reset ────────────────────────────────────────────────────────────
 
 
-@client_router.post(
+@shared_router.post(
     "/forgot-password",
     response_model=MessageResponse,
-    openapi_extra={"x-surfaces": ["client"]},
+    openapi_extra={"x-surfaces": ["shared"]},
 )
 @limiter.limit(settings.RATE_LIMIT_AUTH_EMAIL)
 async def forgot_password(
@@ -447,7 +447,7 @@ async def forgot_password(
 
     Example:
         ```bash
-        curl -X POST http://localhost:8000/api/v1/client/auth/forgot-password \\
+        curl -X POST http://localhost:8000/api/v1/shared/auth/forgot-password \\
             -H "Content-Type: application/json" \\
             -d '{"email": "user@example.com"}'
         ```
@@ -456,10 +456,10 @@ async def forgot_password(
     return MessageResponse(message=t("auth.forgot_password.success"))
 
 
-@client_router.post(
+@shared_router.post(
     "/reset-password",
     response_model=MessageResponse,
-    openapi_extra={"x-surfaces": ["client"]},
+    openapi_extra={"x-surfaces": ["shared"]},
 )
 @limiter.limit(settings.RATE_LIMIT_AUTH)
 async def reset_password(
@@ -493,7 +493,7 @@ async def reset_password(
 
     Example:
         ```bash
-        curl -X POST http://localhost:8000/api/v1/client/auth/reset-password \\
+        curl -X POST http://localhost:8000/api/v1/shared/auth/reset-password \\
             -H "Content-Type: application/json" \\
             -d '{"token": "eyJhbGciOiJIUzI1NiIs...", "new_password": "NewSecure123!"}'
         ```

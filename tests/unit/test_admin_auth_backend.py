@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
@@ -34,6 +35,7 @@ def _user(
         hashed_password="hashed",
         account_type=account_type.value,
         is_active=is_active,
+        session_revoked_after=None,
     )
 
 
@@ -123,12 +125,23 @@ async def test_login_rejects_invalid_password() -> None:
 async def test_authenticate_accepts_admin_account_with_panel_permission() -> None:
     user = _user()
     request = _DummyRequest(session={"admin_token": "token-123"})
-    payload = SimpleNamespace(sub=str(user.id), type="access")
+    payload = SimpleNamespace(
+        sub=str(user.id),
+        type="access",
+        jti="jti-123",
+        iat=datetime.now(UTC),
+    )
     user_reader = AsyncMock()
     user_reader.get_by_id.return_value = user
     permission_provider = AsyncMock()
     permission_provider.get_permissions.return_value = {Permission.ADMIN_PANEL_ACCESS.value}
-    use_case = AdminAuthUseCase(user_reader=user_reader, permission_provider=permission_provider)
+    redis = AsyncMock()
+    redis.exists.return_value = False
+    use_case = AdminAuthUseCase(
+        user_reader=user_reader,
+        permission_provider=permission_provider,
+        redis=redis,
+    )
     backend = AdminAuthBackend(secret_key="test", use_case=use_case)
 
     with patch("app.admin.auth.decode_token", return_value=payload):
@@ -139,10 +152,19 @@ async def test_authenticate_accepts_admin_account_with_panel_permission() -> Non
 async def test_authenticate_rejects_client_account_type() -> None:
     user = _user(account_type=AccountType.CLIENT)
     request = _DummyRequest(session={"admin_token": "token-123"})
-    payload = SimpleNamespace(sub=str(user.id), type="access")
+    payload = SimpleNamespace(
+        sub=str(user.id),
+        type="access",
+        jti="jti-123",
+        iat=datetime.now(UTC),
+    )
     user_reader = AsyncMock()
     user_reader.get_by_id.return_value = user
-    use_case = AdminAuthUseCase(user_reader=user_reader, permission_provider=AsyncMock())
+    redis = AsyncMock()
+    redis.exists.return_value = False
+    use_case = AdminAuthUseCase(
+        user_reader=user_reader, permission_provider=AsyncMock(), redis=redis
+    )
     backend = AdminAuthBackend(secret_key="test", use_case=use_case)
 
     with patch("app.admin.auth.decode_token", return_value=payload):
@@ -164,10 +186,19 @@ async def test_authenticate_rejects_missing_session_token() -> None:
 async def test_authenticate_rejects_inactive_admin_user() -> None:
     user = _user(is_active=False)
     request = _DummyRequest(session={"admin_token": "token-123"})
-    payload = SimpleNamespace(sub=str(user.id), type="access")
+    payload = SimpleNamespace(
+        sub=str(user.id),
+        type="access",
+        jti="jti-123",
+        iat=datetime.now(UTC),
+    )
     user_reader = AsyncMock()
     user_reader.get_by_id.return_value = user
-    use_case = AdminAuthUseCase(user_reader=user_reader, permission_provider=AsyncMock())
+    redis = AsyncMock()
+    redis.exists.return_value = False
+    use_case = AdminAuthUseCase(
+        user_reader=user_reader, permission_provider=AsyncMock(), redis=redis
+    )
     backend = AdminAuthBackend(secret_key="test", use_case=use_case)
 
     with patch("app.admin.auth.decode_token", return_value=payload):
@@ -178,7 +209,12 @@ async def test_authenticate_rejects_inactive_admin_user() -> None:
 async def test_authenticate_rejects_wrong_token_type() -> None:
     user = _user()
     request = _DummyRequest(session={"admin_token": "token-123"})
-    payload = SimpleNamespace(sub=str(user.id), type=TokenType.REFRESH)
+    payload = SimpleNamespace(
+        sub=str(user.id),
+        type=TokenType.REFRESH,
+        jti="jti-123",
+        iat=datetime.now(UTC),
+    )
     backend = AdminAuthBackend(
         secret_key="test",
         use_case=AdminAuthUseCase(user_reader=AsyncMock(), permission_provider=AsyncMock()),
@@ -197,6 +233,56 @@ async def test_authenticate_rejects_app_error() -> None:
     )
 
     with patch("app.admin.auth.decode_token", side_effect=InvalidTokenError("bad token")):
+        assert await backend.authenticate(request) is False
+
+
+@pytest.mark.asyncio
+async def test_authenticate_rejects_blacklisted_token() -> None:
+    user = _user()
+    request = _DummyRequest(session={"admin_token": "token-123"})
+    payload = SimpleNamespace(
+        sub=str(user.id),
+        type=TokenType.ACCESS,
+        jti="jti-123",
+        iat=datetime.now(UTC),
+    )
+    user_reader = AsyncMock()
+    redis = AsyncMock()
+    redis.exists.return_value = True
+    use_case = AdminAuthUseCase(
+        user_reader=user_reader, permission_provider=AsyncMock(), redis=redis
+    )
+    backend = AdminAuthBackend(secret_key="test", use_case=use_case)
+
+    with patch("app.admin.auth.decode_token", return_value=payload):
+        assert await backend.authenticate(request) is False
+
+
+@pytest.mark.asyncio
+async def test_authenticate_rejects_token_older_than_session_cutoff() -> None:
+    user = _user()
+    user.session_revoked_after = datetime.now(UTC)
+    request = _DummyRequest(session={"admin_token": "token-123"})
+    payload = SimpleNamespace(
+        sub=str(user.id),
+        type=TokenType.ACCESS,
+        jti="jti-123",
+        iat=user.session_revoked_after - timedelta(seconds=1),
+    )
+    user_reader = AsyncMock()
+    user_reader.get_by_id.return_value = user
+    permission_provider = AsyncMock()
+    permission_provider.get_permissions.return_value = {Permission.ADMIN_PANEL_ACCESS.value}
+    redis = AsyncMock()
+    redis.exists.return_value = False
+    use_case = AdminAuthUseCase(
+        user_reader=user_reader,
+        permission_provider=permission_provider,
+        redis=redis,
+    )
+    backend = AdminAuthBackend(secret_key="test", use_case=use_case)
+
+    with patch("app.admin.auth.decode_token", return_value=payload):
         assert await backend.authenticate(request) is False
 
 

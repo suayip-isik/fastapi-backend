@@ -8,8 +8,11 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy import update as sa_update
 
+from app.db.models.api_key import APIKey
 from app.db.models.role import Role
 from app.db.models.user import AccountType, User
+from app.services._keys import LOGIN_PARTIAL_KEY
+from app.tasks.worker import send_admin_password_reset_email, send_password_reset_email
 
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock
@@ -288,7 +291,7 @@ async def test_forgot_password_returns_200_always(client: AsyncClient, mock_enqu
     """Var olmayan kullanıcı için de 200 dönmeli (user enumeration yok)."""
     mock_enqueue.reset_mock()
     res = await client.post(
-        "/api/v1/client/auth/forgot-password", json={"email": "nobody@example.com"}
+        "/api/v1/shared/auth/forgot-password", json={"email": "nobody@example.com"}
     )
     assert res.status_code == 200
     mock_enqueue.assert_not_called()
@@ -307,10 +310,39 @@ async def test_forgot_password_existing_user(client: AsyncClient, mock_enqueue: 
     mock_enqueue.reset_mock()
 
     res = await client.post(
-        "/api/v1/client/auth/forgot-password", json={"email": "reset@example.com"}
+        "/api/v1/shared/auth/forgot-password", json={"email": "reset@example.com"}
     )
     assert res.status_code == 200
     mock_enqueue.assert_called_once()
+    assert mock_enqueue.call_args.args[0] is send_password_reset_email
+
+
+@pytest.mark.asyncio
+async def test_forgot_password_existing_admin_uses_admin_email_task(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    mock_enqueue: AsyncMock,
+):
+    """Admin hesap shared forgot-password ile admin reset maili almalı."""
+    email = "admin_reset@example.com"
+    await client.post(
+        "/api/v1/client/auth/register", json={"email": email, "password": "StrongPass1"}
+    )
+
+    result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
+    admin_role_id = result.scalar_one()
+    await db_session.execute(
+        sa_update(User)
+        .where(User.email == email)
+        .values(role_id=admin_role_id, account_type=AccountType.ADMIN.value)
+    )
+    await db_session.commit()
+    mock_enqueue.reset_mock()
+
+    res = await client.post("/api/v1/shared/auth/forgot-password", json={"email": email})
+    assert res.status_code == 200
+    mock_enqueue.assert_called_once()
+    assert mock_enqueue.call_args.args[0] is send_admin_password_reset_email
 
 
 @pytest.mark.asyncio
@@ -329,11 +361,11 @@ async def test_reset_password_success(
     )
     mock_enqueue.reset_mock()
 
-    await client.post("/api/v1/client/auth/forgot-password", json={"email": "pwreset@example.com"})
+    await client.post("/api/v1/shared/auth/forgot-password", json={"email": "pwreset@example.com"})
     token = mock_enqueue.call_args.args[2]
 
     res = await client.post(
-        "/api/v1/client/auth/reset-password",
+        "/api/v1/shared/auth/reset-password",
         json={
             "token": token,
             "new_password": "NewStrongPass2",
@@ -385,7 +417,7 @@ async def test_reset_password_marks_invited_admin_verified(
     token = mock_enqueue.call_args.args[2]
 
     reset_res = await client.post(
-        "/api/v1/client/auth/reset-password",
+        "/api/v1/shared/auth/reset-password",
         json={"token": token, "new_password": "NewStrongPass2"},
     )
     assert reset_res.status_code == 200
@@ -397,10 +429,70 @@ async def test_reset_password_marks_invited_admin_verified(
 
 
 @pytest.mark.asyncio
+async def test_shared_reset_accepts_admin_token(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    mock_enqueue: AsyncMock,
+):
+    """Admin token shared reset yüzeyinde kullanılabilmeli."""
+    creator_email = "creator_surface@example.com"
+    headers = await _register_and_login(client, creator_email)
+
+    result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
+    admin_role_id = result.scalar_one()
+    await db_session.execute(
+        sa_update(User)
+        .where(User.email == creator_email)
+        .values(role_id=admin_role_id, account_type=AccountType.ADMIN.value)
+    )
+    await db_session.commit()
+    admin_headers = {"Authorization": f"Bearer {headers['access_token']}"}
+
+    mock_enqueue.reset_mock()
+    create_res = await client.post(
+        "/api/v1/admin/users",
+        json={"email": "surface_admin@example.com", "role_name": "admin"},
+        headers=admin_headers,
+    )
+    assert create_res.status_code == 201
+    token = mock_enqueue.call_args.args[2]
+
+    res = await client.post(
+        "/api/v1/shared/auth/reset-password",
+        json={"token": token, "new_password": "NewStrongPass2"},
+    )
+    assert res.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_shared_reset_accepts_client_token(
+    client: AsyncClient,
+    mock_enqueue: AsyncMock,
+):
+    """Client token shared reset yüzeyinde kullanılabilmeli."""
+    await client.post(
+        "/api/v1/client/auth/register",
+        json={"email": "surface_client@example.com", "password": "StrongPass1"},
+    )
+    mock_enqueue.reset_mock()
+    await client.post(
+        "/api/v1/shared/auth/forgot-password",
+        json={"email": "surface_client@example.com"},
+    )
+    token = mock_enqueue.call_args.args[2]
+
+    res = await client.post(
+        "/api/v1/shared/auth/reset-password",
+        json={"token": token, "new_password": "NewStrongPass2"},
+    )
+    assert res.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_reset_password_invalid_token(client: AsyncClient):
     """Geçersiz token 401 döndürmeli."""
     res = await client.post(
-        "/api/v1/client/auth/reset-password",
+        "/api/v1/shared/auth/reset-password",
         json={
             "token": "bad-token-xyz",
             "new_password": "NewStrongPass2",
@@ -424,11 +516,11 @@ async def test_reset_password_token_one_time_use(
     )
     mock_enqueue.reset_mock()
 
-    await client.post("/api/v1/client/auth/forgot-password", json={"email": "oneuse@example.com"})
+    await client.post("/api/v1/shared/auth/forgot-password", json={"email": "oneuse@example.com"})
     token = mock_enqueue.call_args.args[2]
 
     await client.post(
-        "/api/v1/client/auth/reset-password",
+        "/api/v1/shared/auth/reset-password",
         json={
             "token": token,
             "new_password": "NewStrongPass2",
@@ -437,13 +529,148 @@ async def test_reset_password_token_one_time_use(
 
     # İkinci kullanım başarısız olmalı
     res = await client.post(
-        "/api/v1/client/auth/reset-password",
+        "/api/v1/shared/auth/reset-password",
         json={
             "token": token,
             "new_password": "AnotherPass3",
         },
     )
     assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_client_reset_revokes_existing_sessions_and_api_keys(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    fake_redis: fakeredis_aioredis.FakeRedis,
+    mock_enqueue: AsyncMock,
+):
+    """Client reset sonrası access/refresh/partial session ve API key'ler geçersiz olmalı."""
+    email = "client_revoke@example.com"
+    tokens = await _register_and_login(client, email)
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    create_key = await client.post(
+        "/api/v1/shared/api-keys",
+        json={"name": "Primary Key"},
+        headers=headers,
+    )
+    assert create_key.status_code == 201
+
+    user = (await db_session.execute(select(User).where(User.email == email))).scalar_one()
+    user_id = user.id
+    partial_token = "partial-reset-client"
+    await fake_redis.set(
+        LOGIN_PARTIAL_KEY.format(partial_token),
+        f"{user_id}|{user.created_at.isoformat()}",
+    )
+
+    mock_enqueue.reset_mock()
+    await client.post("/api/v1/shared/auth/forgot-password", json={"email": email})
+    token = mock_enqueue.call_args.args[2]
+
+    reset_res = await client.post(
+        "/api/v1/shared/auth/reset-password",
+        json={"token": token, "new_password": "NewStrongPass2"},
+    )
+    assert reset_res.status_code == 200
+
+    me_res = await client.get("/api/v1/shared/me", headers=headers)
+    assert me_res.status_code == 401
+
+    refresh_res = await client.post(
+        "/api/v1/shared/auth/refresh",
+        json={"refresh_token": tokens["refresh_token"]},
+    )
+    assert refresh_res.status_code == 401
+
+    partial_res = await client.post(
+        "/api/v1/shared/auth/totp-challenge",
+        json={"partial_token": partial_token, "code": "123456"},
+    )
+    assert partial_res.status_code == 401
+
+    api_keys = (
+        (await db_session.execute(select(APIKey).where(APIKey.user_id == user_id))).scalars().all()
+    )
+    assert api_keys
+    assert all(api_key.is_active is False for api_key in api_keys)
+
+
+@pytest.mark.asyncio
+async def test_admin_reset_revokes_existing_sessions_and_api_keys(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    fake_redis: fakeredis_aioredis.FakeRedis,
+    mock_enqueue: AsyncMock,
+):
+    """Admin reset sonrası access/refresh/partial session ve API key'ler geçersiz olmalı."""
+    email = "revoke_admin@example.com"
+    password = "StrongPass1"
+    await client.post("/api/v1/client/auth/register", json={"email": email, "password": password})
+
+    result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
+    admin_role_id = result.scalar_one()
+    await db_session.execute(
+        sa_update(User)
+        .where(User.email == email)
+        .values(role_id=admin_role_id, account_type=AccountType.ADMIN.value)
+    )
+    await db_session.commit()
+
+    login = await client.post(
+        "/api/v1/admin/auth/login",
+        json={"email": email, "password": password},
+    )
+    assert login.status_code == 200
+    tokens = login.json()
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    create_key = await client.post(
+        "/api/v1/shared/api-keys",
+        json={"name": "Admin Key"},
+        headers=headers,
+    )
+    assert create_key.status_code == 201
+
+    user = (await db_session.execute(select(User).where(User.email == email))).scalar_one()
+    user_id = user.id
+    partial_token = "partial-reset-admin"
+    await fake_redis.set(
+        LOGIN_PARTIAL_KEY.format(partial_token),
+        f"{user_id}|{user.created_at.isoformat()}",
+    )
+
+    mock_enqueue.reset_mock()
+    await client.post("/api/v1/shared/auth/forgot-password", json={"email": email})
+    token = mock_enqueue.call_args.args[2]
+
+    reset_res = await client.post(
+        "/api/v1/shared/auth/reset-password",
+        json={"token": token, "new_password": "NewStrongPass2"},
+    )
+    assert reset_res.status_code == 200
+
+    users_res = await client.get("/api/v1/admin/users", headers=headers)
+    assert users_res.status_code == 401
+
+    refresh_res = await client.post(
+        "/api/v1/shared/auth/refresh",
+        json={"refresh_token": tokens["refresh_token"]},
+    )
+    assert refresh_res.status_code == 401
+
+    partial_res = await client.post(
+        "/api/v1/shared/auth/totp-challenge",
+        json={"partial_token": partial_token, "code": "123456"},
+    )
+    assert partial_res.status_code == 401
+
+    api_keys = (
+        (await db_session.execute(select(APIKey).where(APIKey.user_id == user_id))).scalars().all()
+    )
+    assert api_keys
+    assert all(api_key.is_active is False for api_key in api_keys)
 
 
 # ── Token Blacklist + Refresh Rotation ────────────────────────────────────────

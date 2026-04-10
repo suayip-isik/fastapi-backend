@@ -10,6 +10,7 @@ Sorumluluklar:
 from __future__ import annotations
 
 import secrets
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -19,10 +20,16 @@ from app.core.exceptions import AuthenticationError, InvalidTokenError, NotFound
 from app.core.i18n import language_var, t
 from app.core.security import hash_password, verify_password
 from app.db.models.audit_log import AuditAction
+from app.db.models.user import AccountType
 from app.db.repositories.user import UserRepository
 from app.services._keys import EMAIL_VERIFY_KEY, PASSWORD_RESET_KEY
+from app.services.api_key import APIKeyService
 from app.services.base import AuditableMixin
-from app.tasks.worker import send_password_reset_email, send_verification_email
+from app.tasks.worker import (
+    send_admin_password_reset_email,
+    send_password_reset_email,
+    send_verification_email,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,6 +50,7 @@ class AccountService(AuditableMixin):
         task_queue: TaskQueuePort | None = None,
     ) -> None:
         """AccountService nesnesini gerekli bagimliliklarla olusturur."""
+        self._session = session
         self._repo = UserRepository(session)
         self._audit = audit
         self._redis = redis or RedisAdapter()
@@ -83,40 +91,78 @@ class AccountService(AuditableMixin):
 
     # ── Password Reset ────────────────────────────────────────────────────────
 
-    async def forgot_password(self, email: str) -> None:
+    async def forgot_password(
+        self,
+        email: str,
+    ) -> None:
         """Şifre sıfırlama e-postası gönder. Kullanıcı yoksa sessizce döner."""
         user = await self._repo.get_active_by_email(email)
         if not user or not user.hashed_password:
             return  # Şifresi olmayan ya da var olmayan e-posta — user enumeration yok
 
+        account_type = AccountType(user.account_type)
         token = secrets.token_urlsafe(32)
         await self._redis.setex(
             PASSWORD_RESET_KEY.format(token), settings.PASSWORD_RESET_TTL, str(user.id)
         )
         await self._task_queue.enqueue(
-            send_password_reset_email, user.email, token, language_var.get()
+            self._get_password_reset_task(account_type),
+            user.email,
+            token,
+            language_var.get(),
         )
 
-        await self._audit_log(AuditAction.PASSWORD_RESET_REQUESTED, user_id=user.id)
+        await self._audit_log(
+            self._get_password_reset_requested_action(account_type),
+            user_id=user.id,
+        )
 
-    async def reset_password(self, token: str, new_password: str) -> None:
+    async def reset_password(
+        self,
+        token: str,
+        new_password: str,
+    ) -> None:
         """Token geçerliyse şifreyi güncelle."""
         user_id = await self._redis.get(PASSWORD_RESET_KEY.format(token))
         if not user_id:
             raise InvalidTokenError(t("error.auth.invalid_reset_token"))
 
-        await self._redis.delete(PASSWORD_RESET_KEY.format(token))
-
         user = await self._repo.get_by_id(UUID(user_id))
         if not user or not user.is_active:
             raise InvalidTokenError(t("error.auth.user_not_found"))
 
-        update_data: dict[str, object] = {"hashed_password": hash_password(new_password)}
-        if user.account_type == "admin" and not user.is_verified:
+        await self._redis.delete(PASSWORD_RESET_KEY.format(token))
+
+        account_type = AccountType(user.account_type)
+        revoked_after = datetime.now(UTC)
+        update_data: dict[str, object] = {
+            "hashed_password": hash_password(new_password),
+            "session_revoked_after": revoked_after,
+        }
+        if user.account_type == AccountType.ADMIN.value and not user.is_verified:
             update_data["is_verified"] = True
 
         await self._repo.update(user.id, **update_data)
-        await self._audit_log(AuditAction.PASSWORD_RESET, user_id=user.id)
+        await APIKeyService(self._session, audit=self._audit).revoke_all_for_user(
+            user.id,
+            reason="password_reset",
+        )
+        await self._audit_log(self._get_password_reset_action(account_type), user_id=user.id)
+
+    def _get_password_reset_task(self, account_type: AccountType):
+        if account_type is AccountType.ADMIN:
+            return send_admin_password_reset_email
+        return send_password_reset_email
+
+    def _get_password_reset_requested_action(self, account_type: AccountType) -> AuditAction:
+        if account_type is AccountType.ADMIN:
+            return AuditAction.ADMIN_PASSWORD_RESET_REQUESTED
+        return AuditAction.PASSWORD_RESET_REQUESTED
+
+    def _get_password_reset_action(self, account_type: AccountType) -> AuditAction:
+        if account_type is AccountType.ADMIN:
+            return AuditAction.ADMIN_PASSWORD_RESET
+        return AuditAction.PASSWORD_RESET
 
     # ── Profile Management ─────────────────────────────────────────────────────
 

@@ -34,9 +34,13 @@ async def test_client_openapi_contains_client_and_shared_not_admin(client: Async
     assert res.status_code == 200
     paths = res.json()["paths"]
     assert "/api/v1/client/auth/login" in paths
+    assert "/api/v1/shared/auth/forgot-password" in paths
+    assert "/api/v1/shared/auth/reset-password" in paths
     assert "/api/v1/shared/me" in paths
     assert "/api/v1/admin/users" not in paths
     assert "/api/v1/admin/auth/login" not in paths
+    assert "/api/v1/client/auth/forgot-password" not in paths
+    assert "/api/v1/client/auth/reset-password" not in paths
 
 
 @pytest.mark.asyncio
@@ -46,8 +50,25 @@ async def test_admin_openapi_contains_admin_and_shared_not_client(client: AsyncC
     paths = res.json()["paths"]
     assert "/api/v1/admin/users" in paths
     assert "/api/v1/admin/auth/login" in paths
+    assert "/api/v1/shared/auth/forgot-password" in paths
+    assert "/api/v1/shared/auth/reset-password" in paths
     assert "/api/v1/shared/me" in paths
     assert "/api/v1/client/auth/login" not in paths
+    assert "/api/v1/client/auth/forgot-password" not in paths
+    assert "/api/v1/admin/auth/forgot-password" not in paths
+    assert "/api/v1/admin/auth/reset-password" not in paths
+
+
+@pytest.mark.asyncio
+async def test_shared_password_reset_routes_are_tagged_shared_in_both_schemas(
+    client: AsyncClient,
+) -> None:
+    for schema_path in ("/schema/client/openapi.json", "/schema/admin/openapi.json"):
+        res = await client.get(schema_path)
+        assert res.status_code == 200
+        paths = res.json()["paths"]
+        assert paths["/api/v1/shared/auth/forgot-password"]["post"]["tags"] == ["Shared Auth"]
+        assert paths["/api/v1/shared/auth/reset-password"]["post"]["tags"] == ["Shared Auth"]
 
 
 @pytest.mark.asyncio
@@ -74,9 +95,19 @@ async def test_legacy_routes_are_removed(client: AsyncClient) -> None:
         json={"email": "nobody@example.com", "password": "wrong"},
     )
     me_res = await client.get("/api/v1/users/me")
+    forgot_res = await client.post(
+        "/api/v1/client/auth/forgot-password",
+        json={"email": "nobody@example.com"},
+    )
+    admin_reset_res = await client.post(
+        "/api/v1/admin/auth/reset-password",
+        json={"token": "bad-token-xyz", "new_password": "NewStrongPass2"},
+    )
 
     assert login_res.status_code == 404
     assert me_res.status_code == 404
+    assert forgot_res.status_code == 404
+    assert admin_reset_res.status_code == 404
 
 
 @pytest.mark.asyncio

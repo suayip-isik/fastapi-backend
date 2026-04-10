@@ -80,6 +80,8 @@
   "email.verify.body": "<p>Click <a href='{verify_url}'>here</a> to verify your account.</p><p>This link is valid for 24 hours.</p>",
   "email.reset.subject": "Password reset request",
   "email.reset.body": "<p>Click <a href='{reset_url}'>here</a> to reset your password.</p><p>This link is valid for 15 minutes.</p>",
+  "email.admin_reset.subject": "Admin password reset request",
+  "email.admin_reset.body": "<p>Click <a href='{reset_url}'>here</a> to reset your admin password.</p><p>This link is valid for 15 minutes.</p>",
   "email.admin_invite.subject": "Set your admin account password",
   "email.admin_invite.body": "<p>An admin account has been created for you.</p><p>Click <a href='{reset_url}'>here</a> to set your password.</p><p>This link is valid for 15 minutes.</p>",
   "email.welcome.subject": "Welcome to {app_name}!",

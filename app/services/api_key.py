@@ -150,6 +150,21 @@ class APIKeyService(AuditableMixin):
             extra={"key_name": api_key.name, "key_prefix": api_key.key_prefix},
         )
 
+    async def revoke_all_for_user(self, user_id: UUID, *, reason: str) -> None:
+        """Kullanıcının tüm aktif API key'lerini iptal eder."""
+        api_keys = await self._repo.get_active_by_user(user_id)
+        for api_key in api_keys:
+            await self._repo.update(api_key.id, is_active=False)
+            await self._audit_log(
+                AuditAction.API_KEY_REVOKED,
+                user_id=user_id,
+                extra={
+                    "key_name": api_key.name,
+                    "key_prefix": api_key.key_prefix,
+                    "reason": reason,
+                },
+            )
+
     async def authenticate(self, raw_key: str) -> APIKey:
         """Ham API key'i doğrular ve ilişkili APIKey nesnesini döndürür.
 

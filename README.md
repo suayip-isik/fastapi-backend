@@ -539,20 +539,20 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 
 ### 1. Auth (`/client/auth` + `/admin/auth` + `/shared/auth`) — 10 endpoint
 
-| Method | Path                               | Açıklama                                                     | Auth  |
-| ------ | ---------------------------------- | ------------------------------------------------------------ | ----- |
-| POST   | `/client/auth/register`            | Yeni client kullanıcı kaydı                                  | Hayır |
-| POST   | `/client/auth/login`               | Client user girişi — adım 1 (TOTP varsa partial_token döner) | Hayır |
-| POST   | `/admin/auth/login`                | Admin user için token tabanlı giriş                          | Hayır |
-| POST   | `/shared/auth/totp-challenge`      | TOTP doğrulama — adım 2 (partial_token + kod ile tamamla)    | Hayır |
-| POST   | `/shared/auth/refresh`             | Access token yenile (rotation ile)                           | Hayır |
-| POST   | `/shared/auth/logout`              | Çıkış (token blacklist'e eklenir)                            | Evet  |
-| POST   | `/client/auth/verify-email`        | E-posta adresini doğrula                                     | Hayır |
-| POST   | `/client/auth/resend-verification` | Doğrulama e-postasını tekrar gönder                          | Hayır |
-| POST   | `/client/auth/forgot-password`     | Şifre sıfırlama e-postası gönder                             | Hayır |
-| POST   | `/client/auth/reset-password`      | Token ile şifre sıfırla                                      | Hayır |
+| Method | Path                               | Açıklama                                                        | Auth  |
+| ------ | ---------------------------------- | --------------------------------------------------------------- | ----- |
+| POST   | `/client/auth/register`            | Yeni client kullanıcı kaydı                                     | Hayır |
+| POST   | `/client/auth/login`               | Client user girişi — adım 1 (TOTP varsa partial_token döner)    | Hayır |
+| POST   | `/admin/auth/login`                | Admin user için token tabanlı giriş                             | Hayır |
+| POST   | `/shared/auth/forgot-password`     | Admin ve client kullanıcı için şifre sıfırlama e-postası gönder | Hayır |
+| POST   | `/shared/auth/reset-password`      | Admin ve client kullanıcı için token ile şifre sıfırlar         | Hayır |
+| POST   | `/shared/auth/totp-challenge`      | TOTP doğrulama — adım 2 (partial_token + kod ile tamamla)       | Hayır |
+| POST   | `/shared/auth/refresh`             | Access token yenile (rotation ile)                              | Hayır |
+| POST   | `/shared/auth/logout`              | Çıkış (token blacklist'e eklenir)                               | Evet  |
+| POST   | `/client/auth/verify-email`        | E-posta adresini doğrula                                        | Hayır |
+| POST   | `/client/auth/resend-verification` | Doğrulama e-postasını tekrar gönder                             | Hayır |
 
-> Şifre sıfırlama e-postasındaki link frontend'e yönlenir: `FRONTEND_URL/reset-password?token=...`. Aynı ekran, admin davet akışında ilk şifre belirleme için de kullanılır. E-posta doğrulama linki ise backend doğrulama endpoint'ini kullanır: `APP_URL/api/v1/client/auth/verify-email?token=...`.
+> Shared forgot-password/reset-password endpoint'leri kullanıcı tipini backend'de belirler. Client şifre sıfırlama e-postası frontend'e `FRONTEND_URL/reset-password?token=...` ile yönlenir. Admin invite ve admin forgot-password akışları aynı ekranı `surface=admin` query parametresi ile kullanır: `FRONTEND_URL/reset-password?token=...&surface=admin`. E-posta doğrulama linki ise backend doğrulama endpoint'ini kullanır: `APP_URL/api/v1/client/auth/verify-email?token=...`.
 
 > Legacy route desteği yoktur. Resmi yüzeyler yalnız `/api/v1/client/*`, `/api/v1/admin/*` ve `/api/v1/shared/*` altındadır.
 

@@ -26,10 +26,11 @@ from app.core.security import (
     create_token_pair,
     decode_token,
     hash_password,
+    is_token_revoked_after,
     verify_password,
 )
 from app.db.models.audit_log import AuditAction
-from app.db.models.user import AccountType
+from app.db.models.user import AccountType, User
 from app.db.repositories.user import UserRepository
 from app.schemas.auth import PartialAuthResponse, RegisterRequest, TokenResponse
 from app.services._keys import BLACKLIST_KEY, EMAIL_VERIFY_KEY, LOGIN_PARTIAL_KEY
@@ -40,9 +41,19 @@ from app.tasks.worker import send_verification_email
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from app.db.models.user import User
     from app.ports.infrastructure import RedisPort, TaskQueuePort
     from app.services.audit import AuditService
+
+
+def _encode_partial_login_value(user: User) -> str:
+    return f"{user.id}|{datetime.now(UTC).isoformat()}"
+
+
+def _decode_partial_login_value(raw_value: str) -> tuple[UUID, datetime | None]:
+    if "|" not in raw_value:
+        return UUID(raw_value), None
+    user_id_str, issued_at_str = raw_value.split("|", 1)
+    return UUID(user_id_str), datetime.fromisoformat(issued_at_str)
 
 
 class AuthService(AuditableMixin):
@@ -196,7 +207,7 @@ class AuthService(AuditableMixin):
             await self._redis.setex(
                 LOGIN_PARTIAL_KEY.format(partial_token),
                 settings.LOGIN_PARTIAL_TTL,
-                str(user.id),
+                _encode_partial_login_value(user),
             )
             return PartialAuthResponse(partial_token=partial_token)
 
@@ -219,15 +230,18 @@ class AuthService(AuditableMixin):
         Raises:
             AuthenticationError: Geçersiz/süresi dolmuş partial_token veya hatalı TOTP kodu.
         """
-        user_id_str = await self._redis.get(LOGIN_PARTIAL_KEY.format(partial_token))
-        if not user_id_str:
+        partial_value = await self._redis.get(LOGIN_PARTIAL_KEY.format(partial_token))
+        if not partial_value:
             raise AuthenticationError(t("error.auth.invalid_session"))
 
         await self._redis.delete(LOGIN_PARTIAL_KEY.format(partial_token))
 
-        user = await self._repo.get_by_id(UUID(user_id_str))
+        user_id, issued_at = _decode_partial_login_value(partial_value)
+        user = await self._repo.get_by_id(user_id)
         if not user or not user.is_active:
             raise AuthenticationError(t("error.auth.account_inactive"))
+        if issued_at and is_token_revoked_after(issued_at, user.session_revoked_after):
+            raise AuthenticationError(t("error.auth.invalid_session"))
 
         totp_svc = TOTPService(self._session, redis=self._redis)
         await totp_svc.check_login(user, code)
@@ -287,6 +301,8 @@ class AuthService(AuditableMixin):
         user = await self._repo.get_by_id(UUID(payload.sub))
         if not user or not user.is_active:
             raise AuthenticationError(t("error.auth.user_not_found"))
+        if is_token_revoked_after(payload.iat, user.session_revoked_after):
+            raise InvalidTokenError(t("error.auth.token_revoked"))
 
         # Eski refresh token'ı blacklist'e ekle (rotation)
         remaining = int((payload.exp - datetime.now(UTC)).total_seconds())
