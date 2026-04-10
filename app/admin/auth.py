@@ -1,22 +1,23 @@
-"""
-SQLAdmin kimlik doğrulama backend'i.
-Mevcut JWT sistemi ve admin rol kontrolü kullanılır.
-"""
+"""SQLAdmin authentication adapter ve use-case'leri."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
 
+from redis.exceptions import RedisError
 from sqladmin.authentication import AuthenticationBackend
+from sqlalchemy.exc import SQLAlchemyError
 
-from app.api.dependencies.auth import get_user_permissions
+from app.adapters.infrastructure import RedisAdapter
 from app.core.exceptions import AppError
 from app.core.logging import get_logger
-from app.core.permissions import Permission
-from app.core.security import TokenType, decode_token
+from app.core.permissions import has_admin_panel_access
+from app.core.security import TokenType, create_access_token, decode_token, verify_password
+from app.db.models.user import AccountType, User
 from app.db.repositories.user import UserRepository
-from app.db.session import AsyncSessionFactory
+from app.db.session_provider import AsyncSessionFactoryProtocol, get_default_session_factory
+from app.services.permissions import PermissionCache, PermissionProvider, PermissionQueryService
 
 if TYPE_CHECKING:
     from starlette.requests import Request
@@ -24,157 +25,131 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class AdminAuthBackend(AuthenticationBackend):
-    """SQLAdmin panel için JWT tabanlı authentication backend.
+class AdminUserReaderProtocol(Protocol):
+    """Admin auth için gerekli user lookup davranışı."""
 
-    Admin paneline erişimi JWT token ile kontrol eder. Sadece ADMIN
-    rolüne sahip kullanıcılar panele girebilir. Token session'dan
-    okunur ve her istekte validate edilir.
+    async def get_active_by_email(self, email: str) -> User | None:
+        """Aktif kullanıcıyı email ile getir."""
 
-    Note:
-        - Sadece admin rolü yeterli (admin:access permission)
-        - Token validation core.security modülünü kullanır
-        - Login başarısız ise /admin/login'e redirect
-        - Token session cookie'de saklanır
+    async def get_by_id(self, user_id: UUID) -> User | None:
+        """Kullanıcıyı id ile getir."""
 
-    Example:
-        >>> # Browser: Session cookie ile otomatik auth
-        >>> # GET /admin -> Admin panel (ADMIN rolü gerekli)
-    """
 
-    async def login(self, request: Request) -> bool:
-        """Admin login formu ile email/password doğrulama.
+class AdminUserReader:
+    """Admin auth için salt-okunur user gateway."""
 
-        Kullanıcı email ve password ile giriş yapar. Başarılı
-        doğrulamadan sonra JWT access token üretilir ve session'a
-        kaydedilir. Sadece aktif ve ADMIN rolüne sahip kullanıcılar
-        giriş yapabilir.
+    def __init__(self, session_factory: AsyncSessionFactoryProtocol) -> None:
+        self._session_factory = session_factory
 
-        Args:
-            request: Starlette Request objesi. Form data'dan username
-                (email) ve password alanlarını okur.
+    async def get_active_by_email(self, email: str) -> User | None:
+        async with self._session_factory() as session, session.begin():
+            return await UserRepository(session).get_active_by_email(email)
 
-        Returns:
-            True: Login başarılı, token session'a kaydedildi
-            False: Login başarısız (geçersiz credentials, yetkisiz vb.)
+    async def get_by_id(self, user_id: UUID) -> User | None:
+        async with self._session_factory() as session, session.begin():
+            return await UserRepository(session).get_by_id(user_id)
 
-        Note:
-            - Form field'ları: username (email), password
-            - Şifresi olmayan kullanıcılar (hashed_password=None) giriş yapamaz
-            - Exception durumunda False döner (güvenlik)
 
-        Example:
-            >>> # POST /admin/login ile form gönderilir
-            >>> # username: admin@example.com
-            >>> # password: securepass
-            >>> # -> Success: Session'a token yazılır
-        """
-        form = await request.form()
-        email = str(form.get("username", ""))
-        password = str(form.get("password", ""))
+class AdminAuthUseCase:
+    """Admin panel login ve session doğrulama akışını yönetir."""
 
+    def __init__(
+        self,
+        *,
+        user_reader: AdminUserReaderProtocol,
+        permission_provider: PermissionProvider | None = None,
+    ) -> None:
+        self._user_reader = user_reader
+        self._permission_provider = permission_provider or PermissionProvider(
+            query_service=PermissionQueryService(get_default_session_factory()),
+            cache=PermissionCache(RedisAdapter()),
+        )
+
+    async def login_with_password(self, email: str, password: str) -> str | None:
         if not email or not password:
-            return False
+            return None
 
         try:
-            from app.core.security import create_access_token, verify_password
+            user = await self._user_reader.get_active_by_email(email)
+        except SQLAlchemyError:
+            logger.warning("admin_login_user_lookup_failed", exc_info=True)
+            return None
 
-            async with AsyncSessionFactory() as session, session.begin():
-                repo = UserRepository(session)
-                user = await repo.get_active_by_email(email)
+        try:
+            if not user or not user.hashed_password:
+                return None
 
-                if not user:
-                    return False
+            if not verify_password(password, user.hashed_password):
+                return None
 
-                if not user.hashed_password:
-                    return False
+            if user.account_type != AccountType.ADMIN.value:
+                return None
 
-                if not verify_password(password, user.hashed_password):
-                    return False
+            user_perms = await self._permission_provider.get_permissions(user.id)
+            if not has_admin_panel_access(user_perms):
+                return None
 
-            user_perms = await get_user_permissions(user.id)
-            if Permission.ADMIN_ACCESS.value not in user_perms:
-                return False
+            return create_access_token(str(user.id))
+        except (RedisError, SQLAlchemyError, OSError, ValueError, TypeError, AppError):
+            logger.warning("admin_login_authorization_failed", exc_info=True)
+            return None
 
-            token = create_access_token(str(user.id))
-            request.session["admin_token"] = token
-            return True
-
-        except Exception:
-            logger.warning("admin_login_unexpected_error", exc_info=True)
-            return False
-
-    async def logout(self, request: Request) -> bool:
-        """Admin kullanıcı çıkışı - session temizleme.
-
-        Kullanıcı oturumunu sonlandırır. Session içindeki tüm
-        veriler (token dahil) temizlenir. Logout sonrası kullanıcı
-        admin paneline erişemez.
-
-        Args:
-            request: Starlette Request objesi. Session verileri
-                bu objeden temizlenir.
-
-        Returns:
-            Her zaman True döner (logout daima başarılıdır).
-
-        Example:
-            >>> # GET /admin/logout
-            >>> # -> Session temizlenir, login sayfasına redirect
-        """
-        request.session.clear()
-        return True
-
-    async def authenticate(self, request: Request) -> bool:
-        """Her admin isteğinde token doğrulama ve yetki kontrolü.
-
-        Admin paneline gelen her istekte çağrılır. Session'daki
-        JWT token'ı decode eder, geçerliliğini ve kullanıcının
-        ADMIN rolüne sahip olduğunu kontrol eder. Başarısız
-        durumda erişim reddedilir.
-
-        Args:
-            request: Starlette Request objesi. Session'dan token
-                okunur.
-
-        Returns:
-            True: Token geçerli ve kullanıcı ADMIN rolünde
-            False: Token geçersiz, kullanıcı yetkisiz veya hata
-
-        Note:
-            - Token TokenType.ACCESS olmalı
-            - Kullanıcı aktif (is_active=True) olmalı
-            - Kullanıcı admin:access permission'ına sahip olmalı
-            - Herhangi bir hata durumunda False döner
-
-        Example:
-            >>> # Her admin panel isteğinde otomatik çalışır
-            >>> # GET /admin/user -> authenticate() check
-            >>> # -> True ise panel gösterilir
-            >>> # -> False ise login'e redirect
-        """
-        token = request.session.get("admin_token")
+    async def authenticate_session_token(self, token: str | None) -> bool:
         if not token:
             return False
 
         try:
             payload = decode_token(token)
-
             if payload.type != TokenType.ACCESS:
                 return False
 
-            async with AsyncSessionFactory() as session, session.begin():
-                repo = UserRepository(session)
-                user = await repo.get_by_id(UUID(payload.sub))
+            user = await self._user_reader.get_by_id(UUID(payload.sub))
+            if not user or not user.is_active:
+                return False
 
-                if not user or not user.is_active:
-                    return False
+            if user.account_type != AccountType.ADMIN.value:
+                return False
 
-            user_perms = await get_user_permissions(user.id)
-            return Permission.ADMIN_ACCESS.value in user_perms
-
-        except AppError:
+            user_perms = await self._permission_provider.get_permissions(user.id)
+            return has_admin_panel_access(user_perms)
+        except (AppError, RedisError, SQLAlchemyError, OSError, ValueError, TypeError):
             return False
-        except Exception:
-            logger.warning("admin_authenticate_unexpected_error", exc_info=True)
+
+
+class AdminAuthBackend(AuthenticationBackend):
+    """SQLAdmin için request/session adapter'ı."""
+
+    def __init__(
+        self,
+        secret_key: str,
+        *,
+        use_case: AdminAuthUseCase | None = None,
+    ) -> None:
+        super().__init__(secret_key=secret_key)
+        self._use_case = use_case
+
+    def _get_use_case(self) -> AdminAuthUseCase:
+        return self._use_case or AdminAuthUseCase(
+            user_reader=AdminUserReader(get_default_session_factory())
+        )
+
+    async def login(self, request: Request) -> bool:
+        form = await request.form()
+        token = await self._get_use_case().login_with_password(
+            str(form.get("username", "")),
+            str(form.get("password", "")),
+        )
+        if not token:
             return False
+
+        request.session["admin_token"] = token
+        return True
+
+    async def logout(self, request: Request) -> bool:
+        request.session.clear()
+        return True
+
+    async def authenticate(self, request: Request) -> bool:
+        return await self._get_use_case().authenticate_session_token(
+            request.session.get("admin_token")
+        )

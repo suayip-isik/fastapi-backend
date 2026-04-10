@@ -27,9 +27,16 @@ class RoleService(AuditableMixin):
     Sistem rolleri silinemez, adları değiştirilemez.
     """
 
-    def __init__(self, session: AsyncSession, audit: AuditService | None = None) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        audit: AuditService | None = None,
+        *,
+        cache: CacheService | None = None,
+    ) -> None:
         self._repo = RoleRepository(session)
         self._audit = audit
+        self._cache = cache or CacheService()
 
     async def list_roles(self) -> list[Role]:
         """Tüm rolleri alfabetik sırayla listeler."""
@@ -125,7 +132,7 @@ class RoleService(AuditableMixin):
         """Role bağlı kullanıcıların permission cache'ini temizler."""
         if not user_ids:
             return
-        await CacheService.delete(
+        await self._cache.delete(
             *(USER_PERMISSIONS_KEY.format(str(user_id)) for user_id in user_ids)
         )
 

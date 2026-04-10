@@ -22,10 +22,10 @@ async def test_send_email_raises_on_smtp_failure() -> None:
             "app.core.email.aiosmtplib.send",
             new=AsyncMock(side_effect=RuntimeError("smtp auth failed")),
         ),
+        pytest.raises(RuntimeError, match="smtp auth failed"),
     ):
-        with pytest.raises(RuntimeError, match="smtp auth failed"):
-            await send_email(
-                to="user@example.com",
-                subject="Reset",
-                html_body="<a href='http://localhost/reset-password?token=123'>reset</a>",
-            )
+        await send_email(
+            to="user@example.com",
+            subject="Reset",
+            html_body="<a href='http://localhost/reset-password?token=123'>reset</a>",
+        )

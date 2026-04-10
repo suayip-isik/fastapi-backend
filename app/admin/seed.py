@@ -15,9 +15,9 @@ from app.core.permissions import (
 )
 from app.core.security import hash_password
 from app.db.models.role import Role, RolePermission
-from app.db.models.user import User
+from app.db.models.user import AccountType, User
 from app.db.repositories.user import UserRepository
-from app.db.session import AsyncSessionFactory
+from app.db.session_provider import get_default_session_factory
 
 logger = structlog.get_logger(__name__)
 
@@ -50,7 +50,9 @@ async def seed_system_roles() -> dict[str, Role]:
 
     roles: dict[str, Role] = {}
 
-    async with AsyncSessionFactory() as session:
+    session_factory = get_default_session_factory()
+
+    async with session_factory() as session:
         for role_data in _SYSTEM_ROLES:
             result = await session.execute(select(Role).where(Role.name == role_data["name"]))
             role = result.scalar_one_or_none()
@@ -86,7 +88,9 @@ async def create_default_admin() -> None:
     """
     from sqlalchemy import select
 
-    async with AsyncSessionFactory() as session:
+    session_factory = get_default_session_factory()
+
+    async with session_factory() as session:
         user_repo = UserRepository(session)
 
         if await user_repo.email_exists(settings.ADMIN_EMAIL):
@@ -104,6 +108,7 @@ async def create_default_admin() -> None:
             email=settings.ADMIN_EMAIL.lower(),
             hashed_password=hash_password(settings.ADMIN_PASSWORD),
             full_name="Admin",
+            account_type=AccountType.ADMIN.value,
             role_id=admin_role.id,
             is_active=True,
             is_verified=True,

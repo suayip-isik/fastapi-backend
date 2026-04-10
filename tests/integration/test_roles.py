@@ -1,4 +1,4 @@
-"""Roles endpoint testleri — /api/v1/roles"""
+"""Roles endpoint testleri — /api/v1/admin/roles"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from sqlalchemy import update as sa_update
 from app.api.dependencies.auth import get_user_permissions
 from app.core.permissions import Permission
 from app.db.models.role import Role
-from app.db.models.user import User
+from app.db.models.user import AccountType, User
 
 if TYPE_CHECKING:
     from httpx import AsyncClient
@@ -23,8 +23,10 @@ if TYPE_CHECKING:
 async def _register_and_login(
     client: AsyncClient, email: str, password: str = "StrongPass1"
 ) -> dict:
-    await client.post("/api/v1/auth/register", json={"email": email, "password": password})
-    res = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    await client.post("/api/v1/client/auth/register", json={"email": email, "password": password})
+    res = await client.post(
+        "/api/v1/client/auth/login", json={"email": email, "password": password}
+    )
     return res.json()
 
 
@@ -39,7 +41,9 @@ async def _promote_to_admin(db_session: AsyncSession, email: str) -> None:
     result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
     admin_role_id = result.scalar_one()
     await db_session.execute(
-        sa_update(User).where(User.email == email).values(role_id=admin_role_id)
+        sa_update(User)
+        .where(User.email == email)
+        .values(role_id=admin_role_id, account_type=AccountType.ADMIN.value)
     )
     await db_session.commit()
     db_session.expire_all()
@@ -55,7 +59,7 @@ async def test_list_roles_as_admin(client: AsyncClient, db_session: AsyncSession
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res = await client.get("/api/v1/roles", headers=headers)
+    res = await client.get("/api/v1/admin/roles", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
@@ -72,7 +76,7 @@ async def test_list_roles_response_structure(client: AsyncClient, db_session: As
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res = await client.get("/api/v1/roles", headers=headers)
+    res = await client.get("/api/v1/admin/roles", headers=headers)
 
     assert res.status_code == 200
     role = res.json()[0]
@@ -88,14 +92,14 @@ async def test_list_roles_response_structure(client: AsyncClient, db_session: As
 async def test_list_roles_as_non_admin(client: AsyncClient):
     """Non-admin rol listesine erişememeli."""
     headers = await _auth_headers(client, "non_admin_roles@example.com")
-    res = await client.get("/api/v1/roles", headers=headers)
+    res = await client.get("/api/v1/admin/roles", headers=headers)
     assert res.status_code == 403
 
 
 @pytest.mark.asyncio
 async def test_list_roles_unauthorized(client: AsyncClient):
     """Token olmadan rol listesine erişilememeli."""
-    res = await client.get("/api/v1/roles")
+    res = await client.get("/api/v1/admin/roles")
     assert res.status_code == 401
 
 
@@ -110,7 +114,7 @@ async def test_create_role_as_admin(client: AsyncClient, db_session: AsyncSessio
     await _promote_to_admin(db_session, admin_email)
 
     res = await client.post(
-        "/api/v1/roles",
+        "/api/v1/admin/roles",
         json={"name": "accountant", "description": "Muhasebe rolü", "permissions": []},
         headers=headers,
     )
@@ -130,7 +134,7 @@ async def test_create_role_with_permissions(client: AsyncClient, db_session: Asy
     await _promote_to_admin(db_session, admin_email)
 
     res = await client.post(
-        "/api/v1/roles",
+        "/api/v1/admin/roles",
         json={
             "name": "reporter",
             "description": "Rapor rolü",
@@ -153,9 +157,9 @@ async def test_create_role_duplicate_name_fails(client: AsyncClient, db_session:
     await _promote_to_admin(db_session, admin_email)
 
     payload = {"name": "duplicate_role", "description": "İlk", "permissions": []}
-    await client.post("/api/v1/roles", json=payload, headers=headers)
+    await client.post("/api/v1/admin/roles", json=payload, headers=headers)
 
-    res = await client.post("/api/v1/roles", json=payload, headers=headers)
+    res = await client.post("/api/v1/admin/roles", json=payload, headers=headers)
     assert res.status_code == 409
 
 
@@ -167,7 +171,7 @@ async def test_create_role_invalid_name_format(client: AsyncClient, db_session: 
     await _promote_to_admin(db_session, admin_email)
 
     res = await client.post(
-        "/api/v1/roles",
+        "/api/v1/admin/roles",
         json={"name": "Invalid Role", "description": None, "permissions": []},
         headers=headers,
     )
@@ -179,7 +183,7 @@ async def test_create_role_as_non_admin(client: AsyncClient):
     """Non-admin rol oluşturamamalı."""
     headers = await _auth_headers(client, "non_admin_create_role@example.com")
     res = await client.post(
-        "/api/v1/roles",
+        "/api/v1/admin/roles",
         json={"name": "nope", "description": None, "permissions": []},
         headers=headers,
     )
@@ -197,10 +201,10 @@ async def test_get_role_by_id(client: AsyncClient, db_session: AsyncSession):
     await _promote_to_admin(db_session, admin_email)
 
     # Önce listeyi al, bir rol ID'si seç
-    roles = (await client.get("/api/v1/roles", headers=headers)).json()
+    roles = (await client.get("/api/v1/admin/roles", headers=headers)).json()
     target = next(r for r in roles if r["name"] == "user")
 
-    res = await client.get(f"/api/v1/roles/{target['id']}", headers=headers)
+    res = await client.get(f"/api/v1/admin/roles/{target['id']}", headers=headers)
 
     assert res.status_code == 200
     assert res.json()["name"] == "user"
@@ -214,7 +218,9 @@ async def test_get_role_not_found(client: AsyncClient, db_session: AsyncSession)
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res = await client.get("/api/v1/roles/00000000-0000-0000-0000-000000000000", headers=headers)
+    res = await client.get(
+        "/api/v1/admin/roles/00000000-0000-0000-0000-000000000000", headers=headers
+    )
     assert res.status_code == 404
 
 
@@ -229,14 +235,14 @@ async def test_update_custom_role_description(client: AsyncClient, db_session: A
     await _promote_to_admin(db_session, admin_email)
 
     create_res = await client.post(
-        "/api/v1/roles",
+        "/api/v1/admin/roles",
         json={"name": "updatable_role", "description": "Eski açıklama", "permissions": []},
         headers=headers,
     )
     role_id = create_res.json()["id"]
 
     res = await client.patch(
-        f"/api/v1/roles/{role_id}",
+        f"/api/v1/admin/roles/{role_id}",
         json={"description": "Yeni açıklama"},
         headers=headers,
     )
@@ -253,14 +259,14 @@ async def test_update_custom_role_permissions(client: AsyncClient, db_session: A
     await _promote_to_admin(db_session, admin_email)
 
     create_res = await client.post(
-        "/api/v1/roles",
+        "/api/v1/admin/roles",
         json={"name": "perm_update_role", "description": None, "permissions": ["users:read"]},
         headers=headers,
     )
     role_id = create_res.json()["id"]
 
     res = await client.patch(
-        f"/api/v1/roles/{role_id}",
+        f"/api/v1/admin/roles/{role_id}",
         json={"permissions": ["audit:read", "users:read"]},
         headers=headers,
     )
@@ -278,12 +284,12 @@ async def test_update_system_role_permissions_fails(client: AsyncClient, db_sess
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    roles = (await client.get("/api/v1/roles", headers=headers)).json()
+    roles = (await client.get("/api/v1/admin/roles", headers=headers)).json()
     user_role = next(r for r in roles if r["name"] == "user")
 
     res = await client.patch(
-        f"/api/v1/roles/{user_role['id']}",
-        json={"permissions": ["admin:access"]},
+        f"/api/v1/admin/roles/{user_role['id']}",
+        json={"permissions": ["admin:panel_access"]},
         headers=headers,
     )
     assert res.status_code == 400
@@ -298,11 +304,11 @@ async def test_update_system_role_description_allowed(
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    roles = (await client.get("/api/v1/roles", headers=headers)).json()
+    roles = (await client.get("/api/v1/admin/roles", headers=headers)).json()
     moderator_role = next(r for r in roles if r["name"] == "moderator")
 
     res = await client.patch(
-        f"/api/v1/roles/{moderator_role['id']}",
+        f"/api/v1/admin/roles/{moderator_role['id']}",
         json={"description": "Güncellenmiş açıklama"},
         headers=headers,
     )
@@ -321,17 +327,17 @@ async def test_delete_custom_role(client: AsyncClient, db_session: AsyncSession)
     await _promote_to_admin(db_session, admin_email)
 
     create_res = await client.post(
-        "/api/v1/roles",
+        "/api/v1/admin/roles",
         json={"name": "deletable_role", "description": None, "permissions": []},
         headers=headers,
     )
     role_id = create_res.json()["id"]
 
-    res = await client.delete(f"/api/v1/roles/{role_id}", headers=headers)
+    res = await client.delete(f"/api/v1/admin/roles/{role_id}", headers=headers)
     assert res.status_code == 200
 
     # Artık bulunamaz
-    res_get = await client.get(f"/api/v1/roles/{role_id}", headers=headers)
+    res_get = await client.get(f"/api/v1/admin/roles/{role_id}", headers=headers)
     assert res_get.status_code == 404
 
 
@@ -342,10 +348,10 @@ async def test_delete_system_role_fails(client: AsyncClient, db_session: AsyncSe
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    roles = (await client.get("/api/v1/roles", headers=headers)).json()
+    roles = (await client.get("/api/v1/admin/roles", headers=headers)).json()
     admin_role = next(r for r in roles if r["name"] == "admin")
 
-    res = await client.delete(f"/api/v1/roles/{admin_role['id']}", headers=headers)
+    res = await client.delete(f"/api/v1/admin/roles/{admin_role['id']}", headers=headers)
     assert res.status_code == 400
 
 
@@ -356,7 +362,9 @@ async def test_delete_nonexistent_role(client: AsyncClient, db_session: AsyncSes
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res = await client.delete("/api/v1/roles/00000000-0000-0000-0000-000000000000", headers=headers)
+    res = await client.delete(
+        "/api/v1/admin/roles/00000000-0000-0000-0000-000000000000", headers=headers
+    )
     assert res.status_code == 404
 
 
@@ -371,13 +379,13 @@ async def test_update_role_permissions_invalidates_assigned_user_cache(
     target_email = "role_cache_target@example.com"
 
     target_headers = await _auth_headers(client, target_email)
-    target_id = (await client.get("/api/v1/users/me", headers=target_headers)).json()["id"]
+    target_id = (await client.get("/api/v1/shared/me", headers=target_headers)).json()["id"]
 
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
     create_res = await client.post(
-        "/api/v1/roles",
+        "/api/v1/admin/roles",
         json={
             "name": "cache_role",
             "description": "Cache role",
@@ -388,7 +396,7 @@ async def test_update_role_permissions_invalidates_assigned_user_cache(
     role_id = create_res.json()["id"]
 
     assign_res = await client.patch(
-        f"/api/v1/users/{target_id}/role",
+        f"/api/v1/admin/users/{target_id}/role",
         json={"role_name": "cache_role"},
         headers=headers,
     )
@@ -399,7 +407,7 @@ async def test_update_role_permissions_invalidates_assigned_user_cache(
     assert await fake_redis.keys(f"user_permissions:{target_id}") != []
 
     update_res = await client.patch(
-        f"/api/v1/roles/{role_id}",
+        f"/api/v1/admin/roles/{role_id}",
         json={"permissions": ["api_keys:read"]},
         headers=headers,
     )
@@ -418,12 +426,12 @@ async def test_delete_role_as_non_admin(client: AsyncClient, db_session: AsyncSe
     await _promote_to_admin(db_session, admin_email)
 
     create_res = await client.post(
-        "/api/v1/roles",
+        "/api/v1/admin/roles",
         json={"name": "del_perm_role", "description": None, "permissions": []},
         headers=headers_admin,
     )
     role_id = create_res.json()["id"]
 
     headers_non_admin = await _auth_headers(client, "non_admin_del_role@example.com")
-    res = await client.delete(f"/api/v1/roles/{role_id}", headers=headers_non_admin)
+    res = await client.delete(f"/api/v1/admin/roles/{role_id}", headers=headers_non_admin)
     assert res.status_code == 403

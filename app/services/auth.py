@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from app.adapters.infrastructure import ARQTaskQueueAdapter, RedisAdapter
 from app.core.config import settings
 from app.core.exceptions import (
     AuthenticationError,
@@ -20,7 +21,6 @@ from app.core.exceptions import (
     UserAlreadyExistsError,
 )
 from app.core.i18n import language_var, t
-from app.core.redis import get_redis_client
 from app.core.security import (
     TokenType,
     create_token_pair,
@@ -29,17 +29,19 @@ from app.core.security import (
     verify_password,
 )
 from app.db.models.audit_log import AuditAction
+from app.db.models.user import AccountType
 from app.db.repositories.user import UserRepository
 from app.schemas.auth import PartialAuthResponse, RegisterRequest, TokenResponse
 from app.services._keys import BLACKLIST_KEY, EMAIL_VERIFY_KEY, LOGIN_PARTIAL_KEY
 from app.services.base import AuditableMixin
 from app.services.totp import TOTPService
-from app.tasks.worker import enqueue, send_verification_email
+from app.tasks.worker import send_verification_email
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.db.models.user import User
+    from app.ports.infrastructure import RedisPort, TaskQueuePort
     from app.services.audit import AuditService
 
 
@@ -79,6 +81,20 @@ class AuthService(AuditableMixin):
         self._session = session
         self._repo = UserRepository(session)
         self._audit = audit
+        self._redis: RedisPort = RedisAdapter()
+        self._task_queue: TaskQueuePort = ARQTaskQueueAdapter()
+
+    def with_infrastructure(
+        self,
+        *,
+        redis: RedisPort | None = None,
+        task_queue: TaskQueuePort | None = None,
+    ) -> AuthService:
+        if redis is not None:
+            self._redis = redis
+        if task_queue is not None:
+            self._task_queue = task_queue
+        return self
 
     async def register(self, data: RegisterRequest) -> User:
         """Yeni kullanıcı kaydı oluşturur.
@@ -134,14 +150,23 @@ class AuthService(AuditableMixin):
         )
 
         token = secrets.token_urlsafe(32)
-        redis = await get_redis_client()
-        await redis.setex(EMAIL_VERIFY_KEY.format(token), settings.EMAIL_VERIFY_TTL, str(user.id))
-        await enqueue(send_verification_email, user.email, token, language_var.get())
+        await self._redis.setex(
+            EMAIL_VERIFY_KEY.format(token), settings.EMAIL_VERIFY_TTL, str(user.id)
+        )
+        await self._task_queue.enqueue(
+            send_verification_email, user.email, token, language_var.get()
+        )
 
         await self._audit_log(AuditAction.REGISTER, user_id=user.id)
         return user
 
-    async def login(self, email: str, password: str) -> TokenResponse | PartialAuthResponse:
+    async def login(
+        self,
+        email: str,
+        password: str,
+        *,
+        account_type: AccountType = AccountType.CLIENT,
+    ) -> TokenResponse | PartialAuthResponse:
         """Email ve şifre ile kullanıcı girişinin birinci adımı.
 
         Kimlik bilgilerini doğrular. TOTP aktif değilse tam token çifti,
@@ -157,7 +182,7 @@ class AuthService(AuditableMixin):
         Note:
             - Timing attack'lardan korunmak için hata mesajları generic tutulur
         """
-        user = await self._repo.get_active_by_email(email)
+        user = await self._repo.get_active_by_email(email, account_type=account_type)
         if not user or not user.hashed_password:
             await self._audit_log(AuditAction.LOGIN_FAILED, extra={"email": email})
             raise AuthenticationError(t("error.auth.invalid_credentials"))
@@ -168,8 +193,7 @@ class AuthService(AuditableMixin):
 
         if user.totp_enabled:
             partial_token = secrets.token_urlsafe(32)
-            redis = await get_redis_client()
-            await redis.setex(
+            await self._redis.setex(
                 LOGIN_PARTIAL_KEY.format(partial_token),
                 settings.LOGIN_PARTIAL_TTL,
                 str(user.id),
@@ -195,18 +219,17 @@ class AuthService(AuditableMixin):
         Raises:
             AuthenticationError: Geçersiz/süresi dolmuş partial_token veya hatalı TOTP kodu.
         """
-        redis = await get_redis_client()
-        user_id_str = await redis.get(LOGIN_PARTIAL_KEY.format(partial_token))
+        user_id_str = await self._redis.get(LOGIN_PARTIAL_KEY.format(partial_token))
         if not user_id_str:
             raise AuthenticationError(t("error.auth.invalid_session"))
 
-        await redis.delete(LOGIN_PARTIAL_KEY.format(partial_token))
+        await self._redis.delete(LOGIN_PARTIAL_KEY.format(partial_token))
 
         user = await self._repo.get_by_id(UUID(user_id_str))
         if not user or not user.is_active:
             raise AuthenticationError(t("error.auth.account_inactive"))
 
-        totp_svc = TOTPService(self._session)
+        totp_svc = TOTPService(self._session, redis=self._redis)
         await totp_svc.check_login(user, code)
 
         await self._audit_log(AuditAction.LOGIN_SUCCESS, user_id=user.id)
@@ -258,8 +281,7 @@ class AuthService(AuditableMixin):
         if payload.type != TokenType.REFRESH:
             raise InvalidTokenError(t("error.auth.token_type_invalid"))
 
-        redis = await get_redis_client()
-        if await redis.exists(BLACKLIST_KEY.format(payload.jti)):
+        if await self._redis.exists(BLACKLIST_KEY.format(payload.jti)):
             raise InvalidTokenError(t("error.auth.token_revoked"))
 
         user = await self._repo.get_by_id(UUID(payload.sub))
@@ -269,7 +291,7 @@ class AuthService(AuditableMixin):
         # Eski refresh token'ı blacklist'e ekle (rotation)
         remaining = int((payload.exp - datetime.now(UTC)).total_seconds())
         if remaining > 0:
-            await redis.setex(BLACKLIST_KEY.format(payload.jti), remaining, "1")
+            await self._redis.setex(BLACKLIST_KEY.format(payload.jti), remaining, "1")
 
         await self._audit_log(AuditAction.TOKEN_REFRESHED, user_id=user.id)
         tokens = create_token_pair(str(user.id))
@@ -323,12 +345,10 @@ class AuthService(AuditableMixin):
             - Refresh token hataları sessizce yutulur (kullanıcı deneyimi)
             - Tüm cihazlardan çıkış için ayrı bir mekanizma gerekir
         """
-        redis = await get_redis_client()
-
         access_payload = decode_token(access_token)
         remaining = int((access_payload.exp - datetime.now(UTC)).total_seconds())
         if remaining > 0:
-            await redis.setex(BLACKLIST_KEY.format(access_payload.jti), remaining, "1")
+            await self._redis.setex(BLACKLIST_KEY.format(access_payload.jti), remaining, "1")
 
         if refresh_token:
             try:
@@ -336,7 +356,9 @@ class AuthService(AuditableMixin):
                 if refresh_payload.type == TokenType.REFRESH:
                     remaining = int((refresh_payload.exp - datetime.now(UTC)).total_seconds())
                     if remaining > 0:
-                        await redis.setex(BLACKLIST_KEY.format(refresh_payload.jti), remaining, "1")
+                        await self._redis.setex(
+                            BLACKLIST_KEY.format(refresh_payload.jti), remaining, "1"
+                        )
             except (InvalidTokenError, TokenExpiredError):
                 # Geçersiz veya süresi dolmuş refresh token logout'u engellemez
                 pass

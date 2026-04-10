@@ -1,4 +1,4 @@
-"""TOTP / 2FA endpoint testleri — /api/v1/auth/totp"""
+"""TOTP / 2FA endpoint testleri — /api/v1/shared/auth/totp"""
 
 from __future__ import annotations
 
@@ -16,8 +16,10 @@ if TYPE_CHECKING:
 async def _register_and_login(
     client: AsyncClient, email: str, password: str = "StrongPass1"
 ) -> dict:
-    await client.post("/api/v1/auth/register", json={"email": email, "password": password})
-    res = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    await client.post("/api/v1/client/auth/register", json={"email": email, "password": password})
+    res = await client.post(
+        "/api/v1/client/auth/login", json={"email": email, "password": password}
+    )
     return res.json()
 
 
@@ -28,14 +30,14 @@ async def _auth_headers(client: AsyncClient, email: str, password: str = "Strong
 
 async def _setup_and_enable_totp(client: AsyncClient, headers: dict) -> str:
     """TOTP'yi setup eder, doğrular ve etkinleştirir. Secret döner."""
-    setup_res = await client.post("/api/v1/auth/totp/setup", headers=headers)
+    setup_res = await client.post("/api/v1/shared/auth/totp/setup", headers=headers)
     secret = setup_res.json()["secret"]
     code = pyotp.TOTP(secret).now()
-    await client.post("/api/v1/auth/totp/verify", json={"code": code}, headers=headers)
+    await client.post("/api/v1/shared/auth/totp/verify", json={"code": code}, headers=headers)
     return secret
 
 
-# ── POST /auth/totp/setup ─────────────────────────────────────────────────────
+# ── POST /shared/auth/totp/setup ──────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -43,7 +45,7 @@ async def test_totp_setup_returns_secret_and_qr(client: AsyncClient):
     """Setup QR kod, secret ve provisioning URI döndürmeli."""
     headers = await _auth_headers(client, "totp_setup@example.com")
 
-    res = await client.post("/api/v1/auth/totp/setup", headers=headers)
+    res = await client.post("/api/v1/shared/auth/totp/setup", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
@@ -57,7 +59,7 @@ async def test_totp_setup_returns_secret_and_qr(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_totp_setup_unauthorized(client: AsyncClient):
     """Token olmadan TOTP setup yapılamaz."""
-    res = await client.post("/api/v1/auth/totp/setup")
+    res = await client.post("/api/v1/shared/auth/totp/setup")
     assert res.status_code == 401
 
 
@@ -69,11 +71,11 @@ async def test_totp_verify_enables_2fa(client: AsyncClient):
     """Geçerli TOTP kodu ile 2FA aktif edilebilmeli."""
     headers = await _auth_headers(client, "totp_verify@example.com")
 
-    setup_res = await client.post("/api/v1/auth/totp/setup", headers=headers)
+    setup_res = await client.post("/api/v1/shared/auth/totp/setup", headers=headers)
     secret = setup_res.json()["secret"]
     code = pyotp.TOTP(secret).now()
 
-    res = await client.post("/api/v1/auth/totp/verify", json={"code": code}, headers=headers)
+    res = await client.post("/api/v1/shared/auth/totp/verify", json={"code": code}, headers=headers)
 
     assert res.status_code == 200
     data = res.json()
@@ -85,9 +87,11 @@ async def test_totp_verify_enables_2fa(client: AsyncClient):
 async def test_totp_verify_invalid_code_fails(client: AsyncClient):
     """Geçersiz TOTP kodu ile doğrulama başarısız olmalı."""
     headers = await _auth_headers(client, "totp_verify_invalid@example.com")
-    await client.post("/api/v1/auth/totp/setup", headers=headers)
+    await client.post("/api/v1/shared/auth/totp/setup", headers=headers)
 
-    res = await client.post("/api/v1/auth/totp/verify", json={"code": "000000"}, headers=headers)
+    res = await client.post(
+        "/api/v1/shared/auth/totp/verify", json={"code": "000000"}, headers=headers
+    )
 
     assert res.status_code == 401  # AuthenticationError → 401
 
@@ -97,7 +101,9 @@ async def test_totp_verify_without_setup_fails(client: AsyncClient):
     """Setup yapmadan doğrulama denemesi başarısız olmalı."""
     headers = await _auth_headers(client, "totp_verify_no_setup@example.com")
 
-    res = await client.post("/api/v1/auth/totp/verify", json={"code": "123456"}, headers=headers)
+    res = await client.post(
+        "/api/v1/shared/auth/totp/verify", json={"code": "123456"}, headers=headers
+    )
 
     assert res.status_code == 400
 
@@ -107,7 +113,9 @@ async def test_totp_verify_invalid_format(client: AsyncClient):
     """6 haneli olmayan TOTP kodu → 422."""
     headers = await _auth_headers(client, "totp_verify_format@example.com")
 
-    res = await client.post("/api/v1/auth/totp/verify", json={"code": "abc"}, headers=headers)
+    res = await client.post(
+        "/api/v1/shared/auth/totp/verify", json={"code": "abc"}, headers=headers
+    )
 
     assert res.status_code == 422
 
@@ -122,7 +130,9 @@ async def test_totp_disable_with_valid_code(client: AsyncClient):
     secret = await _setup_and_enable_totp(client, headers)
     code = pyotp.TOTP(secret).now()
 
-    res = await client.post("/api/v1/auth/totp/disable", json={"code": code}, headers=headers)
+    res = await client.post(
+        "/api/v1/shared/auth/totp/disable", json={"code": code}, headers=headers
+    )
 
     assert res.status_code == 200
 
@@ -133,7 +143,9 @@ async def test_totp_disable_invalid_code_fails(client: AsyncClient):
     headers = await _auth_headers(client, "totp_disable_invalid@example.com")
     await _setup_and_enable_totp(client, headers)
 
-    res = await client.post("/api/v1/auth/totp/disable", json={"code": "000000"}, headers=headers)
+    res = await client.post(
+        "/api/v1/shared/auth/totp/disable", json={"code": "000000"}, headers=headers
+    )
 
     assert res.status_code == 401  # AuthenticationError → 401
 
@@ -143,7 +155,9 @@ async def test_totp_disable_when_not_enabled_fails(client: AsyncClient):
     """2FA aktif değilken disable denemesi başarısız olmalı."""
     headers = await _auth_headers(client, "totp_disable_inactive@example.com")
 
-    res = await client.post("/api/v1/auth/totp/disable", json={"code": "123456"}, headers=headers)
+    res = await client.post(
+        "/api/v1/shared/auth/totp/disable", json={"code": "123456"}, headers=headers
+    )
 
     assert res.status_code == 400
 
@@ -157,7 +171,7 @@ async def test_backup_code_count_after_enable(client: AsyncClient):
     headers = await _auth_headers(client, "totp_backup_count@example.com")
     await _setup_and_enable_totp(client, headers)
 
-    res = await client.get("/api/v1/auth/totp/backup-codes/count", headers=headers)
+    res = await client.get("/api/v1/shared/auth/totp/backup-codes/count", headers=headers)
 
     assert res.status_code == 200
     assert res.json()["count"] == 8
@@ -168,7 +182,7 @@ async def test_backup_code_count_without_totp_fails(client: AsyncClient):
     """2FA aktif değilken backup kod sayısı → 400."""
     headers = await _auth_headers(client, "totp_count_no_totp@example.com")
 
-    res = await client.get("/api/v1/auth/totp/backup-codes/count", headers=headers)
+    res = await client.get("/api/v1/shared/auth/totp/backup-codes/count", headers=headers)
 
     assert res.status_code == 400
 
@@ -184,7 +198,7 @@ async def test_regenerate_backup_codes(client: AsyncClient):
     code = pyotp.TOTP(secret).now()
 
     res = await client.post(
-        "/api/v1/auth/totp/backup-codes/regenerate",
+        "/api/v1/shared/auth/totp/backup-codes/regenerate",
         json={"code": code},
         headers=headers,
     )
@@ -202,7 +216,7 @@ async def test_regenerate_backup_codes_invalid_totp_fails(client: AsyncClient):
     await _setup_and_enable_totp(client, headers)
 
     res = await client.post(
-        "/api/v1/auth/totp/backup-codes/regenerate",
+        "/api/v1/shared/auth/totp/backup-codes/regenerate",
         json={"code": "000000"},
         headers=headers,
     )
@@ -216,7 +230,7 @@ async def test_regenerate_when_totp_not_active_fails(client: AsyncClient):
     headers = await _auth_headers(client, "totp_regen_inactive@example.com")
 
     res = await client.post(
-        "/api/v1/auth/totp/backup-codes/regenerate",
+        "/api/v1/shared/auth/totp/backup-codes/regenerate",
         json={"code": "123456"},
         headers=headers,
     )
@@ -236,20 +250,24 @@ async def test_login_with_backup_code(client: AsyncClient):
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
     # TOTP aktif et ve backup kodları al
-    setup_res = await client.post("/api/v1/auth/totp/setup", headers=headers)
+    setup_res = await client.post("/api/v1/shared/auth/totp/setup", headers=headers)
     secret = setup_res.json()["secret"]
     code = pyotp.TOTP(secret).now()
-    verify_res = await client.post("/api/v1/auth/totp/verify", json={"code": code}, headers=headers)
+    verify_res = await client.post(
+        "/api/v1/shared/auth/totp/verify", json={"code": code}, headers=headers
+    )
     backup_codes = verify_res.json()["backup_codes"]
 
     # Login ile partial_token al
-    step1 = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    step1 = await client.post(
+        "/api/v1/client/auth/login", json={"email": email, "password": password}
+    )
     assert step1.status_code == 200
     partial_token = step1.json()["partial_token"]
 
     # Backup kod ile challenge tamamla
     step2 = await client.post(
-        "/api/v1/auth/totp-challenge",
+        "/api/v1/shared/auth/totp-challenge",
         json={"partial_token": partial_token, "code": backup_codes[0]},
     )
 
@@ -265,26 +283,32 @@ async def test_backup_code_single_use(client: AsyncClient):
     tokens = await _register_and_login(client, email, password)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
-    setup_res = await client.post("/api/v1/auth/totp/setup", headers=headers)
+    setup_res = await client.post("/api/v1/shared/auth/totp/setup", headers=headers)
     secret = setup_res.json()["secret"]
     code = pyotp.TOTP(secret).now()
-    verify_res = await client.post("/api/v1/auth/totp/verify", json={"code": code}, headers=headers)
+    verify_res = await client.post(
+        "/api/v1/shared/auth/totp/verify", json={"code": code}, headers=headers
+    )
     backup_codes = verify_res.json()["backup_codes"]
 
     # İlk kullanım
-    step1 = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    step1 = await client.post(
+        "/api/v1/client/auth/login", json={"email": email, "password": password}
+    )
     partial_token = step1.json()["partial_token"]
     step2 = await client.post(
-        "/api/v1/auth/totp-challenge",
+        "/api/v1/shared/auth/totp-challenge",
         json={"partial_token": partial_token, "code": backup_codes[0]},
     )
     assert step2.status_code == 200
 
     # İkinci kullanım — aynı kod tekrar kullanılmaya çalışılıyor
-    step3 = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    step3 = await client.post(
+        "/api/v1/client/auth/login", json={"email": email, "password": password}
+    )
     partial_token2 = step3.json()["partial_token"]
     step4 = await client.post(
-        "/api/v1/auth/totp-challenge",
+        "/api/v1/shared/auth/totp-challenge",
         json={"partial_token": partial_token2, "code": backup_codes[0]},
     )
     assert step4.status_code == 401

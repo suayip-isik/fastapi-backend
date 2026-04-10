@@ -47,6 +47,7 @@ def setup_db():
     async def _create() -> None:
         engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
         async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
         await engine.dispose()
 
@@ -58,11 +59,8 @@ def setup_db():
 
     asyncio.run(_create())
 
-    # App engine + AuditService'i de NullPool ile override et — pool dolup taşmasın
-    with (
-        patch("app.db.session.AsyncSessionFactory", _null_pool_factory),
-        patch("app.services.audit.AsyncSessionFactory", _null_pool_factory),
-    ):
+    # App engine'i NullPool ile override et — provider getter'ları bu factory'yi kullanır
+    with patch("app.db.session.AsyncSessionFactory", _null_pool_factory):
         yield
 
     asyncio.run(_drop())
@@ -93,12 +91,14 @@ def disable_rate_limits():
 def mock_enqueue():
     """
     Tüm testlerde ARQ enqueue'yu mock'la.
-    register → app.services.auth.enqueue
-    resend_verification / forgot_password → app.services.account.enqueue
-    İki modül de aynı mock'a yönlendirilir.
+    Clean architecture refactor sonrası queue adapter'ı
+    `app.adapters.infrastructure.enqueue` üstünden çalışır.
     """
     mock = AsyncMock()
-    with patch("app.services.auth.enqueue", mock), patch("app.services.account.enqueue", mock):
+    with (
+        patch("app.adapters.infrastructure.enqueue", mock),
+        patch("app.tasks.worker.enqueue", mock),
+    ):
         yield mock
 
 
@@ -107,7 +107,7 @@ def mock_audit_log():
     """
     Tüm testlerde AuditService.log'u mock'la.
 
-    AuditService bağımsız bir AsyncSessionFactory session'ı açar ve henüz
+    AuditService bağımsız bir session provider üzerinden ayrı session açar ve henüz
     commit edilmemiş user_id'ye FK referans içeren bir INSERT yapar. Bu,
     PostgreSQL'in işlem kilidini beklemesine neden olur (transactionid wait).
     Ana session (db_session) commit edilmeden önce AuditService'in bu INSERT'i

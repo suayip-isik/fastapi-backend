@@ -10,9 +10,12 @@ Kullanım:
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from app.core.redis import get_redis_client
+from app.adapters.infrastructure import RedisAdapter
+
+if TYPE_CHECKING:
+    from app.ports.infrastructure import RedisPort
 
 
 class CacheService:
@@ -26,8 +29,10 @@ class CacheService:
         connection pool'dan alınır.
     """
 
-    @staticmethod
-    async def get(key: str) -> dict[str, Any] | None:
+    def __init__(self, redis: RedisPort | None = None) -> None:
+        self._redis = redis or RedisAdapter()
+
+    async def get(self, key: str) -> dict[str, Any] | None:
         """Cache'den JSON değer okur.
 
         Args:
@@ -36,14 +41,12 @@ class CacheService:
         Returns:
             Deserialize edilmiş dict veya key yoksa None
         """
-        redis = await get_redis_client()
-        raw = await redis.get(key)
+        raw = await self._redis.get(key)
         if raw is None:
             return None
         return json.loads(raw)  # type: ignore[no-any-return]
 
-    @staticmethod
-    async def set(key: str, value: dict[str, Any], ttl: int) -> None:
+    async def set(self, key: str, value: dict[str, Any], ttl: int) -> None:
         """Cache'e JSON değer yazar.
 
         Değer JSON olarak serialize edilir. TTL süresi sonunda
@@ -54,11 +57,9 @@ class CacheService:
             value: Saklanacak dict (JSON serializable olmalı)
             ttl: Time-to-live saniye cinsinden
         """
-        redis = await get_redis_client()
-        await redis.setex(key, ttl, json.dumps(value, default=str))
+        await self._redis.setex(key, ttl, json.dumps(value, default=str))
 
-    @staticmethod
-    async def delete(*keys: str) -> None:
+    async def delete(self, *keys: str) -> None:
         """Cache'den bir veya daha fazla key siler.
 
         Var olmayan key'ler sessizce atlanır.
@@ -66,6 +67,4 @@ class CacheService:
         Args:
             *keys: Silinecek cache key'leri
         """
-        redis = await get_redis_client()
-        if keys:
-            await redis.delete(*keys)
+        await self._redis.delete(*keys)

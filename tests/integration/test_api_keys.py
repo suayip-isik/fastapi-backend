@@ -1,4 +1,4 @@
-"""API Keys endpoint testleri — /api/v1/api-keys"""
+"""API Keys endpoint testleri — /api/v1/shared/api-keys"""
 
 from __future__ import annotations
 
@@ -19,8 +19,10 @@ if TYPE_CHECKING:
 async def _register_and_login(
     client: AsyncClient, email: str, password: str = "StrongPass1"
 ) -> dict:
-    await client.post("/api/v1/auth/register", json={"email": email, "password": password})
-    res = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    await client.post("/api/v1/client/auth/register", json={"email": email, "password": password})
+    res = await client.post(
+        "/api/v1/client/auth/login", json={"email": email, "password": password}
+    )
     return res.json()
 
 
@@ -39,7 +41,7 @@ async def _create_key(
     payload: dict = {"name": name, "scopes": scopes or []}
     if expires_at:
         payload["expires_at"] = expires_at
-    res = await client.post("/api/v1/api-keys", json=payload, headers=headers)
+    res = await client.post("/api/v1/shared/api-keys", json=payload, headers=headers)
     return res.json()
 
 
@@ -52,7 +54,7 @@ async def test_create_api_key_success(client: AsyncClient):
     headers = await _auth_headers(client, "apikey_create@example.com")
 
     res = await client.post(
-        "/api/v1/api-keys",
+        "/api/v1/shared/api-keys",
         json={"name": "Production Key", "scopes": ["api_keys:read", "api_keys:write"]},
         headers=headers,
     )
@@ -74,7 +76,7 @@ async def test_create_api_key_without_scopes(client: AsyncClient):
     headers = await _auth_headers(client, "apikey_noscope@example.com")
 
     res = await client.post(
-        "/api/v1/api-keys",
+        "/api/v1/shared/api-keys",
         json={"name": "No Scope Key"},
         headers=headers,
     )
@@ -90,7 +92,7 @@ async def test_create_api_key_with_expiration(client: AsyncClient):
     expires = (datetime.now(UTC) + timedelta(days=30)).isoformat()
 
     res = await client.post(
-        "/api/v1/api-keys",
+        "/api/v1/shared/api-keys",
         json={"name": "Expiring Key", "expires_at": expires},
         headers=headers,
     )
@@ -102,7 +104,7 @@ async def test_create_api_key_with_expiration(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_create_api_key_unauthorized(client: AsyncClient):
     """Token olmadan API key oluşturulamaz."""
-    res = await client.post("/api/v1/api-keys", json={"name": "Unauthorized"})
+    res = await client.post("/api/v1/shared/api-keys", json={"name": "Unauthorized"})
     assert res.status_code == 401
 
 
@@ -112,7 +114,7 @@ async def test_create_api_key_empty_name_fails(client: AsyncClient):
     headers = await _auth_headers(client, "apikey_emptyname@example.com")
 
     res = await client.post(
-        "/api/v1/api-keys",
+        "/api/v1/shared/api-keys",
         json={"name": "   "},
         headers=headers,
     )
@@ -126,7 +128,7 @@ async def test_create_api_key_name_too_long(client: AsyncClient):
     headers = await _auth_headers(client, "apikey_longname@example.com")
 
     res = await client.post(
-        "/api/v1/api-keys",
+        "/api/v1/shared/api-keys",
         json={"name": "A" * 101},
         headers=headers,
     )
@@ -140,7 +142,7 @@ async def test_create_api_key_with_invalid_scope_fails(client: AsyncClient):
     headers = await _auth_headers(client, "apikey_invalid_scope@example.com")
 
     res = await client.post(
-        "/api/v1/api-keys",
+        "/api/v1/shared/api-keys",
         json={"name": "Invalid Scope Key", "scopes": ["read"]},
         headers=headers,
     )
@@ -156,7 +158,7 @@ async def test_list_api_keys_empty(client: AsyncClient):
     """Hiç API key yokken boş liste döner."""
     headers = await _auth_headers(client, "apikey_list_empty@example.com")
 
-    res = await client.get("/api/v1/api-keys", headers=headers)
+    res = await client.get("/api/v1/shared/api-keys", headers=headers)
 
     assert res.status_code == 200
     assert res.json() == []
@@ -169,7 +171,7 @@ async def test_list_api_keys_shows_created_keys(client: AsyncClient):
     await _create_key(client, headers, "Key One")
     await _create_key(client, headers, "Key Two")
 
-    res = await client.get("/api/v1/api-keys", headers=headers)
+    res = await client.get("/api/v1/shared/api-keys", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
@@ -185,7 +187,7 @@ async def test_list_api_keys_no_raw_key(client: AsyncClient):
     headers = await _auth_headers(client, "apikey_list_noraw@example.com")
     await _create_key(client, headers, "Secret Key")
 
-    res = await client.get("/api/v1/api-keys", headers=headers)
+    res = await client.get("/api/v1/shared/api-keys", headers=headers)
 
     data = res.json()
     assert len(data) == 1
@@ -196,7 +198,7 @@ async def test_list_api_keys_no_raw_key(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_list_api_keys_unauthorized(client: AsyncClient):
     """Token olmadan API key listesi alınamaz."""
-    res = await client.get("/api/v1/api-keys")
+    res = await client.get("/api/v1/shared/api-keys")
     assert res.status_code == 401
 
 
@@ -208,7 +210,7 @@ async def test_list_api_keys_isolated_per_user(client: AsyncClient):
 
     await _create_key(client, headers_a, "User A Key")
 
-    res_b = await client.get("/api/v1/api-keys", headers=headers_b)
+    res_b = await client.get("/api/v1/shared/api-keys", headers=headers_b)
     assert res_b.json() == []
 
 
@@ -223,7 +225,7 @@ async def test_revoke_api_key_success(client: AsyncClient):
     key_id = created["id"]
 
     res = await client.delete(
-        f"/api/v1/api-keys/{key_id}",
+        f"/api/v1/shared/api-keys/{key_id}",
         headers={**headers, "Accept-Language": "tr"},
     )
 
@@ -238,9 +240,9 @@ async def test_revoked_key_not_in_list(client: AsyncClient):
     created = await _create_key(client, headers, "Temp Key")
     key_id = created["id"]
 
-    await client.delete(f"/api/v1/api-keys/{key_id}", headers=headers)
+    await client.delete(f"/api/v1/shared/api-keys/{key_id}", headers=headers)
 
-    res = await client.get("/api/v1/api-keys", headers=headers)
+    res = await client.get("/api/v1/shared/api-keys", headers=headers)
     assert res.json() == []
 
 
@@ -249,7 +251,7 @@ async def test_revoke_nonexistent_key(client: AsyncClient):
     """Var olmayan API key iptali → 404."""
     headers = await _auth_headers(client, "apikey_revoke_404@example.com")
 
-    res = await client.delete(f"/api/v1/api-keys/{uuid4()}", headers=headers)
+    res = await client.delete(f"/api/v1/shared/api-keys/{uuid4()}", headers=headers)
 
     assert res.status_code == 404
 
@@ -264,7 +266,7 @@ async def test_revoke_other_users_key(client: AsyncClient):
     key_id = created["id"]
 
     # B kullanıcısı A'nın key'ini silmeye çalışıyor
-    res = await client.delete(f"/api/v1/api-keys/{key_id}", headers=headers_b)
+    res = await client.delete(f"/api/v1/shared/api-keys/{key_id}", headers=headers_b)
 
     assert res.status_code == 404
 
@@ -272,7 +274,7 @@ async def test_revoke_other_users_key(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_revoke_api_key_unauthorized(client: AsyncClient):
     """Token olmadan API key iptal edilemez."""
-    res = await client.delete(f"/api/v1/api-keys/{uuid4()}")
+    res = await client.delete(f"/api/v1/shared/api-keys/{uuid4()}")
     assert res.status_code == 401
 
 
@@ -282,7 +284,7 @@ async def test_api_key_without_scopes_cannot_access_protected_endpoint(client: A
     headers = await _auth_headers(client, "apikey_scope_deny@example.com")
     created = await _create_key(client, headers, "No Scope Key", scopes=[])
 
-    res = await client.get("/api/v1/api-keys", headers={"X-API-Key": created["key"]})
+    res = await client.get("/api/v1/shared/api-keys", headers={"X-API-Key": created["key"]})
 
     assert res.status_code == 403
 
@@ -298,7 +300,7 @@ async def test_api_key_with_matching_scope_can_access_protected_endpoint(client:
         scopes=["api_keys:read"],
     )
 
-    res = await client.get("/api/v1/api-keys", headers={"X-API-Key": created["key"]})
+    res = await client.get("/api/v1/shared/api-keys", headers={"X-API-Key": created["key"]})
 
     assert res.status_code == 200
 
@@ -314,7 +316,7 @@ async def test_api_key_scope_cannot_escalate_beyond_user_permissions(client: Asy
         scopes=["users:read"],
     )
 
-    res = await client.get("/api/v1/users", headers={"X-API-Key": created["key"]})
+    res = await client.get("/api/v1/admin/users", headers={"X-API-Key": created["key"]})
 
     assert res.status_code == 403
 
@@ -331,7 +333,7 @@ async def test_api_key_authentication_works(client: AsyncClient):
 
     # X-API-Key header ile korunan bir endpoint'e eriş
     res = await client.get(
-        "/api/v1/users/me",
+        "/api/v1/shared/me",
         headers={"X-API-Key": raw_key},
     )
 
@@ -343,7 +345,7 @@ async def test_api_key_authentication_works(client: AsyncClient):
 async def test_api_key_invalid_format(client: AsyncClient):
     """Geçersiz API key formatı → 401."""
     res = await client.get(
-        "/api/v1/users/me",
+        "/api/v1/shared/me",
         headers={"X-API-Key": "invalid_key_format"},
     )
 
@@ -359,11 +361,11 @@ async def test_api_key_revoked_cannot_authenticate(client: AsyncClient):
     key_id = created["id"]
 
     # Key'i iptal et
-    await client.delete(f"/api/v1/api-keys/{key_id}", headers=headers)
+    await client.delete(f"/api/v1/shared/api-keys/{key_id}", headers=headers)
 
     # İptal edilmiş key ile erişim denemesi
     res = await client.get(
-        "/api/v1/users/me",
+        "/api/v1/shared/me",
         headers={"X-API-Key": raw_key},
     )
 

@@ -33,14 +33,16 @@ async def test_full_api_key_journey(client: AsyncClient) -> None:
     password = "StrongPass1"
 
     # Adım 1+2: Kayıt ve giriş
-    await client.post("/api/v1/auth/register", json={"email": email, "password": password})
-    login = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    await client.post("/api/v1/client/auth/register", json={"email": email, "password": password})
+    login = await client.post(
+        "/api/v1/client/auth/login", json={"email": email, "password": password}
+    )
     assert login.status_code == 200
     jwt_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
     # Adım 3: İlk API key oluştur
     create1 = await client.post(
-        "/api/v1/api-keys", json={"name": "Journey Key 1"}, headers=jwt_headers
+        "/api/v1/shared/api-keys", json={"name": "Journey Key 1"}, headers=jwt_headers
     )
     assert create1.status_code == 201
     raw_key_1 = create1.json()["key"]
@@ -49,41 +51,41 @@ async def test_full_api_key_journey(client: AsyncClient) -> None:
     assert len(raw_key_1) == 88  # "sk_live_" (8) + token_hex(40) (80)
 
     # Adım 4: API key ile erişim
-    me = await client.get("/api/v1/users/me", headers={"X-API-Key": raw_key_1})
+    me = await client.get("/api/v1/shared/me", headers={"X-API-Key": raw_key_1})
     assert me.status_code == 200
     assert me.json()["email"] == email
 
     # Adım 5: Liste → 1 key
-    keys = await client.get("/api/v1/api-keys", headers=jwt_headers)
+    keys = await client.get("/api/v1/shared/api-keys", headers=jwt_headers)
     assert keys.status_code == 200
     assert len(keys.json()) == 1
     assert keys.json()[0]["name"] == "Journey Key 1"
 
     # Adım 6: İkinci API key
     create2 = await client.post(
-        "/api/v1/api-keys", json={"name": "Journey Key 2"}, headers=jwt_headers
+        "/api/v1/shared/api-keys", json={"name": "Journey Key 2"}, headers=jwt_headers
     )
     assert create2.status_code == 201
     raw_key_2 = create2.json()["key"]
 
     # Adım 7: Liste → 2 key
-    keys2 = await client.get("/api/v1/api-keys", headers=jwt_headers)
+    keys2 = await client.get("/api/v1/shared/api-keys", headers=jwt_headers)
     assert len(keys2.json()) == 2
 
     # Adım 8: Birinci key'i iptal et
-    revoke = await client.delete(f"/api/v1/api-keys/{key_id_1}", headers=jwt_headers)
+    revoke = await client.delete(f"/api/v1/shared/api-keys/{key_id_1}", headers=jwt_headers)
     assert revoke.status_code == 200
 
     # Adım 9: İptal edilmiş key reddedilmeli
-    rejected = await client.get("/api/v1/users/me", headers={"X-API-Key": raw_key_1})
+    rejected = await client.get("/api/v1/shared/me", headers={"X-API-Key": raw_key_1})
     assert rejected.status_code == 401
 
     # Adım 10: İkinci key hâlâ geçerli
-    still_works = await client.get("/api/v1/users/me", headers={"X-API-Key": raw_key_2})
+    still_works = await client.get("/api/v1/shared/me", headers={"X-API-Key": raw_key_2})
     assert still_works.status_code == 200
     assert still_works.json()["email"] == email
 
     # Adım 11: Kalan key listesi → 1 key (sadece ikinci)
-    remaining = await client.get("/api/v1/api-keys", headers=jwt_headers)
+    remaining = await client.get("/api/v1/shared/api-keys", headers=jwt_headers)
     assert len(remaining.json()) == 1
     assert remaining.json()[0]["name"] == "Journey Key 2"

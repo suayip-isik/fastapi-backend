@@ -1,5 +1,5 @@
 """
-WebSocket endpoint testleri — /api/v1/ws/{room_id}
+WebSocket endpoint testleri — /api/v1/shared/ws/{room_id}
 
 Bağlantı protokolü:
   1. Client bağlanır (accept)
@@ -22,7 +22,7 @@ from app.main import app
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
-WS_URL = "/api/v1/ws/test-room"
+WS_URL = "/api/v1/shared/ws/test-room"
 
 
 @pytest.fixture(autouse=True)
@@ -60,46 +60,34 @@ def _ws_close_code(message: dict) -> int:
 # ── Auth Hata Senaryoları ─────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
-async def test_ws_wrong_auth_message_type():
+def test_ws_wrong_auth_message_type():
     """type='auth' olmayan ilk mesaj → 4001 ile kapatılmalı."""
     code = _ws_close_code({"type": "message", "content": "hello"})
     assert code == 4001
 
 
-@pytest.mark.asyncio
-async def test_ws_auth_message_missing_token():
+def test_ws_auth_message_missing_token():
     """type='auth' fakat token alanı yok → 4001 ile kapatılmalı."""
     code = _ws_close_code({"type": "auth"})
     assert code == 4001
 
 
-@pytest.mark.asyncio
-async def test_ws_auth_message_empty_token():
+def test_ws_auth_message_empty_token():
     """token değeri boş string → 4001 ile kapatılmalı."""
     code = _ws_close_code({"type": "auth", "token": ""})
     assert code == 4001
 
 
-@pytest.mark.asyncio
-async def test_ws_invalid_jwt_token():
+def test_ws_invalid_jwt_token():
     """Geçersiz JWT string → 4001 ile kapatılmalı."""
     code = _ws_close_code({"type": "auth", "token": "not.a.valid.jwt"})
     assert code == 4001
 
 
 # ── Başarılı Bağlantı Senaryoları ─────────────────────────────────────────────
-# NOT: Bu testler pytest-asyncio'nun async event loop'u ile Starlette TestClient'ın
-# anyio kullanımı arasındaki çakışma nedeniyle askıda kalır.
-# Çözüm: pytest-asyncio olmayan ayrı bir sync test süreci ile çalıştırılmalı.
-# Örnek: pytest tests/integration/test_websocket.py -p no:asyncio -k "valid_auth or ping_pong or broadcast or echoed"
 
 
-@pytest.mark.skip(
-    reason="TestClient+asyncio event loop çakışması: ayrı sync test süreci gerektirir"
-)
-@pytest.mark.asyncio
-async def test_ws_valid_auth_connects_successfully():
+def test_ws_valid_auth_connects_successfully():
     """Geçerli access token ile bağlantı kurulmalı (ping → pong)."""
     token = create_access_token(str(uuid4()))
     with TestClient(app) as client, client.websocket_connect(WS_URL) as ws:
@@ -109,11 +97,7 @@ async def test_ws_valid_auth_connects_successfully():
         assert resp == {"type": "pong"}
 
 
-@pytest.mark.skip(
-    reason="TestClient+asyncio event loop çakışması: ayrı sync test süreci gerektirir"
-)
-@pytest.mark.asyncio
-async def test_ws_ping_pong_multiple_times():
+def test_ws_ping_pong_multiple_times():
     """Bağlantı aktif kaldığı sürece birden fazla ping/pong çalışmalı."""
     token = create_access_token(str(uuid4()))
     with TestClient(app) as client, client.websocket_connect(WS_URL) as ws:
@@ -124,11 +108,7 @@ async def test_ws_ping_pong_multiple_times():
             assert resp["type"] == "pong"
 
 
-@pytest.mark.skip(
-    reason="TestClient+asyncio event loop çakışması: ayrı sync test süreci gerektirir"
-)
-@pytest.mark.asyncio
-async def test_ws_broadcast_message_to_room():
+def test_ws_broadcast_message_to_room():
     """İki kullanıcı aynı odada: biri mesaj gönderince diğeri almalı."""
     token_a = create_access_token(str(uuid4()))
     token_b = create_access_token(str(uuid4()))
@@ -145,18 +125,14 @@ async def test_ws_broadcast_message_to_room():
             assert msg["room_id"] == "test-room"
 
 
-@pytest.mark.skip(
-    reason="TestClient+asyncio event loop çakışması: ayrı sync test süreci gerektirir"
-)
-@pytest.mark.asyncio
-async def test_ws_message_not_echoed_to_sender():
+def test_ws_message_not_echoed_to_sender():
     """Gönderilen mesaj gönderen kullanıcıya echo edilmemeli."""
     token_a = create_access_token(str(uuid4()))
     token_b = create_access_token(str(uuid4()))
     room = f"echo-test-{str(uuid4())[:8]}"
-    with TestClient(app) as client, client.websocket_connect(f"/api/v1/ws/{room}") as ws_a:
+    with TestClient(app) as client, client.websocket_connect(f"/api/v1/shared/ws/{room}") as ws_a:
         ws_a.send_json({"type": "auth", "token": token_a})
-        with client.websocket_connect(f"/api/v1/ws/{room}") as ws_b:
+        with client.websocket_connect(f"/api/v1/shared/ws/{room}") as ws_b:
             ws_b.send_json({"type": "auth", "token": token_b})
             ws_a.receive_json()  # user_joined tüket
             ws_b.send_json({"type": "message", "content": "no-echo"})

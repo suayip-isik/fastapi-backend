@@ -536,103 +536,105 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 
 > **Toplam:** ~53 endpoint (Auth: 10, TOTP: 5, Users: 11, Roles: 5, API Keys: 3, Notifications: 5, Uploads: 2, Audit Logs: 3, WebSocket: 1, Health: 3)
 
-### 1. Auth (`/auth`) — 10 endpoint
+### 1. Auth (`/client/auth` + `/admin/auth` + `/shared/auth`) — 10 endpoint
 
-| Method | Path                        | Açıklama                                                          | Auth  |
-| ------ | --------------------------- | ----------------------------------------------------------------- | ----- |
-| POST   | `/auth/register`            | Yeni kullanıcı kaydı                                              | Hayır |
-| POST   | `/auth/login`               | E-posta/şifre ile giriş — adım 1 (TOTP varsa partial_token döner) | Hayır |
-| POST   | `/auth/totp-challenge`      | TOTP doğrulama — adım 2 (partial_token + kod ile tamamla)         | Hayır |
-| POST   | `/auth/refresh`             | Access token yenile (rotation ile)                                | Hayır |
-| POST   | `/auth/logout`              | Çıkış (token blacklist'e eklenir)                                 | Evet  |
-| POST   | `/auth/verify-email`        | E-posta adresini doğrula                                          | Hayır |
-| POST   | `/auth/resend-verification` | Doğrulama e-postasını tekrar gönder                               | Hayır |
-| POST   | `/auth/forgot-password`     | Şifre sıfırlama e-postası gönder                                  | Hayır |
-| POST   | `/auth/reset-password`      | Token ile şifre sıfırla                                           | Hayır |
-| GET    | `/auth/me`                  | Mevcut kullanıcı bilgileri                                        | Evet  |
+| Method | Path                               | Açıklama                                                     | Auth  |
+| ------ | ---------------------------------- | ------------------------------------------------------------ | ----- |
+| POST   | `/client/auth/register`            | Yeni client kullanıcı kaydı                                  | Hayır |
+| POST   | `/client/auth/login`               | Client user girişi — adım 1 (TOTP varsa partial_token döner) | Hayır |
+| POST   | `/admin/auth/login`                | Admin user için token tabanlı giriş                          | Hayır |
+| POST   | `/shared/auth/totp-challenge`      | TOTP doğrulama — adım 2 (partial_token + kod ile tamamla)    | Hayır |
+| POST   | `/shared/auth/refresh`             | Access token yenile (rotation ile)                           | Hayır |
+| POST   | `/shared/auth/logout`              | Çıkış (token blacklist'e eklenir)                            | Evet  |
+| POST   | `/client/auth/verify-email`        | E-posta adresini doğrula                                     | Hayır |
+| POST   | `/client/auth/resend-verification` | Doğrulama e-postasını tekrar gönder                          | Hayır |
+| POST   | `/client/auth/forgot-password`     | Şifre sıfırlama e-postası gönder                             | Hayır |
+| POST   | `/client/auth/reset-password`      | Token ile şifre sıfırla                                      | Hayır |
 
-> Şifre sıfırlama e-postasındaki link frontend'e yönlenir: `FRONTEND_URL/reset-password?token=...`. E-posta doğrulama linki ise backend doğrulama endpoint'ini kullanır: `APP_URL/api/v1/auth/verify-email?token=...`.
+> Şifre sıfırlama e-postasındaki link frontend'e yönlenir: `FRONTEND_URL/reset-password?token=...`. E-posta doğrulama linki ise backend doğrulama endpoint'ini kullanır: `APP_URL/api/v1/client/auth/verify-email?token=...`.
 
-### 2. TOTP / 2FA (`/auth/totp`) — 5 endpoint
+> Legacy route desteği yoktur. Resmi yüzeyler yalnız `/api/v1/client/*`, `/api/v1/admin/*` ve `/api/v1/shared/*` altındadır.
 
-| Method | Path                                 | Açıklama                                             | Auth |
-| ------ | ------------------------------------ | ---------------------------------------------------- | ---- |
-| POST   | `/auth/totp/setup`                   | 2FA kurulumu başlat (QR kodu + secret döner)         | Evet |
-| POST   | `/auth/totp/verify`                  | Kodu doğrula ve 2FA'yı aktif et (yedek kodlar döner) | Evet |
-| POST   | `/auth/totp/disable`                 | 2FA'yı devre dışı bırak                              | Evet |
-| GET    | `/auth/totp/backup-codes/count`      | Kalan yedek kod sayısını getir                       | Evet |
-| POST   | `/auth/totp/backup-codes/regenerate` | Yeni yedek kodlar üret (eskiler geçersizleşir)       | Evet |
+### 2. TOTP / 2FA (`/shared/auth/totp`) — 5 endpoint
 
-### 3. Kullanıcılar (`/users`) — 11 endpoint
+| Method | Path                                        | Açıklama                                     | Auth |
+| ------ | ------------------------------------------- | -------------------------------------------- | ---- |
+| POST   | `/shared/auth/totp/setup`                   | 2FA kurulumu başlat (QR kodu + secret döner) | Evet |
+| POST   | `/shared/auth/totp/verify`                  | Kodu doğrula ve 2FA'yı aktif et              | Evet |
+| POST   | `/shared/auth/totp/disable`                 | 2FA'yı devre dışı bırak                      | Evet |
+| GET    | `/shared/auth/totp/backup-codes/count`      | Kalan yedek kod sayısını getir               | Evet |
+| POST   | `/shared/auth/totp/backup-codes/regenerate` | Yeni yedek kodlar üret                       | Evet |
 
-| Method | Path                          | Açıklama                                    | Auth  |
-| ------ | ----------------------------- | ------------------------------------------- | ----- |
-| GET    | `/users/me`                   | Mevcut kullanıcı profili                    | Evet  |
-| PATCH  | `/users/me`                   | Profili güncelle                            | Evet  |
-| GET    | `/users`                      | Tüm kullanıcıları listele (filtreli)        | Admin |
-| GET    | `/users/stats`                | Aktif/pasif/toplam kullanıcı istatistikleri | Admin |
-| GET    | `/users/deleted`              | Soft-delete kullanıcıları listele           | Admin |
-| GET    | `/users/{user_id}`            | Belirli kullanıcıyı getir                   | Admin |
-| POST   | `/users/{user_id}/activate`   | Kullanıcıyı aktif et                        | Admin |
-| POST   | `/users/{user_id}/deactivate` | Kullanıcıyı deaktif et                      | Admin |
-| PATCH  | `/users/{user_id}/role`       | Kullanıcı rolünü değiştir                   | Admin |
-| DELETE | `/users/{user_id}`            | Kullanıcıyı soft-delete et                  | Admin |
-| POST   | `/users/{user_id}/restore`    | Soft-delete kullanıcıyı geri al             | Admin |
+### 3. Kullanıcılar (`/shared/me` + `/admin/users`) — 11 endpoint
 
-### 4. Roller (`/roles`) — 5 endpoint
+| Method | Path                                | Açıklama                                    | Auth  |
+| ------ | ----------------------------------- | ------------------------------------------- | ----- |
+| GET    | `/shared/me`                        | Mevcut kullanıcı profili                    | Evet  |
+| PATCH  | `/shared/me`                        | Profili güncelle                            | Evet  |
+| GET    | `/admin/users`                      | Tüm kullanıcıları listele (filtreli)        | Admin |
+| GET    | `/admin/users/stats`                | Aktif/pasif/toplam kullanıcı istatistikleri | Admin |
+| GET    | `/admin/users/deleted`              | Soft-delete kullanıcıları listele           | Admin |
+| GET    | `/admin/users/{user_id}`            | Belirli kullanıcıyı getir                   | Admin |
+| POST   | `/admin/users/{user_id}/activate`   | Kullanıcıyı aktif et                        | Admin |
+| POST   | `/admin/users/{user_id}/deactivate` | Kullanıcıyı deaktif et                      | Admin |
+| PATCH  | `/admin/users/{user_id}/role`       | Kullanıcı rolünü değiştir                   | Admin |
+| DELETE | `/admin/users/{user_id}`            | Kullanıcıyı soft-delete et                  | Admin |
+| POST   | `/admin/users/{user_id}/restore`    | Soft-delete kullanıcıyı geri al             | Admin |
 
-| Method | Path               | Açıklama                                           | Auth  |
-| ------ | ------------------ | -------------------------------------------------- | ----- |
-| GET    | `/roles`           | Tüm rolleri listele (izinlerle birlikte)           | Admin |
-| POST   | `/roles`           | Yeni özel rol oluştur                              | Admin |
-| GET    | `/roles/{role_id}` | Rol detayını getir                                 | Admin |
-| PATCH  | `/roles/{role_id}` | Rol açıklamasını veya izinlerini güncelle          | Admin |
-| DELETE | `/roles/{role_id}` | Özel rolü sil (sistem rolleri korumalı, silinemez) | Admin |
+### 4. Roller (`/admin/roles`) — 5 endpoint
 
-### 5. API Keys (`/api-keys`) — 3 endpoint
+| Method | Path                     | Açıklama                                  | Auth  |
+| ------ | ------------------------ | ----------------------------------------- | ----- |
+| GET    | `/admin/roles`           | Tüm rolleri listele (izinlerle birlikte)  | Admin |
+| POST   | `/admin/roles`           | Yeni özel rol oluştur                     | Admin |
+| GET    | `/admin/roles/{role_id}` | Rol detayını getir                        | Admin |
+| PATCH  | `/admin/roles/{role_id}` | Rol açıklamasını veya izinlerini güncelle | Admin |
+| DELETE | `/admin/roles/{role_id}` | Özel rolü sil                             | Admin |
 
-| Method | Path                 | Açıklama             | Auth |
-| ------ | -------------------- | -------------------- | ---- |
-| POST   | `/api-keys`          | Yeni API key oluştur | Evet |
-| GET    | `/api-keys`          | API key'leri listele | Evet |
-| DELETE | `/api-keys/{key_id}` | API key'i iptal et   | Evet |
+### 5. API Keys (`/shared/api-keys`) — 3 endpoint
 
-### 6. Bildirimler (`/notifications`) — 5 endpoint
+| Method | Path                        | Açıklama             | Auth |
+| ------ | --------------------------- | -------------------- | ---- |
+| POST   | `/shared/api-keys`          | Yeni API key oluştur | Evet |
+| GET    | `/shared/api-keys`          | API key'leri listele | Evet |
+| DELETE | `/shared/api-keys/{key_id}` | API key'i iptal et   | Evet |
 
-| Method | Path                               | Açıklama                         | Auth |
-| ------ | ---------------------------------- | -------------------------------- | ---- |
-| GET    | `/notifications`                   | Bildirimleri listele (sayfalı)   | Evet |
-| GET    | `/notifications/unread-count`      | Okunmamış bildirim sayısı        | Evet |
-| PATCH  | `/notifications/read-all`          | Tüm bildirimleri okundu işaretle | Evet |
-| PATCH  | `/notifications/{notification_id}` | Tek bildirimi okundu işaretle    | Evet |
-| DELETE | `/notifications/{notification_id}` | Bildirimi sil                    | Evet |
+### 6. Bildirimler (`/shared/notifications`) — 5 endpoint
 
-### 7. Dosya Yükleme (`/uploads`) — 2 endpoint
+| Method | Path                                      | Açıklama                         | Auth |
+| ------ | ----------------------------------------- | -------------------------------- | ---- |
+| GET    | `/shared/notifications`                   | Bildirimleri listele (sayfalı)   | Evet |
+| GET    | `/shared/notifications/unread-count`      | Okunmamış bildirim sayısı        | Evet |
+| PATCH  | `/shared/notifications/read-all`          | Tüm bildirimleri okundu işaretle | Evet |
+| PATCH  | `/shared/notifications/{notification_id}` | Tek bildirimi okundu işaretle    | Evet |
+| DELETE | `/shared/notifications/{notification_id}` | Bildirimi sil                    | Evet |
 
-| Method | Path       | Açıklama                                    | Auth |
-| ------ | ---------- | ------------------------------------------- | ---- |
-| POST   | `/uploads` | Dosya yükle (max 10MB, izinli MIME türleri) | Evet |
-| DELETE | `/uploads` | Dosya sil (sahip veya admin)                | Evet |
+### 7. Dosya Yükleme (`/shared/uploads`) — 2 endpoint
 
-### 8. Audit Loglar (`/audit-logs`) — 3 endpoint
+| Method | Path              | Açıklama                                    | Auth |
+| ------ | ----------------- | ------------------------------------------- | ---- |
+| POST   | `/shared/uploads` | Dosya yükle (max 10MB, izinli MIME türleri) | Evet |
+| DELETE | `/shared/uploads` | Dosya sil (sahip veya admin)                | Evet |
 
-| Method | Path                   | Açıklama                                   | Auth  |
-| ------ | ---------------------- | ------------------------------------------ | ----- |
-| GET    | `/audit-logs`          | Audit logları listele (sayfalı + filtreli) | Admin |
-| GET    | `/audit-logs/stream`   | Cursor tabanlı audit log stream            | Admin |
-| GET    | `/audit-logs/{log_id}` | Tek audit log kaydını getir                | Admin |
+### 8. Audit Loglar (`/admin/audit-logs`) — 3 endpoint
+
+| Method | Path                         | Açıklama                                   | Auth  |
+| ------ | ---------------------------- | ------------------------------------------ | ----- |
+| GET    | `/admin/audit-logs`          | Audit logları listele (sayfalı + filtreli) | Admin |
+| GET    | `/admin/audit-logs/stream`   | Cursor tabanlı audit log stream            | Admin |
+| GET    | `/admin/audit-logs/{log_id}` | Tek audit log kaydını getir                | Admin |
 
 **Sorgu parametreleri:** `page`, `size`, `user_id`, `action`, `date_from`, `date_to`, `ip_address`
 
 ### 9. WebSocket (`/ws`) — 1 endpoint
 
-| Tip       | Path                   | Açıklama                            | Auth              |
-| --------- | ---------------------- | ----------------------------------- | ----------------- |
-| WebSocket | `/api/v1/ws/{room_id}` | Oda tabanlı gerçek zamanlı bağlantı | JWT (ilk mesajda) |
+| Tip       | Path                          | Açıklama                            | Auth              |
+| --------- | ----------------------------- | ----------------------------------- | ----------------- |
+| WebSocket | `/api/v1/shared/ws/{room_id}` | Oda tabanlı gerçek zamanlı bağlantı | JWT (ilk mesajda) |
 
 **WebSocket Detayları:**
 
-- Bağlantı: `ws://localhost:8000/api/v1/ws/{room_id}`
+- Bağlantı: `ws://localhost:8000/api/v1/shared/ws/{room_id}`
 - İlk mesaj: `{"type": "auth", "token": "<access_token>"}`
 - Mesaj türleri: `message`, `ping`, `user_joined`, `user_left`
 - Max mesaj boyutu: 64 KB
@@ -669,7 +671,16 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 
 **Adres:** http://localhost:8000/admin
 
-Yalnızca `ADMIN` rolüne sahip kullanıcılar giriş yapabilir. Giriş bilgileri mevcut hesapla (e-posta + şifre) aynıdır — ayrı bir hesap gerekmez.
+Yalnızca `account_type=admin` olan ve `admin:panel_access` yetkisine sahip kullanıcılar giriş yapabilir. Giriş bilgileri mevcut hesapla (e-posta + şifre) aynıdır; fakat client kullanıcılar admin panele giriş yapamaz.
+
+Authorization kararları policy-first yaklaşımıyla uygulanır:
+
+- surface erişimi (`client`, `admin`, `shared`)
+- actor type (`account_type`)
+- panel access (`admin:panel_access`)
+- resource permission seti
+
+Endpoint veya service içinde dağınık yetki kontrolü yazmak yerine ortak policy/dependency katmanı kullanılır.
 
 **Varsayılan Giriş Bilgileri** (`.env` dosyasındaki değerler):
 
@@ -690,11 +701,14 @@ Yalnızca `ADMIN` rolüne sahip kullanıcılar giriş yapabilir. Giriş bilgiler
 
 ## API Dokümantasyonu
 
-| Arayüz       | URL                                  | Açıklama                           |
-| ------------ | ------------------------------------ | ---------------------------------- |
-| Swagger UI   | `http://localhost:8000/docs`         | Etkileşimli API explorer           |
-| ReDoc        | `http://localhost:8000/redoc`        | Okunabilir referans dokümantasyonu |
-| OpenAPI JSON | `http://localhost:8000/openapi.json` | Ham şema (CI/SDK üretimi için)     |
+| Arayüz              | URL                                                | Açıklama                              |
+| ------------------- | -------------------------------------------------- | ------------------------------------- |
+| Swagger UI          | `http://localhost:8000/docs`                       | Full app docs                         |
+| ReDoc               | `http://localhost:8000/redoc`                      | Okunabilir referans dokümantasyonu    |
+| Client Swagger UI   | `http://localhost:8000/schema/client/docs`         | Web/mobile frontend için resmi kaynak |
+| Admin Swagger UI    | `http://localhost:8000/schema/admin/docs`          | Admin panel için resmi kaynak         |
+| Client OpenAPI JSON | `http://localhost:8000/schema/client/openapi.json` | Client codegen kaynağı                |
+| Admin OpenAPI JSON  | `http://localhost:8000/schema/admin/openapi.json`  | Admin codegen kaynağı                 |
 
 ## Güvenlik Özellikleri
 
@@ -711,18 +725,18 @@ Yalnızca `ADMIN` rolüne sahip kullanıcılar giriş yapabilir. Giriş bilgiler
 
 ```python
 # 2FA Yönetim Akışı (oturum açık kullanıcı)
-POST /api/v1/auth/totp/setup    # Secret üretir, QR kodu döner
-POST /api/v1/auth/totp/verify   # TOTP kodu ile doğrulama + yedek kodlar üretilir
-POST /api/v1/auth/totp/disable  # Mevcut TOTP koduyla 2FA devre dışı bırakma
+POST /api/v1/shared/auth/totp/setup    # Secret üretir, QR kodu döner
+POST /api/v1/shared/auth/totp/verify   # TOTP kodu ile doğrulama + yedek kodlar üretilir
+POST /api/v1/shared/auth/totp/disable  # Mevcut TOTP koduyla 2FA devre dışı bırakma
 
 # İki Adımlı Login Akışı (2FA aktifse)
 # Adım 1 — email + şifre
-POST /api/v1/auth/login
+POST /api/v1/client/auth/login
 # → TOTP yoksa: { access_token, refresh_token }
 # → TOTP varsa: { requires_totp: true, partial_token: "..." }  (5 dk geçerli)
 
 # Adım 2 — partial_token + TOTP kodu (veya yedek kod)
-POST /api/v1/auth/totp-challenge
+POST /api/v1/shared/auth/totp-challenge
 # → { access_token, refresh_token }
 ```
 
@@ -745,13 +759,13 @@ curl -H "X-API-Key: sk_live_abc123..." https://api.example.com/v1/resource
 curl -H "Authorization: ApiKey sk_live_abc123..." https://api.example.com/v1/resource
 ```
 
-| Özellik    | Detay                                                            |
-| ---------- | ---------------------------------------------------------------- |
-| Format     | `sk_live_` (production) / `sk_test_` (staging) prefix            |
-| Saklama    | Sadece bcrypt hash DB'de saklanır (plain key bir kez gösterilir) |
-| Scope      | Key bazlı izin kısıtlaması (read, write, admin)                  |
-| Expiry     | Opsiyonel son kullanma tarihi                                    |
-| Rate Limit | Key başına ayrı limit takibi                                     |
+| Özellik    | Detay                                                                      |
+| ---------- | -------------------------------------------------------------------------- |
+| Format     | `sk_live_` prefix                                                          |
+| Saklama    | Sadece bcrypt hash DB'de saklanır (plain key bir kez gösterilir)           |
+| Scope      | Key bazlı izin kısıtlaması (etkin yetkiler kullanıcı yetkileriyle kesişir) |
+| Expiry     | Opsiyonel son kullanma tarihi                                              |
+| Rate Limit | Key başına ayrı limit takibi                                               |
 
 ```python
 # Endpoint koruması
@@ -803,7 +817,7 @@ X-RateLimit-Reset: 1699999999
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "X-XSS-Protection": "1; mode=block",
-    "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
     "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
@@ -889,7 +903,7 @@ await self._audit_log(
 ### Bağlantı Protokolü
 
 ```
-1. İstemci bağlanır:  ws://localhost:8000/api/v1/ws/{room_id}
+1. İstemci bağlanır:  ws://localhost:8000/api/v1/shared/ws/{room_id}
 2. İlk mesaj (auth): {"type": "auth", "token": "<access_token>"}
 3. Geçerli token    → bağlantı kabul edilir, odaya katılınır
 4. Geçersiz/eksik  → 4001 kodu ile kapatılır
@@ -903,7 +917,7 @@ import json
 import websocket  # pip install websocket-client
 
 ws = websocket.WebSocket()
-ws.connect("ws://localhost:8000/api/v1/ws/room-123")
+ws.connect("ws://localhost:8000/api/v1/shared/ws/room-123")
 
 # 1. Kimlik doğrula
 ws.send(json.dumps({"type": "auth", "token": "<access_token>"}))
@@ -921,7 +935,7 @@ ws.close()
 ### JavaScript Örneği
 
 ```javascript
-const ws = new WebSocket("ws://localhost:8000/api/v1/ws/room-123");
+const ws = new WebSocket("ws://localhost:8000/api/v1/shared/ws/room-123");
 
 ws.onopen = () => {
   // 1. Kimlik doğrula
@@ -983,10 +997,10 @@ Servis → NotificationService.create() çağrılır
          ↓
          Kullanıcı WebSocket'e bağlıysa anlık iletilir
          ↓
-GET /notifications  → Sayfalı liste (okunmamış önce)
-PATCH /notifications/{id}  → Okundu işaretle
-PATCH /notifications/read-all  → Tümünü okundu işaretle
-DELETE /notifications/{id}  → Sil
+GET /shared/notifications  → Sayfalı liste (okunmamış önce)
+PATCH /shared/notifications/{id}  → Okundu işaretle
+PATCH /shared/notifications/read-all  → Tümünü okundu işaretle
+DELETE /shared/notifications/{id}  → Sil
 ```
 
 ### WebSocket ile Gerçek Zamanlı Bildirim
@@ -1161,7 +1175,7 @@ make test-k k=test_login               # İsim desenine göre
 - `asyncio_mode = "auto"` — tüm testler async
 - Her test transaction rollback ile izole çalışır
 - Coverage eşiği: `--cov-fail-under=80`
-- `AuditService` test izolasyonu: bağımsız `AsyncSessionFactory` kullandığından `_audit_log` mock'lanır
+- `AuditService` test izolasyonu: bağımsız session provider kullandığından `_audit_log` mock'lanır
 - `fake_redis` fixture'ı autouse — tüm testlerde gerçek Redis gerekmez
 - Unit testler `app.*` modüllerini doğrudan import eder — HTTP client veya DB gerekmez
 - E2E testler integration ile aynı fixture'ları kullanır; çok adımlı kullanıcı yolculuklarını test eder

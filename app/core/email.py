@@ -106,6 +106,6 @@ async def send_email(*, to: str, subject: str, html_body: str) -> None:
             start_tls=True,
         )
         logger.info("email_sent", to=to, subject=subject)
-    except Exception as exc:
+    except (aiosmtplib.SMTPException, OSError) as exc:
         logger.error("email_send_failed", to=to, subject=subject, error=str(exc))
         raise

@@ -11,6 +11,11 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy import update as sa_update
+
+from app.db.models.role import Role
+from app.db.models.user import AccountType, User
 
 
 class TestAdminPanelAccessControl:
@@ -66,3 +71,49 @@ class TestAdminPanelAccessControl:
         assert res.status_code in (200, 302, 303, 400)
         if res.status_code in (302, 303):
             assert "login" in res.headers.get("location", "")
+
+    async def test_real_client_user_cannot_login_admin_panel(
+        self,
+        client: AsyncClient,
+    ) -> None:
+        """Gerçek client account_type kullanıcısı admin panel oturumu açamamalı."""
+        await client.post(
+            "/api/v1/client/auth/register",
+            json={"email": "panel-client@example.com", "password": "StrongPass1"},
+        )
+        res = await client.post(
+            "/admin/login",
+            data={"username": "panel-client@example.com", "password": "StrongPass1"},
+            follow_redirects=False,
+        )
+        assert res.status_code in (200, 302, 303, 400)
+        if res.status_code in (302, 303):
+            assert "login" in res.headers.get("location", "")
+
+    async def test_real_admin_user_can_login_admin_panel(
+        self,
+        client: AsyncClient,
+        db_session,
+    ) -> None:
+        """Admin account_type + admin role kullanıcısı panel giriş yapabilmeli."""
+        email = "panel-admin@example.com"
+        password = "StrongPass1"
+        await client.post(
+            "/api/v1/client/auth/register",
+            json={"email": email, "password": password},
+        )
+        result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
+        admin_role_id = result.scalar_one()
+        await db_session.execute(
+            sa_update(User)
+            .where(User.email == email)
+            .values(role_id=admin_role_id, account_type=AccountType.ADMIN.value)
+        )
+        await db_session.commit()
+
+        res = await client.post(
+            "/admin/login",
+            data={"username": email, "password": password},
+            follow_redirects=False,
+        )
+        assert res.status_code in (302, 303)

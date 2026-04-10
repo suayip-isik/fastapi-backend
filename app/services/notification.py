@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from app.adapters.infrastructure import WebSocketNotifierAdapter
 from app.core.exceptions import NotFoundError
 from app.core.logging import get_logger
 from app.db.models.audit_log import AuditAction
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
+    from app.ports.infrastructure import WebSocketNotifierPort
     from app.services.audit import AuditService
 
 logger = get_logger(__name__)
@@ -28,9 +30,16 @@ logger = get_logger(__name__)
 class NotificationService(AuditableMixin):
     """Bildirim olusturma/listeleme ve durum guncelleme servisidir."""
 
-    def __init__(self, session: AsyncSession, audit: AuditService | None = None) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        audit: AuditService | None = None,
+        *,
+        notifier: WebSocketNotifierPort | None = None,
+    ) -> None:
         self._repo = NotificationRepository(session)
         self._audit = audit
+        self._notifier = notifier or WebSocketNotifierAdapter()
 
     async def create(
         self,
@@ -77,8 +86,6 @@ class NotificationService(AuditableMixin):
             notification: Gönderilecek bildirim nesnesi.
         """
         try:
-            from app.websockets.manager import manager
-
             payload: dict[str, object] = {
                 "type": "notification",
                 "id": str(notification.id),
@@ -88,8 +95,8 @@ class NotificationService(AuditableMixin):
                 "data": notification.data,
                 "created_at": notification.created_at.isoformat(),
             }
-            await manager.send_to_user_all_rooms(str(notification.user_id), payload)
-        except Exception as e:
+            await self._notifier.notify_user(str(notification.user_id), payload)
+        except RuntimeError as e:
             logger.warning("ws_notification_push_failed", error=str(e))
 
     async def list_for_user(

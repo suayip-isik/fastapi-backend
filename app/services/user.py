@@ -47,7 +47,13 @@ class UserService(AuditableMixin):
         _audit: Audit log servisi (opsiyonel).
     """
 
-    def __init__(self, session: AsyncSession, audit: AuditService | None = None) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        audit: AuditService | None = None,
+        *,
+        cache: CacheService | None = None,
+    ) -> None:
         """UserService'i başlatır.
 
         Args:
@@ -57,6 +63,7 @@ class UserService(AuditableMixin):
         self._repo = UserRepository(session)
         self._role_repo = RoleRepository(session)
         self._audit = audit
+        self._cache = cache or CacheService()
 
     async def get_by_id(self, user_id: UUID) -> User:
         """Belirtilen ID'ye sahip kullanıcıyı getirir.
@@ -96,14 +103,14 @@ class UserService(AuditableMixin):
         from app.schemas.user import UserResponse as _UserResponse
 
         key = USER_CACHE_KEY.format(str(user_id))
-        cached = await CacheService.get(key)
+        cached = await self._cache.get(key)
         if cached:
             return _UserResponse.model_validate(cached)
         user = await self._repo.get_by_id(user_id)
         if not user:
             raise UserNotFoundError()
         schema = _UserResponse.model_validate(user)
-        await CacheService.set(key, schema.model_dump(), USER_CACHE_TTL)
+        await self._cache.set(key, schema.model_dump(), USER_CACHE_TTL)
         return schema
 
     async def _invalidate_user_cache(
@@ -122,7 +129,7 @@ class UserService(AuditableMixin):
             keys.append(USER_EMAIL_CACHE_KEY.format(email))
         if invalidate_permissions:
             keys.append(USER_PERMISSIONS_KEY.format(str(user_id)))
-        await CacheService.delete(*keys)
+        await self._cache.delete(*keys)
 
     async def get_stats(self) -> UserStatsResponse:
         """Sistemdeki kullanıcı istatistiklerini döndürür.

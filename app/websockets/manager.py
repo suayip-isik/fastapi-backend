@@ -6,6 +6,7 @@ Connection'ları room bazlı yönetir.
 from __future__ import annotations
 
 import asyncio
+import json
 from collections import defaultdict
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -114,7 +115,7 @@ class ConnectionManager:
         if ws:
             try:
                 await ws.send_json(message)
-            except Exception:
+            except RuntimeError:
                 self.disconnect(room_id, user_id)
 
     async def broadcast_to_room(
@@ -151,7 +152,7 @@ class ConnectionManager:
                 continue
             try:
                 await ws.send_json(message)
-            except Exception:
+            except RuntimeError:
                 dead_users.append(user_id)
         for user_id in dead_users:
             self.disconnect(room_id, user_id)
@@ -198,7 +199,7 @@ class ConnectionManager:
                 ws = room[user_id]
                 try:
                     await ws.send_json(message)
-                except Exception:
+                except RuntimeError:
                     self.disconnect(room_id, user_id)
 
 
@@ -213,6 +214,29 @@ _WS_MAX_MESSAGE_BYTES = 64 * 1024  # 64 KB — tek mesaj payload limiti
 _WS_MAX_MESSAGE_LENGTH = 4096  # characters — max content length per message
 
 
+def _decode_ws_message(message: dict[str, object]) -> dict[str, object] | None:
+    """WebSocket frame'ini dict payload'a çevir."""
+    if text := message.get("text"):
+        if not isinstance(text, str):
+            return None
+        try:
+            return json.loads(text)
+        except ValueError:
+            return None
+
+    if raw_bytes := message.get("bytes"):
+        if not isinstance(raw_bytes, bytes):
+            return None
+        if len(raw_bytes) > _WS_MAX_MESSAGE_BYTES:
+            return {"type": "error", "reason": "Mesaj boyutu limiti aşıldı."}
+        try:
+            return json.loads(raw_bytes)
+        except ValueError:
+            return None
+
+    return None
+
+
 @router.websocket("/{room_id}")
 async def websocket_endpoint(
     websocket: WebSocket,
@@ -223,7 +247,7 @@ async def websocket_endpoint(
     Bağlantı kurulunca ilk mesaj {"type": "auth", "token": "<access_token>"} olmalıdır.
     Token URL'de gönderilmez — server log'larına yazılmasını önler.
 
-    Bağlantı: ws://localhost:8000/api/v1/ws/{room_id}
+    Bağlantı: ws://localhost:8000/api/v1/shared/ws/{room_id}
     İlk mesaj: {"type": "auth", "token": "<access_token>"}
     """
     await websocket.accept()
@@ -236,7 +260,7 @@ async def websocket_endpoint(
         return
     except WebSocketDisconnect:
         return
-    except Exception:
+    except (RuntimeError, ValueError, TypeError):
         await websocket.close(code=4001, reason="Geçersiz mesaj formatı.")
         return
 
@@ -252,7 +276,7 @@ async def websocket_endpoint(
     except TokenExpiredError:
         await websocket.close(code=4001, reason="Token süresi dolmuş.")
         return
-    except (InvalidTokenError, Exception):
+    except (InvalidTokenError, ValueError, TypeError):
         await websocket.close(code=4001, reason="Geçersiz token.")
         return
 
@@ -267,19 +291,16 @@ async def websocket_endpoint(
 
     try:
         while True:
-            raw_bytes = await websocket.receive_bytes()
-            if len(raw_bytes) > _WS_MAX_MESSAGE_BYTES:
-                await websocket.send_json(
-                    {"type": "error", "reason": "Mesaj boyutu limiti aşıldı."}
-                )
-                continue
+            frame = await websocket.receive()
+            if frame["type"] == "websocket.disconnect":
+                raise WebSocketDisconnect(frame.get("code", 1000))
 
-            import json as _json
-
-            try:
-                data = _json.loads(raw_bytes)
-            except ValueError:
+            data = _decode_ws_message(frame)
+            if data is None:
                 await websocket.send_json({"type": "error", "reason": "Geçersiz JSON."})
+                continue
+            if data.get("type") == "error":
+                await websocket.send_json(data)
                 continue
 
             msg_type = data.get("type", "message")
@@ -313,6 +334,6 @@ async def websocket_endpoint(
             room_id,
             {"type": "user_left", "user_id": user_id},
         )
-    except Exception:
+    except RuntimeError:
         logger.exception("ws_unexpected_error", room_id=room_id, user_id=user_id)
         manager.disconnect(room_id, user_id)

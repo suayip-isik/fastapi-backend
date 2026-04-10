@@ -1,4 +1,4 @@
-"""Users endpoint testleri — /api/v1/users/"""
+"""Users endpoint testleri — /api/v1/admin/users/"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import update as sa_update
 
 from app.db.models.role import Role
-from app.db.models.user import User
+from app.db.models.user import AccountType, User
 
 if TYPE_CHECKING:
     from httpx import AsyncClient
@@ -23,8 +23,10 @@ async def _register_and_login(
     password: str = "StrongPass1",
 ) -> dict:
     """Yardımcı fonksiyon."""
-    await client.post("/api/v1/auth/register", json={"email": email, "password": password})
-    res = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    await client.post("/api/v1/client/auth/register", json={"email": email, "password": password})
+    res = await client.post(
+        "/api/v1/client/auth/login", json={"email": email, "password": password}
+    )
     return res.json()
 
 
@@ -37,7 +39,7 @@ async def _auth_headers(client: AsyncClient, email: str, password: str = "Strong
 async def _promote_to_admin(db_session: AsyncSession, email: str) -> None:
     """Kullanıcıyı ADMIN rolüne yükselt ve commit et.
 
-    get_user_permissions() ayrı bir AsyncSessionFactory session'ı kullanır;
+    get_user_permissions() ayrı bir permission provider / session scope kullanır;
     commit olmadan yeni role_id'yi göremez.
     """
     from sqlalchemy import select
@@ -45,7 +47,9 @@ async def _promote_to_admin(db_session: AsyncSession, email: str) -> None:
     result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
     admin_role_id = result.scalar_one()
     await db_session.execute(
-        sa_update(User).where(User.email == email).values(role_id=admin_role_id)
+        sa_update(User)
+        .where(User.email == email)
+        .values(role_id=admin_role_id, account_type=AccountType.ADMIN.value)
     )
     await db_session.commit()
     db_session.expire_all()
@@ -58,7 +62,7 @@ async def _promote_to_admin(db_session: AsyncSession, email: str) -> None:
 async def test_get_users_me(client: AsyncClient):
     """test_get_users_me senaryosunu test eder."""
     headers = await _auth_headers(client, "users_me@example.com")
-    res = await client.get("/api/v1/users/me", headers=headers)
+    res = await client.get("/api/v1/shared/me", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
@@ -71,7 +75,7 @@ async def test_get_users_me(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_get_users_me_unauthorized(client: AsyncClient):
     """test_get_users_me_unauthorized senaryosunu test eder."""
-    res = await client.get("/api/v1/users/me")
+    res = await client.get("/api/v1/shared/me")
     assert res.status_code == 401
 
 
@@ -83,7 +87,7 @@ async def test_update_me_full_name(client: AsyncClient):
     """test_update_me_full_name senaryosunu test eder."""
     headers = await _auth_headers(client, "update_name@example.com")
     res = await client.patch(
-        "/api/v1/users/me", json={"full_name": "Yeni Ad Soyad"}, headers=headers
+        "/api/v1/shared/me", json={"full_name": "Yeni Ad Soyad"}, headers=headers
     )
 
     assert res.status_code == 200
@@ -95,7 +99,7 @@ async def test_update_me_username(client: AsyncClient):
     """test_update_me_username senaryosunu test eder."""
     headers = await _auth_headers(client, "update_username@example.com")
     res = await client.patch(
-        "/api/v1/users/me", json={"username": "yeni_kullanici"}, headers=headers
+        "/api/v1/shared/me", json={"username": "yeni_kullanici"}, headers=headers
     )
 
     assert res.status_code == 200
@@ -107,7 +111,7 @@ async def test_update_me_email(client: AsyncClient):
     """test_update_me_email senaryosunu test eder."""
     headers = await _auth_headers(client, "old_email@example.com")
     res = await client.patch(
-        "/api/v1/users/me", json={"email": "new_address@example.com"}, headers=headers
+        "/api/v1/shared/me", json={"email": "new_address@example.com"}, headers=headers
     )
 
     assert res.status_code == 200
@@ -121,7 +125,7 @@ async def test_update_me_email_duplicate(client: AsyncClient):
     headers = await _auth_headers(client, "wants_taken@example.com")
 
     res = await client.patch(
-        "/api/v1/users/me", json={"email": "taken@example.com"}, headers=headers
+        "/api/v1/shared/me", json={"email": "taken@example.com"}, headers=headers
     )
     assert res.status_code == 409
 
@@ -132,16 +136,18 @@ async def test_update_me_password(client: AsyncClient):
     email = "change_pw@example.com"
     headers = await _auth_headers(client, email)
 
-    res = await client.patch("/api/v1/users/me", json={"password": "NewPass123"}, headers=headers)
+    res = await client.patch("/api/v1/shared/me", json={"password": "NewPass123"}, headers=headers)
     assert res.status_code == 200
 
     # Yeni şifre çalışmalı
-    login = await client.post("/api/v1/auth/login", json={"email": email, "password": "NewPass123"})
+    login = await client.post(
+        "/api/v1/client/auth/login", json={"email": email, "password": "NewPass123"}
+    )
     assert login.status_code == 200
 
     # Eski şifre artık çalışmamalı
     old_login = await client.post(
-        "/api/v1/auth/login", json={"email": email, "password": "StrongPass1"}
+        "/api/v1/client/auth/login", json={"email": email, "password": "StrongPass1"}
     )
     assert old_login.status_code == 401
 
@@ -149,7 +155,7 @@ async def test_update_me_password(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_update_me_unauthorized(client: AsyncClient):
     """test_update_me_unauthorized senaryosunu test eder."""
-    res = await client.patch("/api/v1/users/me", json={"full_name": "Foo"})
+    res = await client.patch("/api/v1/shared/me", json={"full_name": "Foo"})
     assert res.status_code == 401
 
 
@@ -157,7 +163,7 @@ async def test_update_me_unauthorized(client: AsyncClient):
 async def test_update_me_no_fields_returns_current_user(client: AsyncClient):
     """Hiçbir alan gönderilmezse mevcut kullanıcı döner — 200."""
     headers = await _auth_headers(client, "noop_update@example.com")
-    res = await client.patch("/api/v1/users/me", json={}, headers=headers)
+    res = await client.patch("/api/v1/shared/me", json={}, headers=headers)
 
     assert res.status_code == 200
     assert res.json()["email"] == "noop_update@example.com"
@@ -173,7 +179,7 @@ async def test_list_users_as_admin(client: AsyncClient, db_session: AsyncSession
     headers = await _auth_headers(client, email)
     await _promote_to_admin(db_session, email)
 
-    res = await client.get("/api/v1/users", headers=headers)
+    res = await client.get("/api/v1/admin/users", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
@@ -189,14 +195,14 @@ async def test_list_users_as_admin(client: AsyncClient, db_session: AsyncSession
 async def test_list_users_as_non_admin(client: AsyncClient):
     """test_list_users_as_non_admin senaryosunu test eder."""
     headers = await _auth_headers(client, "non_admin_list@example.com")
-    res = await client.get("/api/v1/users", headers=headers)
+    res = await client.get("/api/v1/admin/users", headers=headers)
     assert res.status_code == 403
 
 
 @pytest.mark.asyncio
 async def test_list_users_unauthorized(client: AsyncClient):
     """test_list_users_unauthorized senaryosunu test eder."""
-    res = await client.get("/api/v1/users")
+    res = await client.get("/api/v1/admin/users")
     assert res.status_code == 401
 
 
@@ -209,7 +215,7 @@ async def test_list_users_pagination(client: AsyncClient, db_session: AsyncSessi
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res = await client.get("/api/v1/users?page=1&size=2", headers=headers)
+    res = await client.get("/api/v1/admin/users?page=1&size=2", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
@@ -226,7 +232,7 @@ async def test_list_users_default_pagination(client: AsyncClient, db_session: As
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res = await client.get("/api/v1/users", headers=headers)
+    res = await client.get("/api/v1/admin/users", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
@@ -245,13 +251,13 @@ async def test_get_user_by_id_as_admin(client: AsyncClient, db_session: AsyncSes
 
     # Hedef kullanıcının ID'sini al
     target_headers = await _auth_headers(client, target_email)
-    target_me = await client.get("/api/v1/users/me", headers=target_headers)
+    target_me = await client.get("/api/v1/shared/me", headers=target_headers)
     target_id = target_me.json()["id"]
 
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res = await client.get(f"/api/v1/users/{target_id}", headers=headers)
+    res = await client.get(f"/api/v1/admin/users/{target_id}", headers=headers)
 
     assert res.status_code == 200
     assert res.json()["email"] == target_email
@@ -261,11 +267,11 @@ async def test_get_user_by_id_as_admin(client: AsyncClient, db_session: AsyncSes
 async def test_get_user_by_id_as_non_admin(client: AsyncClient):
     """test_get_user_by_id_as_non_admin senaryosunu test eder."""
     target_headers = await _auth_headers(client, "target_perm@example.com")
-    target_me = await client.get("/api/v1/users/me", headers=target_headers)
+    target_me = await client.get("/api/v1/shared/me", headers=target_headers)
     target_id = target_me.json()["id"]
 
     non_admin_headers = await _auth_headers(client, "non_admin_perm@example.com")
-    res = await client.get(f"/api/v1/users/{target_id}", headers=non_admin_headers)
+    res = await client.get(f"/api/v1/admin/users/{target_id}", headers=non_admin_headers)
 
     assert res.status_code == 403
 
@@ -273,7 +279,7 @@ async def test_get_user_by_id_as_non_admin(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_get_user_by_id_unauthorized(client: AsyncClient):
     """test_get_user_by_id_unauthorized senaryosunu test eder."""
-    res = await client.get("/api/v1/users/00000000-0000-0000-0000-000000000000")
+    res = await client.get("/api/v1/admin/users/00000000-0000-0000-0000-000000000000")
     assert res.status_code == 401
 
 
@@ -285,7 +291,7 @@ async def test_get_user_by_id_not_found(client: AsyncClient, db_session: AsyncSe
     await _promote_to_admin(db_session, admin_email)
 
     fake_id = "00000000-0000-0000-0000-000000000000"
-    res = await client.get(f"/api/v1/users/{fake_id}", headers=headers)
+    res = await client.get(f"/api/v1/admin/users/{fake_id}", headers=headers)
 
     assert res.status_code == 404
 
@@ -300,14 +306,14 @@ async def test_deactivate_user_as_admin(client: AsyncClient, db_session: AsyncSe
     target_email = "target_deact@example.com"
 
     target_headers = await _auth_headers(client, target_email)
-    target_me = await client.get("/api/v1/users/me", headers=target_headers)
+    target_me = await client.get("/api/v1/shared/me", headers=target_headers)
     target_id = target_me.json()["id"]
 
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
     res = await client.delete(
-        f"/api/v1/users/{target_id}",
+        f"/api/v1/admin/users/{target_id}",
         headers={**headers, "Accept-Language": "tr"},
     )
     assert res.status_code == 200
@@ -315,7 +321,7 @@ async def test_deactivate_user_as_admin(client: AsyncClient, db_session: AsyncSe
 
     # Soft-deleted kullanıcı artık giriş yapamamalı
     login = await client.post(
-        "/api/v1/auth/login", json={"email": target_email, "password": "StrongPass1"}
+        "/api/v1/client/auth/login", json={"email": target_email, "password": "StrongPass1"}
     )
     assert login.status_code == 401
 
@@ -324,11 +330,11 @@ async def test_deactivate_user_as_admin(client: AsyncClient, db_session: AsyncSe
 async def test_deactivate_user_as_non_admin(client: AsyncClient):
     """test_deactivate_user_as_non_admin senaryosunu test eder."""
     target_headers = await _auth_headers(client, "target_nodeact@example.com")
-    target_me = await client.get("/api/v1/users/me", headers=target_headers)
+    target_me = await client.get("/api/v1/shared/me", headers=target_headers)
     target_id = target_me.json()["id"]
 
     non_admin_headers = await _auth_headers(client, "non_admin_nodeact@example.com")
-    res = await client.delete(f"/api/v1/users/{target_id}", headers=non_admin_headers)
+    res = await client.delete(f"/api/v1/admin/users/{target_id}", headers=non_admin_headers)
 
     assert res.status_code == 403
 
@@ -336,7 +342,7 @@ async def test_deactivate_user_as_non_admin(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_deactivate_user_unauthorized(client: AsyncClient):
     """test_deactivate_user_unauthorized senaryosunu test eder."""
-    res = await client.delete("/api/v1/users/00000000-0000-0000-0000-000000000000")
+    res = await client.delete("/api/v1/admin/users/00000000-0000-0000-0000-000000000000")
     assert res.status_code == 401
 
 
@@ -348,7 +354,7 @@ async def test_deactivate_nonexistent_user(client: AsyncClient, db_session: Asyn
     await _promote_to_admin(db_session, admin_email)
 
     fake_id = "00000000-0000-0000-0000-000000000001"
-    res = await client.delete(f"/api/v1/users/{fake_id}", headers=headers)
+    res = await client.delete(f"/api/v1/admin/users/{fake_id}", headers=headers)
     assert res.status_code == 404
 
 
@@ -356,7 +362,7 @@ async def test_deactivate_nonexistent_user(client: AsyncClient, db_session: Asyn
 async def test_update_me_password_too_short(client: AsyncClient):
     """8 karakterden kısa şifre ile PATCH /users/me → 422."""
     headers = await _auth_headers(client, "shortpw_update@example.com")
-    res = await client.patch("/api/v1/users/me", json={"password": "Sh0rt"}, headers=headers)
+    res = await client.patch("/api/v1/shared/me", json={"password": "Sh0rt"}, headers=headers)
     assert res.status_code == 422
 
 
@@ -371,7 +377,7 @@ async def test_list_users_search_by_email(client: AsyncClient, db_session: Async
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res = await client.get("/api/v1/users?q=unique_srch_target", headers=headers)
+    res = await client.get("/api/v1/admin/users?q=unique_srch_target", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
@@ -385,12 +391,12 @@ async def test_list_users_search_by_username(client: AsyncClient, db_session: As
     admin_email = "admin_srch_uname@example.com"
     target_headers = await _auth_headers(client, "srch_uname_user@example.com")
     await client.patch(
-        "/api/v1/users/me", json={"username": "findme_username"}, headers=target_headers
+        "/api/v1/shared/me", json={"username": "findme_username"}, headers=target_headers
     )
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res = await client.get("/api/v1/users?q=findme_username", headers=headers)
+    res = await client.get("/api/v1/admin/users?q=findme_username", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
@@ -405,7 +411,7 @@ async def test_list_users_search_no_match(client: AsyncClient, db_session: Async
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res = await client.get("/api/v1/users?q=zzznomatchzzz99999", headers=headers)
+    res = await client.get("/api/v1/admin/users?q=zzznomatchzzz99999", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
@@ -423,8 +429,8 @@ async def test_list_users_search_whitespace_only_ignored(
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res_all = await client.get("/api/v1/users", headers=headers)
-    res_ws = await client.get("/api/v1/users?q=   ", headers=headers)
+    res_all = await client.get("/api/v1/admin/users", headers=headers)
+    res_ws = await client.get("/api/v1/admin/users?q=   ", headers=headers)
 
     # Boşluk-only q → strip() → None → tüm kullanıcılar döner (filtre uygulanmaz)
     assert res_ws.status_code == 200
@@ -441,7 +447,7 @@ async def test_list_users_filter_by_role(client: AsyncClient, db_session: AsyncS
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res = await client.get("/api/v1/users?role=user", headers=headers)
+    res = await client.get("/api/v1/admin/users?role=user", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
@@ -455,7 +461,7 @@ async def test_list_users_filter_by_admin_role(client: AsyncClient, db_session: 
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res = await client.get("/api/v1/users?role=admin", headers=headers)
+    res = await client.get("/api/v1/admin/users?role=admin", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
@@ -473,15 +479,15 @@ async def test_list_users_filter_is_active_false(client: AsyncClient, db_session
     target_email = "deact_filter_target@example.com"
 
     target_headers = await _auth_headers(client, target_email)
-    target_id = (await client.get("/api/v1/users/me", headers=target_headers)).json()["id"]
+    target_id = (await client.get("/api/v1/shared/me", headers=target_headers)).json()["id"]
 
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
     # Kullanıcıyı deaktif et
-    await client.post(f"/api/v1/users/{target_id}/deactivate", headers=headers)
+    await client.post(f"/api/v1/admin/users/{target_id}/deactivate", headers=headers)
 
-    res = await client.get("/api/v1/users?is_active=false", headers=headers)
+    res = await client.get("/api/v1/admin/users?is_active=false", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
@@ -495,7 +501,7 @@ async def test_list_users_filter_is_active_true(client: AsyncClient, db_session:
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res = await client.get("/api/v1/users?is_active=true", headers=headers)
+    res = await client.get("/api/v1/admin/users?is_active=true", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
@@ -513,7 +519,7 @@ async def test_list_users_filter_is_verified_false(client: AsyncClient, db_sessi
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res = await client.get("/api/v1/users?is_verified=false", headers=headers)
+    res = await client.get("/api/v1/admin/users?is_verified=false", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
@@ -531,7 +537,7 @@ async def test_list_users_combined_filters(client: AsyncClient, db_session: Asyn
     await _promote_to_admin(db_session, admin_email)
 
     res = await client.get(
-        "/api/v1/users?role=user&is_active=true&is_verified=false", headers=headers
+        "/api/v1/admin/users?role=user&is_active=true&is_verified=false", headers=headers
     )
 
     assert res.status_code == 200
@@ -553,7 +559,7 @@ async def test_get_user_stats_as_admin(client: AsyncClient, db_session: AsyncSes
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res = await client.get("/api/v1/users/stats", headers=headers)
+    res = await client.get("/api/v1/admin/users/stats", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
@@ -567,7 +573,7 @@ async def test_get_user_stats_as_admin(client: AsyncClient, db_session: AsyncSes
 async def test_get_user_stats_as_non_admin(client: AsyncClient):
     """Non-admin kullanıcı istatistiklerine erişememeli."""
     headers = await _auth_headers(client, "non_admin_stats@example.com")
-    res = await client.get("/api/v1/users/stats", headers=headers)
+    res = await client.get("/api/v1/admin/users/stats", headers=headers)
     assert res.status_code == 403
 
 
@@ -581,18 +587,18 @@ async def test_deactivate_and_activate_user(client: AsyncClient, db_session: Asy
     target_email = "actdeact_target@example.com"
 
     target_headers = await _auth_headers(client, target_email)
-    target_id = (await client.get("/api/v1/users/me", headers=target_headers)).json()["id"]
+    target_id = (await client.get("/api/v1/shared/me", headers=target_headers)).json()["id"]
 
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
     # Deaktif et
-    res = await client.post(f"/api/v1/users/{target_id}/deactivate", headers=headers)
+    res = await client.post(f"/api/v1/admin/users/{target_id}/deactivate", headers=headers)
     assert res.status_code == 200
     assert res.json()["is_active"] is False
 
     # Tekrar aktif et
-    res = await client.post(f"/api/v1/users/{target_id}/activate", headers=headers)
+    res = await client.post(f"/api/v1/admin/users/{target_id}/activate", headers=headers)
     assert res.status_code == 200
     assert res.json()["is_active"] is True
 
@@ -604,10 +610,10 @@ async def test_admin_cannot_deactivate_self(client: AsyncClient, db_session: Asy
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    me = await client.get("/api/v1/users/me", headers=headers)
+    me = await client.get("/api/v1/shared/me", headers=headers)
     admin_id = me.json()["id"]
 
-    res = await client.post(f"/api/v1/users/{admin_id}/deactivate", headers=headers)
+    res = await client.post(f"/api/v1/admin/users/{admin_id}/deactivate", headers=headers)
     assert res.status_code == 403
 
 
@@ -618,10 +624,10 @@ async def test_admin_cannot_activate_self(client: AsyncClient, db_session: Async
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    me = await client.get("/api/v1/users/me", headers=headers)
+    me = await client.get("/api/v1/shared/me", headers=headers)
     admin_id = me.json()["id"]
 
-    res = await client.post(f"/api/v1/users/{admin_id}/activate", headers=headers)
+    res = await client.post(f"/api/v1/admin/users/{admin_id}/activate", headers=headers)
     assert res.status_code == 403
 
 
@@ -635,13 +641,13 @@ async def test_assign_role_as_admin(client: AsyncClient, db_session: AsyncSessio
     target_email = "role_assign_target@example.com"
 
     target_headers = await _auth_headers(client, target_email)
-    target_id = (await client.get("/api/v1/users/me", headers=target_headers)).json()["id"]
+    target_id = (await client.get("/api/v1/shared/me", headers=target_headers)).json()["id"]
 
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
     res = await client.patch(
-        f"/api/v1/users/{target_id}/role",
+        f"/api/v1/admin/users/{target_id}/role",
         json={"role_name": "moderator"},
         headers=headers,
     )
@@ -657,13 +663,13 @@ async def test_assign_nonexistent_role(client: AsyncClient, db_session: AsyncSes
     target_email = "bad_role_target@example.com"
 
     target_headers = await _auth_headers(client, target_email)
-    target_id = (await client.get("/api/v1/users/me", headers=target_headers)).json()["id"]
+    target_id = (await client.get("/api/v1/shared/me", headers=target_headers)).json()["id"]
 
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
     res = await client.patch(
-        f"/api/v1/users/{target_id}/role",
+        f"/api/v1/admin/users/{target_id}/role",
         json={"role_name": "nonexistent_role"},
         headers=headers,
     )
@@ -677,11 +683,11 @@ async def test_admin_cannot_change_own_role(client: AsyncClient, db_session: Asy
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    me = await client.get("/api/v1/users/me", headers=headers)
+    me = await client.get("/api/v1/shared/me", headers=headers)
     admin_id = me.json()["id"]
 
     res = await client.patch(
-        f"/api/v1/users/{admin_id}/role",
+        f"/api/v1/admin/users/{admin_id}/role",
         json={"role_name": "user"},
         headers=headers,
     )
@@ -698,15 +704,15 @@ async def test_list_deleted_users(client: AsyncClient, db_session: AsyncSession)
     target_email = "deleted_list_target@example.com"
 
     target_headers = await _auth_headers(client, target_email)
-    target_id = (await client.get("/api/v1/users/me", headers=target_headers)).json()["id"]
+    target_id = (await client.get("/api/v1/shared/me", headers=target_headers)).json()["id"]
 
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
     # Soft-delete
-    await client.delete(f"/api/v1/users/{target_id}", headers=headers)
+    await client.delete(f"/api/v1/admin/users/{target_id}", headers=headers)
 
-    res = await client.get("/api/v1/users/deleted", headers=headers)
+    res = await client.get("/api/v1/admin/users/deleted", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
@@ -719,7 +725,7 @@ async def test_list_deleted_users(client: AsyncClient, db_session: AsyncSession)
 async def test_list_deleted_users_as_non_admin(client: AsyncClient):
     """Non-admin silinen kullanıcı listesine erişememeli."""
     headers = await _auth_headers(client, "non_admin_deleted@example.com")
-    res = await client.get("/api/v1/users/deleted", headers=headers)
+    res = await client.get("/api/v1/admin/users/deleted", headers=headers)
     assert res.status_code == 403
 
 
@@ -730,14 +736,14 @@ async def test_list_deleted_users_search(client: AsyncClient, db_session: AsyncS
     target_email = "del_srch_unique99@example.com"
 
     target_headers = await _auth_headers(client, target_email)
-    target_id = (await client.get("/api/v1/users/me", headers=target_headers)).json()["id"]
+    target_id = (await client.get("/api/v1/shared/me", headers=target_headers)).json()["id"]
 
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    await client.delete(f"/api/v1/users/{target_id}", headers=headers)
+    await client.delete(f"/api/v1/admin/users/{target_id}", headers=headers)
 
-    res = await client.get("/api/v1/users/deleted?q=del_srch_unique99", headers=headers)
+    res = await client.get("/api/v1/admin/users/deleted?q=del_srch_unique99", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
@@ -752,21 +758,21 @@ async def test_restore_deleted_user(client: AsyncClient, db_session: AsyncSessio
     target_email = "restore_target@example.com"
 
     target_headers = await _auth_headers(client, target_email)
-    target_id = (await client.get("/api/v1/users/me", headers=target_headers)).json()["id"]
+    target_id = (await client.get("/api/v1/shared/me", headers=target_headers)).json()["id"]
 
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
     # Soft-delete
-    await client.delete(f"/api/v1/users/{target_id}", headers=headers)
+    await client.delete(f"/api/v1/admin/users/{target_id}", headers=headers)
 
     # Restore
-    res = await client.post(f"/api/v1/users/{target_id}/restore", headers=headers)
+    res = await client.post(f"/api/v1/admin/users/{target_id}/restore", headers=headers)
     assert res.status_code == 200
     assert res.json()["id"] == target_id
 
     # Artık aktif listede görünmeli
-    res_list = await client.get(f"/api/v1/users/{target_id}", headers=headers)
+    res_list = await client.get(f"/api/v1/admin/users/{target_id}", headers=headers)
     assert res_list.status_code == 200
 
 
@@ -777,12 +783,12 @@ async def test_restore_nondeleted_user_fails(client: AsyncClient, db_session: As
     target_email = "restore_err_target@example.com"
 
     target_headers = await _auth_headers(client, target_email)
-    target_id = (await client.get("/api/v1/users/me", headers=target_headers)).json()["id"]
+    target_id = (await client.get("/api/v1/shared/me", headers=target_headers)).json()["id"]
 
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res = await client.post(f"/api/v1/users/{target_id}/restore", headers=headers)
+    res = await client.post(f"/api/v1/admin/users/{target_id}/restore", headers=headers)
     assert res.status_code in (409, 400)
 
 
@@ -793,8 +799,8 @@ async def test_admin_cannot_delete_self(client: AsyncClient, db_session: AsyncSe
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    me = await client.get("/api/v1/users/me", headers=headers)
+    me = await client.get("/api/v1/shared/me", headers=headers)
     admin_id = me.json()["id"]
 
-    res = await client.delete(f"/api/v1/users/{admin_id}", headers=headers)
+    res = await client.delete(f"/api/v1/admin/users/{admin_id}", headers=headers)
     assert res.status_code == 403

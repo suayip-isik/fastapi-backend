@@ -133,7 +133,7 @@ class InsufficientPermissionsError(AppError):
     """Kullanıcının işlem için gerekli role/permission'ı yoksa fırlatılır.
 
     Kimlik doğrulanmış fakat yetkisiz kullanıcılar için kullanılır.
-    require_roles() dependency'si tarafından fırlatılır.
+    surface/permission dependency'leri tarafından fırlatılır.
 
     Note:
         - HTTP 403 Forbidden döner

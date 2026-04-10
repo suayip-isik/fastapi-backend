@@ -13,41 +13,50 @@ import secrets
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from app.adapters.infrastructure import ARQTaskQueueAdapter, RedisAdapter
 from app.core.config import settings
 from app.core.exceptions import AuthenticationError, InvalidTokenError, NotFoundError
 from app.core.i18n import language_var, t
-from app.core.redis import get_redis_client
 from app.core.security import hash_password, verify_password
 from app.db.models.audit_log import AuditAction
 from app.db.repositories.user import UserRepository
 from app.services._keys import EMAIL_VERIFY_KEY, PASSWORD_RESET_KEY
 from app.services.base import AuditableMixin
-from app.tasks.worker import enqueue, send_password_reset_email, send_verification_email
+from app.tasks.worker import send_password_reset_email, send_verification_email
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
+    from app.ports.infrastructure import RedisPort, TaskQueuePort
     from app.services.audit import AuditService
 
 
 class AccountService(AuditableMixin):
     """Hesap yonetimi (email verify, sifre reset, profil islemleri) servisidir."""
 
-    def __init__(self, session: AsyncSession, audit: AuditService | None = None) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        audit: AuditService | None = None,
+        *,
+        redis: RedisPort | None = None,
+        task_queue: TaskQueuePort | None = None,
+    ) -> None:
         """AccountService nesnesini gerekli bagimliliklarla olusturur."""
         self._repo = UserRepository(session)
         self._audit = audit
+        self._redis = redis or RedisAdapter()
+        self._task_queue = task_queue or ARQTaskQueueAdapter()
 
     # ── Email Verification ────────────────────────────────────────────────────
 
     async def verify_email(self, token: str) -> None:
         """Token geçerliyse kullanıcıyı doğrulanmış olarak işaretle."""
-        redis = await get_redis_client()
-        user_id = await redis.get(EMAIL_VERIFY_KEY.format(token))
+        user_id = await self._redis.get(EMAIL_VERIFY_KEY.format(token))
         if not user_id:
             raise InvalidTokenError(t("error.auth.invalid_verify_token"))
 
-        await redis.delete(EMAIL_VERIFY_KEY.format(token))
+        await self._redis.delete(EMAIL_VERIFY_KEY.format(token))
 
         user = await self._repo.get_by_id(UUID(user_id))
         if not user:
@@ -65,9 +74,12 @@ class AccountService(AuditableMixin):
             return
 
         token = secrets.token_urlsafe(32)
-        redis = await get_redis_client()
-        await redis.setex(EMAIL_VERIFY_KEY.format(token), settings.EMAIL_VERIFY_TTL, str(user.id))
-        await enqueue(send_verification_email, user.email, token, language_var.get())
+        await self._redis.setex(
+            EMAIL_VERIFY_KEY.format(token), settings.EMAIL_VERIFY_TTL, str(user.id)
+        )
+        await self._task_queue.enqueue(
+            send_verification_email, user.email, token, language_var.get()
+        )
 
     # ── Password Reset ────────────────────────────────────────────────────────
 
@@ -78,22 +90,22 @@ class AccountService(AuditableMixin):
             return  # Şifresi olmayan ya da var olmayan e-posta — user enumeration yok
 
         token = secrets.token_urlsafe(32)
-        redis = await get_redis_client()
-        await redis.setex(
+        await self._redis.setex(
             PASSWORD_RESET_KEY.format(token), settings.PASSWORD_RESET_TTL, str(user.id)
         )
-        await enqueue(send_password_reset_email, user.email, token, language_var.get())
+        await self._task_queue.enqueue(
+            send_password_reset_email, user.email, token, language_var.get()
+        )
 
         await self._audit_log(AuditAction.PASSWORD_RESET_REQUESTED, user_id=user.id)
 
     async def reset_password(self, token: str, new_password: str) -> None:
         """Token geçerliyse şifreyi güncelle."""
-        redis = await get_redis_client()
-        user_id = await redis.get(PASSWORD_RESET_KEY.format(token))
+        user_id = await self._redis.get(PASSWORD_RESET_KEY.format(token))
         if not user_id:
             raise InvalidTokenError(t("error.auth.invalid_reset_token"))
 
-        await redis.delete(PASSWORD_RESET_KEY.format(token))
+        await self._redis.delete(PASSWORD_RESET_KEY.format(token))
 
         user = await self._repo.get_by_id(UUID(user_id))
         if not user or not user.is_active:

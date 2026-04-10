@@ -11,7 +11,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies.auth import CurrentUserDep, require_permissions
+from app.api.dependencies.auth import (
+    CurrentUserDep,
+    Surface,
+    require_permissions,
+    require_surface_access,
+)
+from app.api.dependencies.infrastructure import CacheServiceDep
 from app.api.dependencies.services import get_audit_service
 from app.core.exceptions import InsufficientPermissionsError
 from app.core.i18n import t
@@ -29,9 +35,11 @@ from app.schemas.user import (
 from app.services.audit import AuditService
 from app.services.user import UserService
 
-router = APIRouter(prefix="/users", tags=["Users"])
+admin_router = APIRouter(prefix="/admin/users", tags=["Admin Users"])
+shared_router = APIRouter(prefix="/shared/me", tags=["Shared Profile"])
 
 # Modül yüklendiğinde bir kez oluşturulur — her request'te tek Redis GET maliyeti.
+_AdminSurfaceDep = Annotated[User, Depends(require_surface_access(Surface.ADMIN))]
 _UsersReadDep = Annotated[User, Depends(require_permissions(Permission.USERS_READ))]
 _UsersWriteDep = Annotated[User, Depends(require_permissions(Permission.USERS_WRITE))]
 _UsersDeleteDep = Annotated[User, Depends(require_permissions(Permission.USERS_DELETE))]
@@ -40,16 +48,19 @@ _UsersDeleteDep = Annotated[User, Depends(require_permissions(Permission.USERS_D
 def get_user_service(
     db: Annotated[AsyncSession, Depends(get_db)],
     audit: Annotated[AuditService, Depends(get_audit_service)],
+    cache: CacheServiceDep,
 ) -> UserService:
     """UserService dependency factory'si."""
-    return UserService(db, audit)
+    return UserService(db, audit, cache=cache)
 
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 
 
-@router.get(
-    "/me", response_model=UserResponse, openapi_extra={"x-audiences": ["admin", "user", "mobile"]}
+@shared_router.get(
+    "",
+    response_model=UserResponse,
+    openapi_extra={"x-surfaces": ["shared"]},
 )
 async def get_me(current_user: CurrentUserDep) -> User:
     """Giriş yapmış kullanıcının profil bilgilerini getirir.
@@ -66,8 +77,10 @@ async def get_me(current_user: CurrentUserDep) -> User:
     return current_user
 
 
-@router.patch(
-    "/me", response_model=UserResponse, openapi_extra={"x-audiences": ["admin", "user", "mobile"]}
+@shared_router.patch(
+    "",
+    response_model=UserResponse,
+    openapi_extra={"x-surfaces": ["shared"]},
 )
 async def update_me(
     data: UpdateUserRequest,
@@ -90,8 +103,9 @@ async def update_me(
     return await service.update(current_user.id, data)
 
 
-@router.get("", response_model=PaginatedResponse[UserResponse])
+@admin_router.get("", response_model=PaginatedResponse[UserResponse])
 async def list_users(
+    _surface: _AdminSurfaceDep,
     _: _UsersReadDep,
     service: UserServiceDep,
     page: int = Query(1, ge=1),
@@ -139,8 +153,12 @@ async def list_users(
     )
 
 
-@router.get("/stats", response_model=UserStatsResponse)
-async def get_user_stats(_: _UsersReadDep, service: UserServiceDep) -> UserStatsResponse:
+@admin_router.get("/stats", response_model=UserStatsResponse)
+async def get_user_stats(
+    _surface: _AdminSurfaceDep,
+    _: _UsersReadDep,
+    service: UserServiceDep,
+) -> UserStatsResponse:
     """Kullanıcı istatistiklerini döndürür.
 
     Sistemdeki aktif, pasif ve toplam kullanıcı sayısını döndürür.
@@ -157,8 +175,9 @@ async def get_user_stats(_: _UsersReadDep, service: UserServiceDep) -> UserStats
     return await service.get_stats()
 
 
-@router.get("/deleted", response_model=PaginatedResponse[DeletedUserResponse])
+@admin_router.get("/deleted", response_model=PaginatedResponse[DeletedUserResponse])
 async def list_deleted_users(
+    _surface: _AdminSurfaceDep,
     _: _UsersReadDep,
     service: UserServiceDep,
     page: int = Query(1, ge=1),
@@ -177,7 +196,7 @@ async def list_deleted_users(
 
     Sadece admin yetkisine sahip kullanıcılar bu endpoint'e erişebilir.
     Sonuçlar silinme zamanına göre azalan sırada döner (en son silinen önce).
-    Silinen kullanıcıları geri yüklemek için `POST /users/{user_id}/restore`
+    Silinen kullanıcıları geri yüklemek için `POST /admin/users/{user_id}/restore`
     kullanılmalıdır.
 
     Args:
@@ -207,8 +226,13 @@ async def list_deleted_users(
     )
 
 
-@router.get("/{user_id}", response_model=UserResponse)
-async def get_user(user_id: UUID, _: _UsersReadDep, service: UserServiceDep) -> UserResponse:
+@admin_router.get("/{user_id}", response_model=UserResponse)
+async def get_user(
+    user_id: UUID,
+    _surface: _AdminSurfaceDep,
+    _: _UsersReadDep,
+    service: UserServiceDep,
+) -> UserResponse:
     """Belirtilen kullanıcının detaylı bilgilerini getirir.
 
     Sadece admin yetkisine sahip kullanıcılar bu endpoint'e erişebilir.
@@ -228,9 +252,12 @@ async def get_user(user_id: UUID, _: _UsersReadDep, service: UserServiceDep) -> 
     return await service.get_by_id_cached(user_id)
 
 
-@router.post("/{user_id}/activate", response_model=UserResponse)
+@admin_router.post("/{user_id}/activate", response_model=UserResponse)
 async def activate_user(
-    user_id: UUID, current_user: _UsersWriteDep, service: UserServiceDep
+    user_id: UUID,
+    _surface: _AdminSurfaceDep,
+    current_user: _UsersWriteDep,
+    service: UserServiceDep,
 ) -> User:
     """Deaktif edilmiş bir kullanıcıyı tekrar aktif eder.
 
@@ -255,10 +282,11 @@ async def activate_user(
     return await service.activate(user_id)
 
 
-@router.patch("/{user_id}/role", response_model=UserResponse)
+@admin_router.patch("/{user_id}/role", response_model=UserResponse)
 async def assign_user_role(
     user_id: UUID,
     data: AssignRoleRequest,
+    _surface: _AdminSurfaceDep,
     current_user: _UsersWriteDep,
     service: UserServiceDep,
 ) -> User:
@@ -286,9 +314,12 @@ async def assign_user_role(
     return await service.assign_role(user_id, data.role_name)
 
 
-@router.post("/{user_id}/deactivate", response_model=UserResponse)
+@admin_router.post("/{user_id}/deactivate", response_model=UserResponse)
 async def deactivate_user(
-    user_id: UUID, current_user: _UsersWriteDep, service: UserServiceDep
+    user_id: UUID,
+    _surface: _AdminSurfaceDep,
+    current_user: _UsersWriteDep,
+    service: UserServiceDep,
 ) -> User:
     """Aktif bir kullanıcıyı deaktif eder.
 
@@ -313,9 +344,12 @@ async def deactivate_user(
     return await service.deactivate(user_id)
 
 
-@router.delete("/{user_id}", response_model=MessageResponse)
+@admin_router.delete("/{user_id}", response_model=MessageResponse)
 async def delete_user(
-    user_id: UUID, current_user: _UsersDeleteDep, service: UserServiceDep
+    user_id: UUID,
+    _surface: _AdminSurfaceDep,
+    current_user: _UsersDeleteDep,
+    service: UserServiceDep,
 ) -> MessageResponse:
     """Kullanıcıyı soft-delete yöntemiyle siler.
 
@@ -341,9 +375,12 @@ async def delete_user(
     return MessageResponse(message=t("user.delete.success"))
 
 
-@router.post("/{user_id}/restore", response_model=UserResponse)
+@admin_router.post("/{user_id}/restore", response_model=UserResponse)
 async def restore_user(
-    user_id: UUID, current_user: _UsersDeleteDep, service: UserServiceDep
+    user_id: UUID,
+    _surface: _AdminSurfaceDep,
+    current_user: _UsersDeleteDep,
+    service: UserServiceDep,
 ) -> User:
     """Soft-delete ile silinmiş kullanıcıyı geri yükler.
 

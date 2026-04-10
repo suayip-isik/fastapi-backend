@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aioboto3
+from botocore.exceptions import BotoCoreError, ClientError
 
 from app.core.config import settings
 from app.core.exceptions import FileTooLargeError, InvalidFileTypeError, StorageError
@@ -228,11 +229,12 @@ class S3StorageBackend(StorageBackend):
                     Body=content,
                     ContentType=file.content_type or "application/octet-stream",
                 )
-            logger.info("file_uploaded", key=key, size=len(content))
-            return key
-        except Exception as e:
-            logger.error("upload_failed", error=str(e))
-            raise StorageError(f"Yükleme başarısız: {e}") from e
+        except (BotoCoreError, ClientError, OSError) as exc:
+            logger.error("upload_failed", error=str(exc))
+            raise StorageError(f"Yükleme başarısız: {exc}") from exc
+
+        logger.info("file_uploaded", key=key, size=len(content))
+        return key
 
     async def delete(self, key: str) -> None:
         """Dosyayı storage'dan siler.
@@ -252,10 +254,11 @@ class S3StorageBackend(StorageBackend):
         try:
             async with self._session.client("s3", endpoint_url=self._endpoint) as s3:
                 await s3.delete_object(Bucket=self._bucket, Key=key)
-            logger.info("file_deleted", key=key)
-        except Exception as e:
-            logger.error("delete_failed", key=key, error=str(e))
-            raise StorageError(f"Silme başarısız: {e}") from e
+        except (BotoCoreError, ClientError, OSError) as exc:
+            logger.error("delete_failed", key=key, error=str(exc))
+            raise StorageError(f"Silme başarısız: {exc}") from exc
+
+        logger.info("file_deleted", key=key)
 
     async def get_url(self, key: str, expires_in: int = 3600) -> str:
         """Dosya için presigned URL üretir.
@@ -287,9 +290,9 @@ class S3StorageBackend(StorageBackend):
                     Params={"Bucket": self._bucket, "Key": key},
                     ExpiresIn=expires_in,
                 )
-            return str(url)
-        except Exception as e:
-            raise StorageError(f"URL üretimi başarısız: {e}") from e
+        except (BotoCoreError, ClientError, OSError) as exc:
+            raise StorageError(f"URL üretimi başarısız: {exc}") from exc
+        return str(url)
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────
@@ -315,7 +318,3 @@ def get_storage() -> StorageBackend:
     if backend in ("s3", "minio"):
         return S3StorageBackend()
     raise ValueError(f"Bilinmeyen storage backend: {backend}")
-
-
-# Singleton instance
-storage: StorageBackend = get_storage()

@@ -5,13 +5,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, or_, select
-from sqlalchemy.exc import NoResultFound
 
 if TYPE_CHECKING:
     from uuid import UUID
 
-from app.db.models.role import Role
-from app.db.models.user import User
+from app.core.permissions import USER_PERMISSIONS
+from app.db.models.role import Role, RolePermission
+from app.db.models.user import AccountType, User
 from app.db.repositories.base import SoftDeleteRepository
 
 
@@ -33,14 +33,22 @@ class UserRepository(SoftDeleteRepository[User]):
     model = User
 
     async def _get_default_role_id(self) -> UUID:
-        try:
-            result = await self._session.execute(select(Role.id).where(Role.name == "user"))
-            return result.scalar_one()
-        except NoResultFound as exc:
-            raise RuntimeError(
-                "Varsayılan 'user' rolü veritabanında bulunamadı. "
-                "Seed verilerinin uygulandığından emin olun."
-            ) from exc
+        result = await self._session.execute(
+            select(Role)
+            .where(Role.name == "user", Role.deleted_at.is_(None))
+            .order_by(Role.is_system.desc(), Role.created_at.asc())
+        )
+        roles = result.scalars().all()
+        if roles:
+            return roles[0].id
+
+        role = Role(name="user", description="User", is_system=True)
+        self._session.add(role)
+        await self._session.flush()
+        for permission in USER_PERMISSIONS:
+            self._session.add(RolePermission(role_id=role.id, permission=permission))
+        await self._session.flush()
+        return role.id
 
     async def create(self, **data: Any) -> User:
         if "role_id" not in data:
@@ -88,7 +96,12 @@ class UserRepository(SoftDeleteRepository[User]):
         )
         return result.scalar_one_or_none()
 
-    async def get_active_by_email(self, email: str) -> User | None:
+    async def get_active_by_email(
+        self,
+        email: str,
+        *,
+        account_type: AccountType | None = None,
+    ) -> User | None:
         """Aktif kullanıcıyı email adresine göre getirir.
 
         Hem is_active=True hem de soft-deleted olmayan kullanıcıları filtreler.
@@ -106,13 +119,14 @@ class UserRepository(SoftDeleteRepository[User]):
             ...     # Login işlemine devam et
             ...     pass
         """
-        result = await self._session.execute(
-            select(User).where(
-                User.email == email.lower(),
-                User.is_active.is_(True),
-                User.deleted_at.is_(None),
-            )
+        stmt = select(User).where(
+            User.email == email.lower(),
+            User.is_active.is_(True),
+            User.deleted_at.is_(None),
         )
+        if account_type is not None:
+            stmt = stmt.where(User.account_type == account_type.value)
+        result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def email_exists(self, email: str) -> bool:

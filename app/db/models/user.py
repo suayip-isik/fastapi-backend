@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -13,6 +14,13 @@ from app.db.models.base import BaseModel, SoftDeleteMixin
 
 if TYPE_CHECKING:
     from app.db.models.role import Role
+
+
+class AccountType(StrEnum):
+    """Kullanıcının erişebileceği uygulama yüzeyi."""
+
+    CLIENT = "client"
+    ADMIN = "admin"
 
 
 class User(SoftDeleteMixin, BaseModel):
@@ -52,6 +60,12 @@ class User(SoftDeleteMixin, BaseModel):
     hashed_password: Mapped[str | None] = mapped_column(Text, nullable=True)
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    account_type: Mapped[str] = mapped_column(
+        String(20),
+        default=AccountType.CLIENT.value,
+        nullable=False,
+        index=True,
+    )
 
     role_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),

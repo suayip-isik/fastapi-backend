@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+import aiosmtplib
 from arq import create_pool, cron
 from arq.connections import ArqRedis, RedisSettings
 
@@ -72,7 +73,7 @@ async def send_welcome_email(
                 login_url=login_url,
             ),
         )
-    except Exception as exc:
+    except (aiosmtplib.SMTPException, OSError) as exc:
         logger.error("welcome_email_failed", user_id=user_id, error=str(exc))
         raise
     logger.info("welcome_email_sent", user_id=user_id)
@@ -121,13 +122,13 @@ async def send_verification_email(
     """
     logger.info("sending_verification_email", email=email)
     try:
-        verify_url = f"{settings.APP_URL}/api/v1/auth/verify-email?token={token}"
+        verify_url = f"{settings.APP_URL}/api/v1/client/auth/verify-email?token={token}"
         await send_email(
             to=email,
             subject=t("email.verify.subject", lang=language),
             html_body=t("email.verify.body", lang=language, verify_url=verify_url),
         )
-    except Exception as exc:
+    except (aiosmtplib.SMTPException, OSError) as exc:
         logger.error("verification_email_failed", email=email, error=str(exc))
         raise
     logger.info("verification_email_sent", email=email)
@@ -159,7 +160,7 @@ async def send_password_reset_email(
             subject=t("email.reset.subject", lang=language),
             html_body=t("email.reset.body", lang=language, reset_url=reset_url),
         )
-    except Exception as exc:
+    except (aiosmtplib.SMTPException, OSError) as exc:
         logger.error("password_reset_email_failed", email=email, error=str(exc))
         raise
     logger.info("password_reset_email_sent", email=email)

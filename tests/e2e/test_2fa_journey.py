@@ -31,18 +31,22 @@ async def test_full_2fa_journey(client: AsyncClient) -> None:
     password = "StrongPass1"
 
     # Adım 1: Kayıt
-    reg = await client.post("/api/v1/auth/register", json={"email": email, "password": password})
+    reg = await client.post(
+        "/api/v1/client/auth/register", json={"email": email, "password": password}
+    )
     assert reg.status_code == 201
 
     # Adım 2: Giriş (2FA yok)
-    login = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    login = await client.post(
+        "/api/v1/client/auth/login", json={"email": email, "password": password}
+    )
     assert login.status_code == 200
     access_token = login.json()["access_token"]
     refresh_token = login.json()["refresh_token"]
     auth_headers = {"Authorization": f"Bearer {access_token}"}
 
     # Adım 3: TOTP kurulum
-    setup = await client.post("/api/v1/auth/totp/setup", headers=auth_headers)
+    setup = await client.post("/api/v1/shared/auth/totp/setup", headers=auth_headers)
     assert setup.status_code == 200
     data = setup.json()
     assert "secret" in data
@@ -54,7 +58,7 @@ async def test_full_2fa_journey(client: AsyncClient) -> None:
     # Adım 4: TOTP etkinleştir
     valid_code = pyotp.TOTP(secret).now()
     verify = await client.post(
-        "/api/v1/auth/totp/verify", json={"code": valid_code}, headers=auth_headers
+        "/api/v1/shared/auth/totp/verify", json={"code": valid_code}, headers=auth_headers
     )
     assert verify.status_code == 200
     backup_codes = verify.json()["backup_codes"]
@@ -62,21 +66,23 @@ async def test_full_2fa_journey(client: AsyncClient) -> None:
 
     # Adım 5: Çıkış
     logout = await client.post(
-        "/api/v1/auth/logout",
+        "/api/v1/shared/auth/logout",
         json={"refresh_token": refresh_token},
         headers=auth_headers,
     )
     assert logout.status_code == 200
 
     # Adım 6: TOTP kodu olmadan giriş → partial_token challenge (200)
-    no_code = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    no_code = await client.post(
+        "/api/v1/client/auth/login", json={"email": email, "password": password}
+    )
     assert no_code.status_code == 200
     assert no_code.json()["requires_totp"] is True
     partial = no_code.json()["partial_token"]
 
     # Adım 7: partial_token + geçerli TOTP kodu ile challenge → 200
     totp_login = await client.post(
-        "/api/v1/auth/totp-challenge",
+        "/api/v1/shared/auth/totp-challenge",
         json={"partial_token": partial, "code": pyotp.TOTP(secret).now()},
     )
     assert totp_login.status_code == 200
@@ -85,10 +91,10 @@ async def test_full_2fa_journey(client: AsyncClient) -> None:
 
     # Adım 8: Hatalı TOTP kodu ile challenge → 401 (yeni partial_token al)
     step8_partial = (
-        await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+        await client.post("/api/v1/client/auth/login", json={"email": email, "password": password})
     ).json()["partial_token"]
     bad_login = await client.post(
-        "/api/v1/auth/totp-challenge",
+        "/api/v1/shared/auth/totp-challenge",
         json={"partial_token": step8_partial, "code": "000000"},
     )
     assert bad_login.status_code == 401
@@ -96,7 +102,7 @@ async def test_full_2fa_journey(client: AsyncClient) -> None:
     # Bonus: TOTP'yi devre dışı bırak (temizlik)
     disable_code = pyotp.TOTP(secret).now()
     disable = await client.post(
-        "/api/v1/auth/totp/disable",
+        "/api/v1/shared/auth/totp/disable",
         json={"code": disable_code},
         headers=new_auth_headers,
     )
@@ -104,6 +110,6 @@ async def test_full_2fa_journey(client: AsyncClient) -> None:
 
     # TOTP devre dışıyken kod olmadan giriş → 200
     plain_login = await client.post(
-        "/api/v1/auth/login", json={"email": email, "password": password}
+        "/api/v1/client/auth/login", json={"email": email, "password": password}
     )
     assert plain_login.status_code == 200

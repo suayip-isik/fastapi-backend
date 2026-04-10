@@ -40,7 +40,7 @@ class TestCheckRedis:
     async def test_returns_false_on_connection_error(self) -> None:
         """Redis bağlantısı başarısız olursa → (False, hata_mesajı)."""
         with patch(
-            "app.core.health.get_redis_client",
+            "app.core.health.RedisAdapter.ping",
             side_effect=Exception("connection refused"),
         ):
             ok, msg = await check_redis()
@@ -74,7 +74,7 @@ class TestHealthEndpoints:
     async def test_health_ready_returns_503_when_redis_down(self, client: AsyncClient) -> None:
         """/health/ready Redis kapalıyken → 503 döndürmeli."""
         with patch(
-            "app.core.health.get_redis_client",
+            "app.core.health.RedisAdapter.ping",
             side_effect=Exception("redis down"),
         ):
             res = await client.get("/health/ready")

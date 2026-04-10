@@ -8,7 +8,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies.auth import require_permissions
+from app.api.dependencies.auth import Surface, require_permissions, require_surface_access
+from app.api.dependencies.infrastructure import CacheServiceDep
 from app.api.dependencies.services import get_audit_service
 from app.core.permissions import Permission
 from app.db.models.user import User
@@ -22,20 +23,26 @@ router = APIRouter(prefix="/roles", tags=["Roles"])
 
 _RolesReadDep = Annotated[User, Depends(require_permissions(Permission.ROLES_READ))]
 _RolesWriteDep = Annotated[User, Depends(require_permissions(Permission.ROLES_WRITE))]
+_AdminSurfaceDep = Annotated[User, Depends(require_surface_access(Surface.ADMIN))]
 
 
 def get_role_service(
     db: Annotated[AsyncSession, Depends(get_db)],
     audit: Annotated[AuditService, Depends(get_audit_service)],
+    cache: CacheServiceDep,
 ) -> RoleService:
-    return RoleService(db, audit)
+    return RoleService(db, audit, cache=cache)
 
 
 RoleServiceDep = Annotated[RoleService, Depends(get_role_service)]
 
 
 @router.get("", response_model=list[RoleResponse])
-async def list_roles(_: _RolesReadDep, service: RoleServiceDep) -> list[RoleResponse]:
+async def list_roles(
+    _surface: _AdminSurfaceDep,
+    _: _RolesReadDep,
+    service: RoleServiceDep,
+) -> list[RoleResponse]:
     """Sistemdeki tüm rolleri listeler.
 
     Sistem rolleri ve özel roller dahil tüm roller alfabetik sırayla
@@ -54,7 +61,10 @@ async def list_roles(_: _RolesReadDep, service: RoleServiceDep) -> list[RoleResp
 
 @router.post("", response_model=RoleResponse, status_code=201)
 async def create_role(
-    data: CreateRoleRequest, _: _RolesWriteDep, service: RoleServiceDep
+    data: CreateRoleRequest,
+    _surface: _AdminSurfaceDep,
+    _: _RolesWriteDep,
+    service: RoleServiceDep,
 ) -> RoleResponse:
     """Yeni özel rol oluşturur.
 
@@ -79,7 +89,12 @@ async def create_role(
 
 
 @router.get("/{role_id}", response_model=RoleResponse)
-async def get_role(role_id: UUID, _: _RolesReadDep, service: RoleServiceDep) -> RoleResponse:
+async def get_role(
+    role_id: UUID,
+    _surface: _AdminSurfaceDep,
+    _: _RolesReadDep,
+    service: RoleServiceDep,
+) -> RoleResponse:
     """Belirtilen rolün detaylarını getirir.
 
     Args:
@@ -99,7 +114,11 @@ async def get_role(role_id: UUID, _: _RolesReadDep, service: RoleServiceDep) -> 
 
 @router.patch("/{role_id}", response_model=RoleResponse)
 async def update_role(
-    role_id: UUID, data: UpdateRoleRequest, _: _RolesWriteDep, service: RoleServiceDep
+    role_id: UUID,
+    data: UpdateRoleRequest,
+    _surface: _AdminSurfaceDep,
+    _: _RolesWriteDep,
+    service: RoleServiceDep,
 ) -> RoleResponse:
     """Rol açıklamasını ve/veya permission setini günceller.
 
@@ -125,7 +144,12 @@ async def update_role(
 
 
 @router.delete("/{role_id}", response_model=MessageResponse)
-async def delete_role(role_id: UUID, _: _RolesWriteDep, service: RoleServiceDep) -> MessageResponse:
+async def delete_role(
+    role_id: UUID,
+    _surface: _AdminSurfaceDep,
+    _: _RolesWriteDep,
+    service: RoleServiceDep,
+) -> MessageResponse:
     """Özel rolü siler.
 
     Sistem rolleri (admin, user, moderator) silinemez.

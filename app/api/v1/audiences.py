@@ -1,9 +1,4 @@
-"""
-Audience tabanlı OpenAPI şema filtreleme için yardımcı modül.
-
-Her router, `tag_router()` helper'ı ile audience metadata'sı alır.
-Bu metadata, generate_audience_schema() tarafından filtreleme sırasında kullanılır.
-"""
+"""Surface tabanlı OpenAPI şema filtreleme için yardımcı modül."""
 
 from __future__ import annotations
 
@@ -14,24 +9,25 @@ from fastapi.routing import APIRoute
 if TYPE_CHECKING:
     from fastapi import APIRouter
 
-Audience = Literal["admin", "user", "mobile"]
+SchemaTarget = Literal["admin", "client"]
+Surface = Literal["admin", "client", "shared"]
 
-ADMIN: list[Audience] = ["admin"]
-USER: list[Audience] = ["user"]
-MOBILE: list[Audience] = ["mobile"]
-USER_AND_MOBILE: list[Audience] = ["user", "mobile"]
-ALL: list[Audience] = ["admin", "user", "mobile"]
+ADMIN: list[Surface] = ["admin"]
+CLIENT: list[Surface] = ["client"]
+SHARED: list[Surface] = ["shared"]
+ADMIN_AND_SHARED: list[Surface] = ["admin", "shared"]
+CLIENT_AND_SHARED: list[Surface] = ["client", "shared"]
+ALL: list[Surface] = ["admin", "client", "shared"]
 
 
-def tag_router(router: APIRouter, audiences: list[Audience]) -> APIRouter:
+def tag_router(router: APIRouter, surfaces: list[Surface]) -> APIRouter:
     """
-    Router'daki her APIRoute'a x-audiences ekler.
-    Per-route openapi_extra override'larını korur (setdefault kullanır).
-    tag_router() çağrısından önce route decorator'ında tanımlanan x-audiences değerleri korunur.
+    Router'daki her APIRoute'a x-surfaces ekler.
+    Per-route openapi_extra override'larını korur.
     """
     for route in router.routes:
         if isinstance(route, APIRoute):
             extra = route.openapi_extra or {}
-            extra.setdefault("x-audiences", audiences)
+            extra.setdefault("x-surfaces", surfaces)
             route.openapi_extra = extra
     return router

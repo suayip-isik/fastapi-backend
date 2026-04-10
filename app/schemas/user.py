@@ -37,6 +37,7 @@ class UserResponse(BaseModel):
     username: str | None
     full_name: str | None
     avatar_url: str | None
+    account_type: str
     role: RoleInfo
     is_active: bool
     is_verified: bool

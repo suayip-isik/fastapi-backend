@@ -15,7 +15,7 @@ from fastapi.openapi.utils import get_openapi
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
-from app.api.v1.audiences import ALL, Audience
+from app.api.v1.audiences import ALL, SchemaTarget
 
 _schema_cache: dict[str, dict[str, Any]] = {}
 
@@ -70,7 +70,7 @@ def _collect_all_schema_refs(
 
 def _build_schema(
     app: FastAPI,
-    audience: Audience,
+    audience: SchemaTarget,
     title: str,
     version: str,
 ) -> dict[str, Any]:
@@ -92,9 +92,10 @@ def _build_schema(
                 continue
             if not isinstance(operation, dict):
                 continue
-            # x-audiences tanımlı değilse ALL kabul et (health gibi inline route'lar)
-            audiences_for_op: list[str] = operation.get("x-audiences", ALL)
-            if audience not in audiences_for_op:
+            # x-surfaces tanımlı değilse her şemada görünür kabul et.
+            surfaces_for_op: list[str] = operation.get("x-surfaces", ALL)
+            allowed = {"client", "shared"} if audience == "client" else {"admin", "shared"}
+            if not allowed.intersection(surfaces_for_op):
                 methods_to_delete.append(method)
 
         for method in methods_to_delete:
@@ -124,18 +125,18 @@ def _build_schema(
             if name not in all_needed:
                 del components[name]
 
-    # x-audiences key'ini output'tan temizle (SDK generator'lar için gereksiz)
+    # x-surfaces key'ini output'tan temizle (SDK generator'lar için gereksiz)
     for path_item in schema.get("paths", {}).values():
         for method, operation in path_item.items():
             if method in HTTP_METHODS and isinstance(operation, dict):
-                operation.pop("x-audiences", None)
+                operation.pop("x-surfaces", None)
 
     return schema
 
 
 def generate_audience_schema(
     app: FastAPI,
-    audience: Audience,
+    audience: SchemaTarget,
     title: str,
     version: str,
 ) -> dict[str, Any]:

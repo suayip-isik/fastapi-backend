@@ -5,15 +5,85 @@ Health check modülü — DB, Redis ve Storage bağlantılarını test eder.
 
 from __future__ import annotations
 
-import aioboto3
-from sqlalchemy import text
+from typing import TYPE_CHECKING
 
+import aioboto3
+from botocore.exceptions import BotoCoreError, ClientError
+from redis.exceptions import RedisError
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+
+from app.adapters.infrastructure import RedisAdapter
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.redis import get_redis_client
-from app.db.session import AsyncSessionFactory
+from app.db.session_provider import get_default_session_factory
+
+if TYPE_CHECKING:
+    from app.ports.infrastructure import RedisPort
 
 logger = get_logger(__name__)
+
+
+def _probe_failure(probe: str, exc: Exception) -> tuple[bool, str]:
+    """External health probe hatalarını normalize et."""
+    logger.warning("health_probe_failed", probe=probe, error=str(exc))
+    return False, str(exc)
+
+
+class DatabaseHealthProbe:
+    """DB health probe adapter'ı."""
+
+    async def check(self) -> tuple[bool, str]:
+        try:
+            await _run_database_probe()
+            return True, "ok"
+        except (SQLAlchemyError, OSError) as exc:
+            return _probe_failure("db", exc)
+        except Exception as exc:
+            return _probe_failure("db", exc)
+
+
+class RedisHealthProbe:
+    """Redis health probe adapter'ı."""
+
+    def __init__(self, redis: RedisPort | None = None) -> None:
+        self._redis = redis or RedisAdapter()
+
+    async def check(self) -> tuple[bool, str]:
+        try:
+            await self._redis.ping()
+            return True, "ok"
+        except (RedisError, OSError) as exc:
+            return _probe_failure("redis", exc)
+        except Exception as exc:
+            return _probe_failure("redis", exc)
+
+
+class StorageHealthProbe:
+    """Object storage health probe adapter'ı."""
+
+    async def check(self) -> tuple[bool, str]:
+        try:
+            session = aioboto3.Session(
+                aws_access_key_id=settings.S3_ACCESS_KEY,
+                aws_secret_access_key=settings.S3_SECRET_KEY,
+                region_name=settings.S3_REGION,
+            )
+            endpoint = settings.S3_ENDPOINT_URL or None
+            async with session.client("s3", endpoint_url=endpoint) as s3:
+                await s3.head_bucket(Bucket=settings.S3_BUCKET_NAME)
+            return True, "ok"
+        except (BotoCoreError, ClientError, OSError) as exc:
+            return _probe_failure("storage", exc)
+        except Exception as exc:
+            return _probe_failure("storage", exc)
+
+
+async def _run_database_probe() -> None:
+    """DB probe sorgusunu çalıştır."""
+    session_factory = get_default_session_factory()
+    async with session_factory() as session:
+        await session.execute(text("SELECT 1"))
 
 
 async def check_database() -> tuple[bool, str]:
@@ -31,17 +101,11 @@ async def check_database() -> tuple[bool, str]:
         >>> # (True, "ok")
 
     Note:
-        - AsyncSessionFactory ile session oluşturulur ve otomatik kapatılır
+        - Varsayılan session provider ile probe session'ı oluşturulur
         - Exception durumunda (False, error_message) döner (raise etmez)
         - Hata durumunda warning seviyesinde log kaydı oluşturulur
     """
-    try:
-        async with AsyncSessionFactory() as session:
-            await session.execute(text("SELECT 1"))
-        return True, "ok"
-    except Exception as e:
-        logger.warning("health_db_failed", error=str(e))
-        return False, str(e)
+    return await DatabaseHealthProbe().check()
 
 
 async def check_redis() -> tuple[bool, str]:
@@ -64,13 +128,7 @@ async def check_redis() -> tuple[bool, str]:
         - PING komutu başarısızsa False döner
         - Exception durumunda warning seviyesinde log kaydı oluşturulur
     """
-    try:
-        client = await get_redis_client()
-        await client.ping()
-        return True, "ok"
-    except Exception as e:
-        logger.warning("health_redis_failed", error=str(e))
-        return False, str(e)
+    return await RedisHealthProbe().check()
 
 
 async def check_storage() -> tuple[bool, str]:
@@ -95,16 +153,4 @@ async def check_storage() -> tuple[bool, str]:
         - Bucket mevcut değilse veya erişim yoksa False döner
         - Exception durumunda warning seviyesinde log kaydı oluşturulur
     """
-    try:
-        session = aioboto3.Session(
-            aws_access_key_id=settings.S3_ACCESS_KEY,
-            aws_secret_access_key=settings.S3_SECRET_KEY,
-            region_name=settings.S3_REGION,
-        )
-        endpoint = settings.S3_ENDPOINT_URL or None
-        async with session.client("s3", endpoint_url=endpoint) as s3:
-            await s3.head_bucket(Bucket=settings.S3_BUCKET_NAME)
-        return True, "ok"
-    except Exception as e:
-        logger.warning("health_storage_failed", error=str(e))
-        return False, str(e)
+    return await StorageHealthProbe().check()

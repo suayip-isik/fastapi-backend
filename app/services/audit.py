@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from app.core.logging import get_logger, ip_address_var, user_agent_var
 from app.db.repositories.audit_log import AuditLogRepository
-from app.db.session import AsyncSessionFactory
+from app.db.session_provider import AsyncSessionFactoryProtocol, get_default_session_factory
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -25,6 +25,13 @@ class AuditService:
     Bu servis bağımsız veritabanı session'ı kullanır. Ana işlem
     rollback yapsa bile audit kaydı başarıyla yazılır.
     """
+
+    def __init__(
+        self,
+        *,
+        session_factory: AsyncSessionFactoryProtocol | None = None,
+    ) -> None:
+        self._session_factory = session_factory or get_default_session_factory()
 
     async def log(
         self,
@@ -50,7 +57,7 @@ class AuditService:
         """
         ip = ip_address_var.get()
         ua = user_agent_var.get()
-        async with AsyncSessionFactory() as session:
+        async with self._session_factory() as session:
             try:
                 await AuditLogRepository(session).create(
                     action=action,

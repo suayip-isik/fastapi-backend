@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 from datetime import datetime
 from typing import Generic, TypeVar
@@ -101,7 +102,7 @@ def decode_cursor(cursor: str) -> tuple[datetime, UUID]:
     try:
         payload = json.loads(base64.b64decode(cursor).decode())
         return datetime.fromisoformat(payload["ts"]), UUID(payload["id"])
-    except Exception as exc:
+    except (binascii.Error, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         from app.core.exceptions import ValidationError as AppValidationError
 
         raise AppValidationError("Geçersiz cursor değeri.") from exc

@@ -7,23 +7,23 @@ from typing import Annotated
 
 from fastapi import Depends
 
+from app.db.session_provider import get_default_session_factory
 from app.services.audit import AuditService
 
 
 def get_audit_service() -> AuditService:
     """AuditService instance döner (dependency injection).
 
-    AuditService bağımsız bir AsyncSessionFactory oturumu kullandığından
-    herhangi bir parametre gerektirmez. FastAPI dependency injection sistemi
-    tarafından otomatik çözümlenir.
+    AuditService bağımsız session provider üzerinden çalıştığından herhangi
+    bir request-scope DB dependency'sine ihtiyaç duymaz. FastAPI dependency
+    injection sistemi tarafından otomatik çözümlenir.
 
     Returns:
         AuditService: Audit log yazma işlemleri için servis instance'ı.
 
     Note:
         AuditService, servis katmanındaki işlem rollback'lerinden bağımsız
-        kendi oturumunu yönetir; bu nedenle DB session dependency'sine
-        ihtiyaç duymaz.
+        kendi oturumunu yönetir; bu nedenle request transaction'ından etkilenmez.
 
     Example:
         >>> @router.post("/users")
@@ -33,7 +33,7 @@ def get_audit_service() -> AuditService:
         ... ) -> UserResponse:
         ...     return await user_service.create(data, audit=audit)
     """
-    return AuditService()
+    return AuditService(session_factory=get_default_session_factory())
 
 
 AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
@@ -43,7 +43,7 @@ Endpoint parametrelerinde `audit: AuditServiceDep` şeklinde kullanılır.
 AuditService, servis katmanına audit log yazmak için iletilir.
 
 Note:
-    AuditService bağımsız oturum kullandığından istek transaction'ından
+    AuditService bağımsız session provider kullandığından istek transaction'ından
     etkilenmez; rollback olsa bile audit kaydı yazılır.
 
 Example:

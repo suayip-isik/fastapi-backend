@@ -18,11 +18,13 @@ from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import CurrentUserDep, bearer_scheme
+from app.api.dependencies.infrastructure import RedisPortDep, TaskQueuePortDep
+from app.api.dependencies.services import AuditServiceDep
 from app.core.config import settings
 from app.core.cookies import clear_auth_cookies, set_auth_cookies
 from app.core.i18n import t
 from app.core.limiter import limiter
-from app.db.models.user import User
+from app.db.models.user import AccountType, User
 from app.db.session import get_db
 from app.schemas.auth import (
     ForgotPasswordRequest,
@@ -40,37 +42,31 @@ from app.schemas.auth import (
 from app.schemas.common import MessageResponse
 from app.schemas.user import UserResponse
 from app.services.account import AccountService
-from app.services.audit import AuditService
 from app.services.auth import AuthService
 
-router = APIRouter(prefix="/auth", tags=["Auth"])
-
-
-# ── Dependency factories ──────────────────────────────────────────────────────
-
-
-def get_audit_service() -> AuditService:
-    """get_audit_service işlemini gerçekleştirir."""
-    return AuditService()
-
-
-AuditServiceDep = Annotated[AuditService, Depends(get_audit_service)]
+client_router = APIRouter(prefix="/client/auth", tags=["Client Auth"])
+admin_router = APIRouter(prefix="/admin/auth", tags=["Admin Auth"])
+shared_router = APIRouter(prefix="/shared/auth", tags=["Shared Auth"])
 
 
 def get_auth_service(
     db: Annotated[AsyncSession, Depends(get_db)],
     audit: AuditServiceDep,
+    redis: RedisPortDep,
+    task_queue: TaskQueuePortDep,
 ) -> AuthService:
     """get_auth_service işlemini gerçekleştirir."""
-    return AuthService(db, audit)
+    return AuthService(db, audit).with_infrastructure(redis=redis, task_queue=task_queue)
 
 
 def get_account_service(
     db: Annotated[AsyncSession, Depends(get_db)],
     audit: AuditServiceDep,
+    redis: RedisPortDep,
+    task_queue: TaskQueuePortDep,
 ) -> AccountService:
     """get_account_service işlemini gerçekleştirir."""
-    return AccountService(db, audit)
+    return AccountService(db, audit, redis=redis, task_queue=task_queue)
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
@@ -80,7 +76,12 @@ AccountServiceDep = Annotated[AccountService, Depends(get_account_service)]
 # ── Email/Password ────────────────────────────────────────────────────────────
 
 
-@router.post("/register", response_model=UserResponse, status_code=201)
+@client_router.post(
+    "/register",
+    response_model=UserResponse,
+    status_code=201,
+    openapi_extra={"x-surfaces": ["client"]},
+)
 @limiter.limit(settings.RATE_LIMIT_REGISTER)
 async def register(request: Request, data: RegisterRequest, service: AuthServiceDep) -> User:
     """
@@ -111,7 +112,7 @@ async def register(request: Request, data: RegisterRequest, service: AuthService
 
     Example:
         ```bash
-        curl -X POST http://localhost:8000/api/v1/auth/register \\
+        curl -X POST http://localhost:8000/api/v1/client/auth/register \\
             -H "Content-Type: application/json" \\
             -d '{"email": "user@example.com", "password": "Secure123!", "full_name": "Ali Veli"}'
         ```
@@ -119,7 +120,11 @@ async def register(request: Request, data: RegisterRequest, service: AuthService
     return await service.register(data)
 
 
-@router.post("/login", response_model=TokenResponse | PartialAuthResponse)
+@client_router.post(
+    "/login",
+    response_model=TokenResponse | PartialAuthResponse,
+    openapi_extra={"x-surfaces": ["client"]},
+)
 @limiter.limit(settings.RATE_LIMIT_AUTH)
 async def login(
     request: Request, response: Response, data: LoginRequest, service: AuthServiceDep
@@ -148,12 +153,12 @@ async def login(
 
     Example:
         ```bash
-        curl -X POST http://localhost:8000/api/v1/auth/login \\
+        curl -X POST http://localhost:8000/api/v1/client/auth/login \\
             -H "Content-Type: application/json" \\
             -d '{"email": "user@example.com", "password": "Secure123!"}'
         ```
     """
-    result = await service.login(data.email, data.password)
+    result = await service.login(data.email, data.password, account_type=AccountType.CLIENT)
 
     # TOTP aktif değilse cookie set et
     if isinstance(result, TokenResponse):
@@ -162,7 +167,27 @@ async def login(
     return result
 
 
-@router.post("/totp-challenge", response_model=TokenResponse)
+@admin_router.post(
+    "/login",
+    response_model=TokenResponse | PartialAuthResponse,
+    openapi_extra={"x-surfaces": ["admin"]},
+)
+@limiter.limit(settings.RATE_LIMIT_AUTH)
+async def admin_login(
+    request: Request, response: Response, data: LoginRequest, service: AuthServiceDep
+) -> TokenResponse | PartialAuthResponse:
+    """Admin kullanıcı için token tabanlı giriş."""
+    result = await service.login(data.email, data.password, account_type=AccountType.ADMIN)
+    if isinstance(result, TokenResponse):
+        set_auth_cookies(response, result.access_token, result.refresh_token)
+    return result
+
+
+@shared_router.post(
+    "/totp-challenge",
+    response_model=TokenResponse,
+    openapi_extra={"x-surfaces": ["shared"]},
+)
 @limiter.limit(settings.RATE_LIMIT_AUTH)
 async def totp_challenge(
     request: Request, response: Response, data: TOTPChallengeRequest, service: AuthServiceDep
@@ -194,7 +219,7 @@ async def totp_challenge(
 
     Example:
         ```bash
-        curl -X POST http://localhost:8000/api/v1/auth/totp-challenge \\
+        curl -X POST http://localhost:8000/api/v1/shared/auth/totp-challenge \\
             -H "Content-Type: application/json" \\
             -d '{"partial_token": "xyz...", "code": "123456"}'
         ```
@@ -204,7 +229,11 @@ async def totp_challenge(
     return result
 
 
-@router.post("/refresh", response_model=TokenResponse)
+@shared_router.post(
+    "/refresh",
+    response_model=TokenResponse,
+    openapi_extra={"x-surfaces": ["shared"]},
+)
 async def refresh_token(
     response: Response, data: RefreshRequest, service: AuthServiceDep
 ) -> TokenResponse:
@@ -232,7 +261,7 @@ async def refresh_token(
 
     Example:
         ```bash
-        curl -X POST http://localhost:8000/api/v1/auth/refresh \\
+        curl -X POST http://localhost:8000/api/v1/shared/auth/refresh \\
             -H "Content-Type: application/json" \\
             -d '{"refresh_token": "eyJhbGciOiJSUzI1NiIs..."}'
         ```
@@ -242,7 +271,11 @@ async def refresh_token(
     return result
 
 
-@router.post("/logout", response_model=MessageResponse)
+@shared_router.post(
+    "/logout",
+    response_model=MessageResponse,
+    openapi_extra={"x-surfaces": ["shared"]},
+)
 async def logout(
     response: Response,
     data: LogoutRequest,
@@ -276,7 +309,7 @@ async def logout(
 
     Example:
         ```bash
-        curl -X POST http://localhost:8000/api/v1/auth/logout \\
+        curl -X POST http://localhost:8000/api/v1/shared/auth/logout \\
             -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIs..." \\
             -H "Content-Type: application/json" \\
             -d '{"refresh_token": "eyJhbGciOiJSUzI1NiIs..."}'
@@ -290,7 +323,11 @@ async def logout(
 # ── Email Verification ────────────────────────────────────────────────────────
 
 
-@router.post("/verify-email", response_model=MessageResponse)
+@client_router.post(
+    "/verify-email",
+    response_model=MessageResponse,
+    openapi_extra={"x-surfaces": ["client"]},
+)
 @limiter.limit(settings.RATE_LIMIT_AUTH)
 async def verify_email(
     request: Request, data: VerifyEmailRequest, service: AccountServiceDep
@@ -321,7 +358,7 @@ async def verify_email(
 
     Example:
         ```bash
-        curl -X POST http://localhost:8000/api/v1/auth/verify-email \\
+        curl -X POST http://localhost:8000/api/v1/client/auth/verify-email \\
             -H "Content-Type: application/json" \\
             -d '{"token": "eyJhbGciOiJIUzI1NiIs..."}'
         ```
@@ -330,7 +367,11 @@ async def verify_email(
     return MessageResponse(message=t("auth.verify_email.success"))
 
 
-@router.post("/resend-verification", response_model=MessageResponse)
+@client_router.post(
+    "/resend-verification",
+    response_model=MessageResponse,
+    openapi_extra={"x-surfaces": ["client"]},
+)
 @limiter.limit(settings.RATE_LIMIT_AUTH_EMAIL)
 async def resend_verification(
     request: Request, data: ResendVerificationRequest, service: AccountServiceDep
@@ -360,7 +401,7 @@ async def resend_verification(
 
     Example:
         ```bash
-        curl -X POST http://localhost:8000/api/v1/auth/resend-verification \\
+        curl -X POST http://localhost:8000/api/v1/client/auth/resend-verification \\
             -H "Content-Type: application/json" \\
             -d '{"email": "user@example.com"}'
         ```
@@ -372,7 +413,11 @@ async def resend_verification(
 # ── Password Reset ────────────────────────────────────────────────────────────
 
 
-@router.post("/forgot-password", response_model=MessageResponse)
+@client_router.post(
+    "/forgot-password",
+    response_model=MessageResponse,
+    openapi_extra={"x-surfaces": ["client"]},
+)
 @limiter.limit(settings.RATE_LIMIT_AUTH_EMAIL)
 async def forgot_password(
     request: Request, data: ForgotPasswordRequest, service: AccountServiceDep
@@ -402,7 +447,7 @@ async def forgot_password(
 
     Example:
         ```bash
-        curl -X POST http://localhost:8000/api/v1/auth/forgot-password \\
+        curl -X POST http://localhost:8000/api/v1/client/auth/forgot-password \\
             -H "Content-Type: application/json" \\
             -d '{"email": "user@example.com"}'
         ```
@@ -411,7 +456,11 @@ async def forgot_password(
     return MessageResponse(message=t("auth.forgot_password.success"))
 
 
-@router.post("/reset-password", response_model=MessageResponse)
+@client_router.post(
+    "/reset-password",
+    response_model=MessageResponse,
+    openapi_extra={"x-surfaces": ["client"]},
+)
 @limiter.limit(settings.RATE_LIMIT_AUTH)
 async def reset_password(
     request: Request, data: ResetPasswordRequest, service: AccountServiceDep
@@ -444,49 +493,10 @@ async def reset_password(
 
     Example:
         ```bash
-        curl -X POST http://localhost:8000/api/v1/auth/reset-password \\
+        curl -X POST http://localhost:8000/api/v1/client/auth/reset-password \\
             -H "Content-Type: application/json" \\
             -d '{"token": "eyJhbGciOiJIUzI1NiIs...", "new_password": "NewSecure123!"}'
         ```
     """
     await service.reset_password(data.token, data.new_password)
     return MessageResponse(message=t("auth.reset_password.success"))
-
-
-# ── Me ────────────────────────────────────────────────────────────────────────
-
-
-@router.get("/me", response_model=UserResponse)
-async def get_me(current_user: CurrentUserDep) -> User:
-    """
-    Oturum açmış kullanıcının bilgilerini döner.
-
-    Access token ile kimliği doğrulanmış kullanıcının
-    profil bilgilerini getirir.
-
-    Args:
-        current_user: Oturum açmış kullanıcı (otomatik enjekte edilir).
-
-    Returns:
-        UserResponse: Kullanıcı bilgileri.
-            - id (UUID): Kullanıcı kimliği.
-            - email (str): E-posta adresi.
-            - full_name (str | None): Tam ad.
-            - is_verified (bool): E-posta doğrulama durumu.
-            - is_active (bool): Hesap aktiflik durumu.
-            - role (str): Kullanıcı rolü (user, admin, vb.).
-            - created_at (datetime): Hesap oluşturulma zamanı.
-            - updated_at (datetime): Son güncelleme zamanı.
-
-    Raises:
-        HTTPException 401: Geçersiz veya eksik access token.
-        HTTPException 401: Token süresi dolmuş.
-        HTTPException 403: Hesap devre dışı veya askıya alınmış.
-
-    Example:
-        ```bash
-        curl -X GET http://localhost:8000/api/v1/auth/me \\
-            -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIs..."
-        ```
-    """
-    return current_user

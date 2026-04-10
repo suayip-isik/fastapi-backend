@@ -5,13 +5,14 @@ File upload endpoint'leri.
 from fastapi import APIRouter, File, Request, UploadFile
 
 from app.api.dependencies.auth import CurrentAuthDep, get_effective_permissions
+from app.api.dependencies.infrastructure import StoragePortDep
 from app.api.dependencies.services import AuditServiceDep
+from app.api.policies.permissions import can_delete_any_uploaded_file
 from app.core.config import settings
 from app.core.exceptions import InvalidFileTypeError
 from app.core.limiter import limiter
 from app.db.models.audit_log import AuditAction
 from app.schemas.common import MessageResponse
-from app.storage.backends import storage
 
 router = APIRouter(prefix="/uploads", tags=["Uploads"])
 
@@ -29,6 +30,7 @@ async def upload_file(
     request: Request,
     current_user: CurrentAuthDep,
     audit: AuditServiceDep,
+    storage: StoragePortDep,
     file: UploadFile = File(...),
 ) -> UploadResponse:
     """Dosya yükler (authenticated).
@@ -52,7 +54,7 @@ async def upload_file(
         UnauthorizedError: Kullanıcı authenticate değilse
 
     Example:
-        POST /api/v1/uploads
+        POST /api/v1/shared/uploads
         Content-Type: multipart/form-data
         Authorization: Bearer <token>
 
@@ -94,6 +96,7 @@ async def delete_file(
     key: str,
     current_user: CurrentAuthDep,
     audit: AuditServiceDep,
+    storage: StoragePortDep,
 ) -> MessageResponse:
     """Dosya siler (authenticated + permission check).
 
@@ -117,7 +120,7 @@ async def delete_file(
         UnauthorizedError: Kullanıcı authenticate değilse
 
     Example:
-        DELETE /api/v1/uploads?key=users/123/file.pdf
+        DELETE /api/v1/shared/uploads?key=users/123/file.pdf
         Authorization: Bearer <token>
 
         Response:
@@ -133,11 +136,13 @@ async def delete_file(
         - Audit log: FILE_DELETED action ile kaydedilir
     """
     from app.core.exceptions import InsufficientPermissionsError
-    from app.core.permissions import Permission
 
     is_owner = key.startswith(f"users/{current_user.user.id!s}/")
     effective_perms = await get_effective_permissions(current_user)
-    can_delete_any = Permission.ADMIN_ACCESS.value in effective_perms
+    can_delete_any = can_delete_any_uploaded_file(
+        current_user.user.account_type,
+        effective_perms,
+    )
 
     if not can_delete_any and not is_owner:
         raise InsufficientPermissionsError("Bu dosyayı silme yetkiniz yok.")

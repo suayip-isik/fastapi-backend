@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies.auth import require_permissions
+from app.api.dependencies.auth import Surface, require_permissions, require_surface_access
 from app.core.permissions import Permission
 from app.db.models.audit_log import AuditAction
 from app.db.models.user import User
@@ -26,6 +26,7 @@ from app.services.audit_log import AuditLogService
 router = APIRouter(prefix="/audit-logs", tags=["Audit Logs"])
 
 _AuditReadDep = Annotated[User, Depends(require_permissions(Permission.AUDIT_READ))]
+_AdminSurfaceDep = Annotated[User, Depends(require_surface_access(Surface.ADMIN))]
 
 
 def get_audit_log_service(db: Annotated[AsyncSession, Depends(get_db)]) -> AuditLogService:
@@ -58,6 +59,7 @@ class AuditLogResponse(BaseModel):
 
 @router.get("", response_model=PaginatedResponse[AuditLogResponse])
 async def list_audit_logs(
+    _surface: _AdminSurfaceDep,
     _: _AuditReadDep,
     service: AuditLogServiceDep,
     page: int = Query(default=1, ge=1),
@@ -112,6 +114,7 @@ async def list_audit_logs(
 
 @router.get("/stream", response_model=CursorPaginatedResponse[AuditLogResponse])
 async def stream_audit_logs(
+    _surface: _AdminSurfaceDep,
     _: _AuditReadDep,
     service: AuditLogServiceDep,
     cursor: str | None = Query(default=None, description="Sayfalama cursor'ı"),
@@ -167,6 +170,7 @@ async def stream_audit_logs(
 @router.get("/{log_id}", response_model=AuditLogResponse)
 async def get_audit_log(
     log_id: UUID,
+    _surface: _AdminSurfaceDep,
     _: _AuditReadDep,
     service: AuditLogServiceDep,
 ) -> AuditLogResponse:

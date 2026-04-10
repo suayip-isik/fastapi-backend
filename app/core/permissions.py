@@ -14,7 +14,7 @@ class Permission(str, PyEnum):
     ardından ilgili rol(ler)e atanır — migration gerekmez.
 
     Attributes:
-        ADMIN_ACCESS: Admin paneline erişim
+        ADMIN_PANEL_ACCESS: Admin paneline erişim
         USERS_READ: Kullanıcı listesini görüntüleme
         USERS_WRITE: Kullanıcı bilgilerini güncelleme
         USERS_DELETE: Kullanıcıyı silme / geri yükleme
@@ -29,7 +29,7 @@ class Permission(str, PyEnum):
     """
 
     # Admin
-    ADMIN_ACCESS = "admin:access"
+    ADMIN_PANEL_ACCESS = "admin:panel_access"
 
     # Users
     USERS_READ = "users:read"
@@ -73,3 +73,8 @@ MODERATOR_PERMISSIONS: list[Permission] = [
     Permission.AUDIT_READ,
     Permission.NOTIFICATIONS_READ,
 ]
+
+
+def has_admin_panel_access(permission_values: set[str]) -> bool:
+    """Permission seti admin panel erişimini veriyor mu?"""
+    return Permission.ADMIN_PANEL_ACCESS.value in permission_values

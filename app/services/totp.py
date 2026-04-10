@@ -15,9 +15,9 @@ from typing import TYPE_CHECKING
 import pyotp
 import qrcode
 
+from app.adapters.infrastructure import RedisAdapter
 from app.core.config import settings
 from app.core.exceptions import AuthenticationError, BusinessRuleError, TOTPNotConfiguredError
-from app.core.redis import get_redis_client
 from app.core.security import decrypt_secret, encrypt_secret, hash_password, verify_password
 from app.db.models.audit_log import AuditAction
 from app.db.repositories.totp_backup_code import TOTPBackupCodeRepository
@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.db.models.user import User
+    from app.ports.infrastructure import RedisPort
     from app.services.audit import AuditService
 
 _BACKUP_CODE_COUNT = 8
@@ -45,10 +46,17 @@ def _generate_backup_codes() -> list[str]:
 class TOTPService(AuditableMixin):
     """TOTP tabanli iki faktorlu kimlik dogrulama servisidir."""
 
-    def __init__(self, session: AsyncSession, audit: AuditService | None = None) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        audit: AuditService | None = None,
+        *,
+        redis: RedisPort | None = None,
+    ) -> None:
         self._repo = UserRepository(session)
         self._backup_repo = TOTPBackupCodeRepository(session)
         self._audit = audit
+        self._redis = redis or RedisAdapter()
 
     async def setup(self, user: User) -> dict[str, str]:
         """Kullanıcı için TOTP 2FA kurulumunu başlatır.
@@ -158,8 +166,7 @@ class TOTPService(AuditableMixin):
         await self._repo.update(user.id, totp_secret=None, totp_enabled=False)
         await self._audit_log(AuditAction.TOTP_DISABLED, user_id=user.id)
 
-        redis = await get_redis_client()
-        await redis.delete(TOTP_BACKUP_KEY.format(str(user.id)))
+        await self._redis.delete(TOTP_BACKUP_KEY.format(str(user.id)))
         await self._backup_repo.delete_all_for_user(user.id)
 
     async def check_login(self, user: User, code: str) -> None:
@@ -225,10 +232,9 @@ class TOTPService(AuditableMixin):
         """
         from uuid import UUID
 
-        redis = await get_redis_client()
         key = TOTP_BACKUP_KEY.format(user_id)
-        if await redis.sismember(key, code):
-            await redis.srem(key, code)
+        if await self._redis.sismember(key, code):
+            await self._redis.srem(key, code)
             await self._mark_db_backup_code_used(UUID(user_id), code)
             return True
         # Redis TTL dolmuşsa DB'den kontrol et
@@ -284,11 +290,10 @@ class TOTPService(AuditableMixin):
         Note:
             Redis'teki kodlar 30 günlük TTL ile saklanır.
         """
-        redis = await get_redis_client()
         key = TOTP_BACKUP_KEY.format(str(user_id))
-        await redis.delete(key)
-        await redis.sadd(key, *codes)
-        await redis.expire(key, _BACKUP_CODE_TTL)
+        await self._redis.delete(key)
+        await self._redis.sadd(key, *codes)
+        await self._redis.expire(key, _BACKUP_CODE_TTL)
 
         await self._backup_repo.delete_all_for_user(user_id)
         await self._backup_repo.bulk_create(

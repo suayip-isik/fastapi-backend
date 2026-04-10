@@ -195,23 +195,13 @@ def create_app() -> FastAPI:
             version=settings.APP_VERSION,
         )
 
-    @app.get("/schema/user/openapi.json", include_in_schema=False)
-    async def user_openapi() -> Any:
-        """User audience icin filtrelenmis OpenAPI semasini dondurur."""
+    @app.get("/schema/client/openapi.json", include_in_schema=False)
+    async def client_openapi() -> Any:
+        """Client surface için filtrelenmiş OpenAPI şemasını döndürür."""
         return generate_audience_schema(
             app,
-            audience="user",
-            title=f"{settings.APP_NAME} — User API",
-            version=settings.APP_VERSION,
-        )
-
-    @app.get("/schema/mobile/openapi.json", include_in_schema=False)
-    async def mobile_openapi() -> Any:
-        """Mobile audience icin filtrelenmis OpenAPI semasini dondurur."""
-        return generate_audience_schema(
-            app,
-            audience="mobile",
-            title=f"{settings.APP_NAME} — Mobile API",
+            audience="client",
+            title=f"{settings.APP_NAME} — Client API",
             version=settings.APP_VERSION,
         )
 
@@ -225,22 +215,12 @@ def create_app() -> FastAPI:
             swagger_css_url="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css",
         )
 
-    @app.get("/schema/user/docs", include_in_schema=False)
-    async def user_docs() -> HTMLResponse:
-        """User audience icin Swagger UI sayfasini dondurur."""
+    @app.get("/schema/client/docs", include_in_schema=False)
+    async def client_docs() -> HTMLResponse:
+        """Client surface için Swagger UI sayfasını döndürür."""
         return get_swagger_ui_html(
-            openapi_url="/schema/user/openapi.json",
-            title=f"{settings.APP_NAME} User — Swagger UI",
-            swagger_js_url="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js",
-            swagger_css_url="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css",
-        )
-
-    @app.get("/schema/mobile/docs", include_in_schema=False)
-    async def mobile_docs() -> HTMLResponse:
-        """Mobile audience icin Swagger UI sayfasini dondurur."""
-        return get_swagger_ui_html(
-            openapi_url="/schema/mobile/openapi.json",
-            title=f"{settings.APP_NAME} Mobile — Swagger UI",
+            openapi_url="/schema/client/openapi.json",
+            title=f"{settings.APP_NAME} Client — Swagger UI",
             swagger_js_url="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js",
             swagger_css_url="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css",
         )
