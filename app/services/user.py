@@ -22,7 +22,6 @@ from app.db.models.audit_log import AuditAction
 from app.db.models.user import AccountType
 from app.db.repositories.role import RoleRepository
 from app.db.repositories.user import UserRepository
-from app.ports.infrastructure import RedisPort, TaskQueuePort
 from app.services._keys import (
     PASSWORD_RESET_KEY,
     USER_CACHE_KEY,
@@ -40,6 +39,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.db.models.user import User
+    from app.ports.infrastructure import RedisPort, TaskQueuePort
     from app.schemas.user import (
         CreateAdminUserRequest,
         UpdateUserRequest,
@@ -340,9 +340,13 @@ class UserService(AuditableMixin):
         """Şifresi henüz belirlenmemiş admin kullanıcıya daveti yeniden gönderir."""
         user = await self._repo.get_by_id_or_raise(user_id)
         if user.account_type != AccountType.ADMIN.value:
-            raise BusinessRuleError("Yalnızca admin tipindeki kullanıcılar için davet gönderilebilir.")
+            raise BusinessRuleError(
+                "Yalnızca admin tipindeki kullanıcılar için davet gönderilebilir."
+            )
         if user.hashed_password:
-            raise BusinessRuleError("Şifresi belirlenmiş admin kullanıcıya davet yeniden gönderilemez.")
+            raise BusinessRuleError(
+                "Şifresi belirlenmiş admin kullanıcıya davet yeniden gönderilemez."
+            )
 
         await self._issue_admin_invite(user)
         await self._audit_log(

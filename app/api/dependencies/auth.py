@@ -5,7 +5,7 @@ Tüm ortak bağımlılıklar burada tanımlanır.
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import Depends, Header, Security
