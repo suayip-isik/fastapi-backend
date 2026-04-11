@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
+
 from app.adapters.infrastructure import ARQTaskQueueAdapter, RedisAdapter
 from app.core.config import settings
 from app.core.exceptions import (
@@ -159,11 +161,15 @@ class AuthService(AuditableMixin):
         if await self._repo.email_exists(data.email):
             raise UserAlreadyExistsError()
 
-        user = await self._repo.create(
-            email=data.email.lower(),
-            hashed_password=hash_password(data.password),
-            full_name=data.full_name,
-        )
+        try:
+            user = await self._repo.create(
+                email=data.email.lower(),
+                hashed_password=hash_password(data.password),
+                full_name=data.full_name,
+            )
+        except IntegrityError as exc:
+            await self._session.rollback()
+            raise UserAlreadyExistsError() from exc
 
         token = secrets.token_urlsafe(32)
         await self._redis.setex(
