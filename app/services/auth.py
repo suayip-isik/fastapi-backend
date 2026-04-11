@@ -33,7 +33,12 @@ from app.db.models.audit_log import AuditAction
 from app.db.models.user import SurfaceType, User
 from app.db.repositories.user import UserRepository
 from app.schemas.auth import PartialAuthResponse, RegisterRequest, TokenResponse
-from app.services._keys import BLACKLIST_KEY, EMAIL_VERIFY_KEY, LOGIN_PARTIAL_KEY
+from app.services._keys import (
+    BLACKLIST_KEY,
+    EMAIL_VERIFY_KEY,
+    LOGIN_PARTIAL_KEY,
+    encode_email_verify_value,
+)
 from app.services.base import AuditableMixin
 from app.services.totp import TOTPService
 from app.tasks.worker import send_verification_email
@@ -162,7 +167,9 @@ class AuthService(AuditableMixin):
 
         token = secrets.token_urlsafe(32)
         await self._redis.setex(
-            EMAIL_VERIFY_KEY.format(token), settings.EMAIL_VERIFY_TTL, str(user.id)
+            EMAIL_VERIFY_KEY.format(token),
+            settings.EMAIL_VERIFY_TTL,
+            encode_email_verify_value(str(user.id), user.email),
         )
         await self._task_queue.enqueue(
             send_verification_email, user.email, token, language_var.get()

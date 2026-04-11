@@ -33,6 +33,7 @@
   "error.auth.wrong_password": "Current password is incorrect.",
   "error.auth.password_wrong": "Incorrect password.",
   "error.user.self_action": "You cannot perform this action on your own account.",
+  "error.user.protected_admin": "Users with the admin role cannot be modified through user management operations.",
   "error.validation.request": "Request validation error.",
 
   "validation.missing": "This field is required.",

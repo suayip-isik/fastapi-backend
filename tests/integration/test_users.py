@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy import update as sa_update
 
 from app.core.permissions import Permission
+from app.db.models.audit_log import AuditAction
 from app.db.models.role import Role, RolePermission
 from app.db.models.user import SurfaceType, User
 
@@ -52,6 +53,30 @@ async def _promote_to_admin(db_session: AsyncSession, email: str) -> None:
         sa_update(User)
         .where(User.email == email)
         .values(role_id=admin_role_id, surface=SurfaceType.ADMIN.value)
+    )
+    await db_session.commit()
+    db_session.expire_all()
+
+
+async def _promote_to_admin_surface_role(
+    db_session: AsyncSession,
+    *,
+    email: str,
+    role_name: str,
+    permissions: list[Permission],
+) -> None:
+    """Kullanıcıyı admin surface'e taşıyıp özel role ata."""
+    role = await db_session.scalar(select(Role).where(Role.name == role_name))
+    if role is None:
+        role = Role(name=role_name, description=role_name, is_system=False)
+        db_session.add(role)
+        await db_session.flush()
+        for permission in permissions:
+            db_session.add(RolePermission(role_id=role.id, permission=permission.value))
+    await db_session.execute(
+        sa_update(User)
+        .where(User.email == email)
+        .values(role_id=role.id, surface=SurfaceType.ADMIN.value)
     )
     await db_session.commit()
     db_session.expire_all()
@@ -113,11 +138,18 @@ async def test_update_me_email(client: AsyncClient):
     """test_update_me_email senaryosunu test eder."""
     headers = await _auth_headers(client, "old_email@example.com")
     res = await client.patch(
-        "/api/v1/shared/me", json={"email": "new_address@example.com"}, headers=headers
+        "/api/v1/shared/me",
+        json={
+            "email": "new_address@example.com",
+            "current_password": "StrongPass1",
+        },
+        headers=headers,
     )
 
     assert res.status_code == 200
-    assert res.json()["email"] == "new_address@example.com"
+    assert res.json()["email"] == "old_email@example.com"
+    assert res.json()["has_pending_email"] is True
+    assert res.json()["verification_required"] is True
 
 
 @pytest.mark.asyncio
@@ -127,9 +159,53 @@ async def test_update_me_email_duplicate(client: AsyncClient):
     headers = await _auth_headers(client, "wants_taken@example.com")
 
     res = await client.patch(
-        "/api/v1/shared/me", json={"email": "taken@example.com"}, headers=headers
+        "/api/v1/shared/me",
+        json={"email": "taken@example.com", "current_password": "StrongPass1"},
+        headers=headers,
     )
     assert res.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_update_me_email_requires_current_password(client: AsyncClient):
+    """Email değişikliğinde current_password zorunlu olmalı."""
+    headers = await _auth_headers(client, "missing_pw@example.com")
+    res = await client.patch(
+        "/api/v1/shared/me",
+        json={"email": "new_missing_pw@example.com"},
+        headers=headers,
+    )
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_me_email_verification_promotes_pending_email(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    mock_enqueue,
+):
+    """Verify token sonrası pending_email aktif email olmalı."""
+    headers = await _auth_headers(client, "verify_me_old@example.com")
+    mock_enqueue.reset_mock()
+
+    res = await client.patch(
+        "/api/v1/shared/me",
+        json={
+            "email": "verify_me_new@example.com",
+            "current_password": "StrongPass1",
+        },
+        headers=headers,
+    )
+    assert res.status_code == 200
+
+    token = mock_enqueue.call_args.args[2]
+    verify_res = await client.post("/api/v1/client/auth/verify-email", json={"token": token})
+    assert verify_res.status_code == 200
+
+    user = await db_session.scalar(select(User).where(User.email == "verify_me_new@example.com"))
+    assert user is not None
+    assert user.pending_email is None
+    assert user.is_verified is True
 
 
 @pytest.mark.asyncio
@@ -407,9 +483,17 @@ async def test_resend_admin_invite_for_pending_admin(
     headers = await _auth_headers(client, creator_email)
     await _promote_to_admin(db_session, creator_email)
 
+    support_role = Role(name="resend_support_admin", description="Support", is_system=False)
+    db_session.add(support_role)
+    await db_session.flush()
+    db_session.add(
+        RolePermission(role_id=support_role.id, permission=Permission.ADMIN_PANEL_ACCESS.value)
+    )
+    await db_session.commit()
+
     create_res = await client.post(
         "/api/v1/admin/users",
-        json={"email": "resend_admin@example.com", "role_name": "admin"},
+        json={"email": "resend_admin@example.com", "role_name": "resend_support_admin"},
         headers=headers,
     )
     user_id = create_res.json()["id"]
@@ -431,9 +515,17 @@ async def test_resend_admin_invite_rejects_user_with_password(
     headers = await _auth_headers(client, creator_email)
     await _promote_to_admin(db_session, creator_email)
 
+    support_role = Role(name="resend_done_support_admin", description="Support", is_system=False)
+    db_session.add(support_role)
+    await db_session.flush()
+    db_session.add(
+        RolePermission(role_id=support_role.id, permission=Permission.ADMIN_PANEL_ACCESS.value)
+    )
+    await db_session.commit()
+
     create_res = await client.post(
         "/api/v1/admin/users",
-        json={"email": "resend_done_admin@example.com", "role_name": "admin"},
+        json={"email": "resend_done_admin@example.com", "role_name": "resend_done_support_admin"},
         headers=headers,
     )
     user_id = create_res.json()["id"]
@@ -502,6 +594,180 @@ async def test_get_user_by_id_not_found(client: AsyncClient, db_session: AsyncSe
     res = await client.get(f"/api/v1/admin/users/{fake_id}", headers=headers)
 
     assert res.status_code == 404
+
+
+# ── PATCH /users/{id} & email management (Admin only) ───────────────────────
+
+
+@pytest.mark.asyncio
+async def test_admin_update_user_profile_fields(client: AsyncClient, db_session: AsyncSession):
+    """Yetkili admin başka kullanıcının profil alanlarını güncelleyebilmeli."""
+    actor_email = "profile_manager@example.com"
+    target_email = "profile_target@example.com"
+    target_headers = await _auth_headers(client, target_email)
+    target_id = (await client.get("/api/v1/shared/me", headers=target_headers)).json()["id"]
+
+    headers = await _auth_headers(client, actor_email)
+    await _promote_to_admin_surface_role(
+        db_session,
+        email=actor_email,
+        role_name="user_manager",
+        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_WRITE],
+    )
+
+    res = await client.patch(
+        f"/api/v1/admin/users/{target_id}",
+        json={"full_name": "Managed User", "username": "managed_user"},
+        headers=headers,
+    )
+    assert res.status_code == 200
+    assert res.json()["full_name"] == "Managed User"
+    assert res.json()["username"] == "managed_user"
+
+
+@pytest.mark.asyncio
+async def test_admin_change_user_email_sends_verification(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    mock_enqueue,
+):
+    """Yetkili admin hedef kullanıcının e-posta değişikliğini başlatabilmeli."""
+    actor_email = "email_manager@example.com"
+    target_email = "email_target@example.com"
+    target_headers = await _auth_headers(client, target_email)
+    target_id = (await client.get("/api/v1/shared/me", headers=target_headers)).json()["id"]
+
+    headers = await _auth_headers(client, actor_email)
+    await _promote_to_admin_surface_role(
+        db_session,
+        email=actor_email,
+        role_name="email_manager_role",
+        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_CHANGE_EMAIL],
+    )
+    mock_enqueue.reset_mock()
+
+    res = await client.post(
+        f"/api/v1/admin/users/{target_id}/change-email",
+        json={"email": "email_target_new@example.com"},
+        headers=headers,
+    )
+    assert res.status_code == 200
+    assert res.json()["email"] == target_email
+    assert res.json()["has_pending_email"] is True
+
+    user = await db_session.scalar(select(User).where(User.id == target_id))
+    assert user is not None
+    assert user.pending_email == "email_target_new@example.com"
+    assert user.is_verified is False
+    mock_enqueue.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_admin_change_user_email_requires_permission(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """users:change_email yetkisi olmayan admin surface kullanıcı email değiştirememeli."""
+    actor_email = "email_manager_blocked@example.com"
+    target_email = "email_target_blocked@example.com"
+    target_headers = await _auth_headers(client, target_email)
+    target_id = (await client.get("/api/v1/shared/me", headers=target_headers)).json()["id"]
+
+    headers = await _auth_headers(client, actor_email)
+    await _promote_to_admin_surface_role(
+        db_session,
+        email=actor_email,
+        role_name="write_only_manager",
+        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_WRITE],
+    )
+
+    res = await client.post(
+        f"/api/v1/admin/users/{target_id}/change-email",
+        json={"email": "blocked_new@example.com"},
+        headers=headers,
+    )
+    assert res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_resend_user_verification_for_pending_email(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    mock_enqueue,
+):
+    """Admin pending email bekleyen kullanıcı için verify mailini yeniden gönderebilmeli."""
+    actor_email = "verify_resend_manager@example.com"
+    target_email = "verify_resend_target@example.com"
+    target_headers = await _auth_headers(client, target_email)
+    target_id = (await client.get("/api/v1/shared/me", headers=target_headers)).json()["id"]
+
+    self_headers = await _auth_headers(client, actor_email)
+    await _promote_to_admin_surface_role(
+        db_session,
+        email=actor_email,
+        role_name="verify_resend_role",
+        permissions=[
+            Permission.ADMIN_PANEL_ACCESS,
+            Permission.USERS_CHANGE_EMAIL,
+            Permission.USERS_RESEND_VERIFICATION,
+        ],
+    )
+
+    await client.post(
+        f"/api/v1/admin/users/{target_id}/change-email",
+        json={"email": "verify_resend_target_new@example.com"},
+        headers=self_headers,
+    )
+    mock_enqueue.reset_mock()
+
+    res = await client.post(
+        f"/api/v1/admin/users/{target_id}/resend-verification", headers=self_headers
+    )
+    assert res.status_code == 200
+    mock_enqueue.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_admin_user_management_blocks_admin_role_target(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    mock_audit_log,
+):
+    """role=admin hedef kullanıcılar user-management ile değiştirilememeli."""
+    actor_email = "non_admin_manager@example.com"
+    target_email = "protected_admin_target@example.com"
+
+    headers = await _auth_headers(client, actor_email)
+    await _promote_to_admin_surface_role(
+        db_session,
+        email=actor_email,
+        role_name="full_user_manager",
+        permissions=[
+            Permission.ADMIN_PANEL_ACCESS,
+            Permission.USERS_WRITE,
+            Permission.USERS_CHANGE_EMAIL,
+            Permission.USERS_RESEND_VERIFICATION,
+            Permission.USERS_DELETE,
+            Permission.USERS_READ,
+        ],
+    )
+
+    target_headers = await _auth_headers(client, target_email)
+    target_id = (await client.get("/api/v1/shared/me", headers=target_headers)).json()["id"]
+    await _promote_to_admin(db_session, target_email)
+    mock_audit_log.reset_mock()
+
+    res = await client.post(
+        f"/api/v1/admin/users/{target_id}/change-email",
+        json={"email": "blocked_admin_target_new@example.com"},
+        headers=headers,
+    )
+    assert res.status_code == 403
+    assert any(
+        call.args[0] == AuditAction.USER_MANAGEMENT_BLOCKED
+        and call.kwargs["extra"]["reason"] == "protected_admin_role"
+        for call in mock_audit_log.call_args_list
+    )
 
 
 # ── DELETE /users/{id} (Admin only) ───────────────────────────────────────────

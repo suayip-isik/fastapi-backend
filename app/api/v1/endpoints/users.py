@@ -18,7 +18,6 @@ from app.api.dependencies.auth import (
 from app.api.dependencies.infrastructure import CacheServiceDep, RedisPortDep, TaskQueuePortDep
 from app.api.dependencies.services import get_audit_service
 from app.core.config import settings
-from app.core.exceptions import InsufficientPermissionsError
 from app.core.i18n import t
 from app.core.limiter import limiter
 from app.core.permissions import Permission
@@ -27,6 +26,8 @@ from app.db.session import get_db
 from app.schemas.common import MessageResponse, PaginatedResponse, calculate_pages
 from app.schemas.role import AssignRoleRequest
 from app.schemas.user import (
+    AdminChangeUserEmailRequest,
+    AdminUpdateUserRequest,
     CreateAdminUserRequest,
     DeletedUserResponse,
     UpdateUserRequest,
@@ -44,6 +45,10 @@ _AdminSurfaceDep = Annotated[User, Depends(require_surface_access(Surface.ADMIN)
 _UsersCreateAdminDep = Annotated[User, Depends(require_permissions(Permission.USERS_CREATE_ADMIN))]
 _UsersReadDep = Annotated[User, Depends(require_permissions(Permission.USERS_READ))]
 _UsersWriteDep = Annotated[User, Depends(require_permissions(Permission.USERS_WRITE))]
+_UsersChangeEmailDep = Annotated[User, Depends(require_permissions(Permission.USERS_CHANGE_EMAIL))]
+_UsersResendVerificationDep = Annotated[
+    User, Depends(require_permissions(Permission.USERS_RESEND_VERIFICATION))
+]
 _UsersDeleteDep = Annotated[User, Depends(require_permissions(Permission.USERS_DELETE))]
 
 
@@ -93,8 +98,8 @@ async def update_me(
 ) -> User:
     """Giriş yapmış kullanıcının profil bilgilerini günceller.
 
-    Kullanıcının ad, soyad gibi düzenlenebilir alanlarını günceller.
-    Email ve rol gibi hassas alanlar bu endpoint üzerinden değiştirilemez.
+    Kullanıcının kendi profil alanlarını günceller. Email değişikliğinde
+    mevcut şifre doğrulanır ve yeni adrese doğrulama e-postası gönderilir.
 
     Args:
         data: Güncellenecek profil alanlarını içeren istek verisi.
@@ -104,7 +109,7 @@ async def update_me(
     Returns:
         Güncellenmiş kullanıcı profil bilgileri.
     """
-    return await service.update(current_user.id, data)
+    return await service.update_self(current_user.id, data)
 
 
 @admin_router.get("", response_model=PaginatedResponse[UserResponse])
@@ -163,11 +168,11 @@ async def create_admin_user(
     request: Request,
     data: CreateAdminUserRequest,
     _surface: _AdminSurfaceDep,
-    _: _UsersCreateAdminDep,
+    current_user: _UsersCreateAdminDep,
     service: UserServiceDep,
-) -> UserResponse:
+) -> User:
     """Yeni bir admin kullanıcı oluşturur ve şifre belirleme daveti yollar."""
-    return await service.create_admin_user(data)
+    return await service.create_admin_user(data, actor_user_id=current_user.id)
 
 
 @admin_router.get("/stats", response_model=UserStatsResponse)
@@ -269,17 +274,61 @@ async def get_user(
     return await service.get_by_id_cached(user_id)
 
 
+@admin_router.patch("/{user_id}", response_model=UserResponse)
+async def update_user(
+    user_id: UUID,
+    data: AdminUpdateUserRequest,
+    _surface: _AdminSurfaceDep,
+    current_user: _UsersWriteDep,
+    service: UserServiceDep,
+) -> User:
+    """Admin user-management ile kullanıcı profil alanlarını günceller."""
+    return await service.admin_update(actor_user_id=current_user.id, user_id=user_id, data=data)
+
+
+@admin_router.post("/{user_id}/change-email", response_model=UserResponse)
+@limiter.limit(settings.RATE_LIMIT_AUTH_EMAIL)
+async def change_user_email(
+    request: Request,
+    user_id: UUID,
+    data: AdminChangeUserEmailRequest,
+    _surface: _AdminSurfaceDep,
+    current_user: _UsersChangeEmailDep,
+    service: UserServiceDep,
+) -> User:
+    """Hedef kullanıcının e-posta değişikliğini başlatır ve verify maili yollar."""
+    return await service.admin_change_email(
+        actor_user_id=current_user.id,
+        user_id=user_id,
+        data=data,
+    )
+
+
+@admin_router.post("/{user_id}/resend-verification", response_model=MessageResponse)
+@limiter.limit(settings.RATE_LIMIT_AUTH_EMAIL)
+async def resend_user_verification(
+    request: Request,
+    user_id: UUID,
+    _surface: _AdminSurfaceDep,
+    current_user: _UsersResendVerificationDep,
+    service: UserServiceDep,
+) -> MessageResponse:
+    """Doğrulanmamış veya pending email bekleyen kullanıcıya verify maili yollar."""
+    await service.resend_user_verification(actor_user_id=current_user.id, user_id=user_id)
+    return MessageResponse(message=t("auth.resend_verification.success"))
+
+
 @admin_router.post("/{user_id}/resend-invite", response_model=MessageResponse)
 @limiter.limit(settings.RATE_LIMIT_AUTH_EMAIL)
 async def resend_admin_invite(
     request: Request,
     user_id: UUID,
     _surface: _AdminSurfaceDep,
-    _: _UsersCreateAdminDep,
+    current_user: _UsersCreateAdminDep,
     service: UserServiceDep,
 ) -> MessageResponse:
     """Şifresi henüz belirlenmemiş admin kullanıcıya davet e-postasını yeniden yollar."""
-    await service.resend_admin_invite(user_id)
+    await service.resend_admin_invite(user_id, actor_user_id=current_user.id)
     return MessageResponse(message=t("auth.admin_invite_resent.success"))
 
 
@@ -308,9 +357,7 @@ async def activate_user(
         InsufficientPermissionsError: Admin kendi hesabını aktif etmeye çalışırsa.
         NotFoundError: Belirtilen ID'ye sahip kullanıcı bulunamazsa.
     """
-    if user_id == current_user.id:
-        raise InsufficientPermissionsError(t("error.user.self_action"))
-    return await service.activate(user_id)
+    return await service.activate(user_id, actor_user_id=current_user.id)
 
 
 @admin_router.patch("/{user_id}/role", response_model=UserResponse)
@@ -340,9 +387,7 @@ async def assign_user_role(
         InsufficientPermissionsError: Admin kendi rolünü değiştirmeye çalışırsa.
         NotFoundError: Kullanıcı veya rol bulunamazsa.
     """
-    if user_id == current_user.id:
-        raise InsufficientPermissionsError(t("error.user.self_action"))
-    return await service.assign_role(user_id, data.role_name)
+    return await service.assign_role(user_id, data.role_name, actor_user_id=current_user.id)
 
 
 @admin_router.post("/{user_id}/deactivate", response_model=UserResponse)
@@ -370,9 +415,7 @@ async def deactivate_user(
         InsufficientPermissionsError: Admin kendi hesabını deaktif etmeye çalışırsa.
         NotFoundError: Belirtilen ID'ye sahip kullanıcı bulunamazsa.
     """
-    if user_id == current_user.id:
-        raise InsufficientPermissionsError(t("error.user.self_action"))
-    return await service.deactivate(user_id)
+    return await service.deactivate(user_id, actor_user_id=current_user.id)
 
 
 @admin_router.delete("/{user_id}", response_model=MessageResponse)
@@ -400,9 +443,7 @@ async def delete_user(
         InsufficientPermissionsError: Admin kendi hesabını silmeye çalışırsa.
         NotFoundError: Belirtilen ID'ye sahip kullanıcı bulunamazsa.
     """
-    if user_id == current_user.id:
-        raise InsufficientPermissionsError(t("error.user.self_action"))
-    await service.soft_delete(user_id)
+    await service.soft_delete(user_id, actor_user_id=current_user.id)
     return MessageResponse(message=t("user.delete.success"))
 
 
@@ -431,6 +472,4 @@ async def restore_user(
         InsufficientPermissionsError: Admin kendi hesabını geri yüklemeye çalışırsa.
         NotFoundError: Belirtilen ID'ye sahip silinmiş kullanıcı bulunamazsa.
     """
-    if user_id == current_user.id:
-        raise InsufficientPermissionsError(t("error.user.self_action"))
-    return await service.restore(user_id)
+    return await service.restore(user_id, actor_user_id=current_user.id)

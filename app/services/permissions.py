@@ -69,10 +69,10 @@ class PermissionProvider:
         self,
         *,
         query_service: PermissionQueryService,
-        cache: PermissionCache | None = None,
+        cache: PermissionCache,
     ) -> None:
         self._query_service = query_service
-        self._cache = cache or PermissionCache()
+        self._cache = cache
 
     async def get_permissions(self, user_id: UUID) -> set[str]:
         cached = await self._cache.get(user_id)

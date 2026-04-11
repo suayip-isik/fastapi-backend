@@ -54,7 +54,7 @@ class RoleRepository(SoftDeleteRepository[Role]):
         result = await self._session.execute(
             select(exists().where(User.role_id == role_id, User.deleted_at.is_(None)))
         )
-        return result.scalar()
+        return bool(result.scalar())
 
     async def get_active_user_ids(self, role_id: UUID) -> list[UUID]:
         """Role atanmış aktif kullanıcı ID'lerini döner."""

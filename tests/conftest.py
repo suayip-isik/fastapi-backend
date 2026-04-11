@@ -125,8 +125,8 @@ def mock_audit_log():
     test_audit_log.py zaten AuditableMixin._audit_log'u mock'ladığından
     bu fixture ile çakışmaz.
     """
-    with patch("app.services.audit.AuditService.log", new_callable=AsyncMock):
-        yield
+    with patch("app.services.audit.AuditService.log", new_callable=AsyncMock) as mock:
+        yield mock
 
 
 @pytest_asyncio.fixture

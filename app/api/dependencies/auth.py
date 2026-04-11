@@ -39,6 +39,14 @@ from app.services.permissions import PermissionCache, PermissionProvider, Permis
 
 logger = get_logger(__name__)
 
+__all__ = [
+    "Surface",
+    "CurrentUserDep",
+    "bearer_scheme",
+    "require_permissions",
+    "require_surface_access",
+]
+
 # ── Security Scheme ───────────────────────────────────────────────────────────
 
 bearer_scheme = HTTPBearer(auto_error=False)

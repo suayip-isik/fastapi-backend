@@ -27,6 +27,9 @@ class AuditAction(str, PyEnum):
         LOGOUT: Kullanıcı çıkışı
         REGISTER: Yeni kullanıcı kaydı
         EMAIL_VERIFIED: Email doğrulama tamamlandı
+        EMAIL_CHANGE_REQUESTED: Email değişikliği doğrulama bekliyor
+        EMAIL_CHANGED: Bekleyen email değişikliği doğrulandı ve aktif edildi
+        VERIFICATION_RESENT: Doğrulama e-postası yeniden gönderildi
         PASSWORD_RESET_REQUESTED: Şifre sıfırlama talebi
         PASSWORD_RESET: Şifre sıfırlama tamamlandı
         ADMIN_PASSWORD_RESET_REQUESTED: Admin şifre sıfırlama talebi
@@ -38,6 +41,7 @@ class AuditAction(str, PyEnum):
         ROLE_CHANGED: Kullanıcı rolü değiştirildi
         ADMIN_USER_CREATED: Yeni admin kullanıcı oluşturuldu
         ADMIN_INVITE_RESENT: Admin kullanıcı daveti yeniden gönderildi
+        USER_MANAGEMENT_BLOCKED: User management işlemi güvenlik kuralı ile engellendi
         USER_DELETED: Kullanıcı hesabı silindi (soft delete)
         USER_RESTORED: Silinen kullanıcı geri yüklendi
         FILE_UPLOADED: Dosya yüklendi
@@ -62,6 +66,9 @@ class AuditAction(str, PyEnum):
     LOGOUT = "logout"
     REGISTER = "register"
     EMAIL_VERIFIED = "email_verified"
+    EMAIL_CHANGE_REQUESTED = "email_change_requested"
+    EMAIL_CHANGED = "email_changed"
+    VERIFICATION_RESENT = "verification_resent"
     PASSWORD_RESET_REQUESTED = "password_reset_requested"
     PASSWORD_RESET = "password_reset"
     ADMIN_PASSWORD_RESET_REQUESTED = "admin_password_reset_requested"
@@ -74,6 +81,7 @@ class AuditAction(str, PyEnum):
     ROLE_CHANGED = "role_changed"
     ADMIN_USER_CREATED = "admin_user_created"
     ADMIN_INVITE_RESENT = "admin_invite_resent"
+    USER_MANAGEMENT_BLOCKED = "user_management_blocked"
     USER_DELETED = "user_deleted"
     USER_RESTORED = "user_restored"
     # Account

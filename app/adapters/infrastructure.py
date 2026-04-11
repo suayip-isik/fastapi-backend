@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.core.redis import get_redis_client
 from app.ports.infrastructure import RedisPort, StoragePort, TaskQueuePort, WebSocketNotifierPort
 from app.storage.backends import StorageBackend, get_storage
 from app.tasks.worker import enqueue
+
+if TYPE_CHECKING:
+    from fastapi import UploadFile
 
 
 class RedisAdapter(RedisPort):
@@ -87,7 +90,7 @@ class StorageAdapter(StoragePort):
     def __init__(self, backend: StorageBackend | None = None) -> None:
         self._backend = backend or get_storage()
 
-    async def upload(self, file, folder: str = "") -> str:
+    async def upload(self, file: UploadFile, folder: str = "") -> str:
         return await self._backend.upload(file, folder=folder)
 
     async def delete(self, key: str) -> None:

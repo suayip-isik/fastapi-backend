@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import secrets
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from app.adapters.infrastructure import ARQTaskQueueAdapter, RedisAdapter
@@ -22,7 +22,12 @@ from app.core.security import hash_password, verify_password
 from app.db.models.audit_log import AuditAction
 from app.db.models.user import SurfaceType
 from app.db.repositories.user import UserRepository
-from app.services._keys import EMAIL_VERIFY_KEY, PASSWORD_RESET_KEY
+from app.services._keys import (
+    EMAIL_VERIFY_KEY,
+    PASSWORD_RESET_KEY,
+    decode_email_verify_value,
+    encode_email_verify_value,
+)
 from app.services.api_key import APIKeyService
 from app.services.base import AuditableMixin
 from app.tasks.worker import (
@@ -32,6 +37,8 @@ from app.tasks.worker import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.ports.infrastructure import RedisPort, TaskQueuePort
@@ -60,33 +67,76 @@ class AccountService(AuditableMixin):
 
     async def verify_email(self, token: str) -> None:
         """Token geçerliyse kullanıcıyı doğrulanmış olarak işaretle."""
-        user_id = await self._redis.get(EMAIL_VERIFY_KEY.format(token))
-        if not user_id:
+        raw_value = await self._redis.get(EMAIL_VERIFY_KEY.format(token))
+        if not raw_value:
             raise InvalidTokenError(t("error.auth.invalid_verify_token"))
 
         await self._redis.delete(EMAIL_VERIFY_KEY.format(token))
+        user_id, target_email = decode_email_verify_value(raw_value)
 
         user = await self._repo.get_by_id(UUID(user_id))
         if not user:
             raise InvalidTokenError(t("error.auth.user_not_found"))
 
+        if target_email and user.pending_email == target_email:
+            previous_email = user.email
+            await self._repo.update(
+                user.id,
+                email=target_email,
+                pending_email=None,
+                is_verified=True,
+            )
+            await self._audit_log(
+                AuditAction.EMAIL_CHANGED,
+                user_id=user.id,
+                extra={
+                    "target_user_id": str(user.id),
+                    "old_email": previous_email,
+                    "new_email": target_email,
+                },
+            )
+            return
+
+        if target_email and user.email != target_email:
+            raise InvalidTokenError(t("error.auth.invalid_verify_token"))
+
         if not user.is_verified:
             await self._repo.update(user.id, is_verified=True)
 
-        await self._audit_log(AuditAction.EMAIL_VERIFIED, user_id=user.id)
+        await self._audit_log(
+            AuditAction.EMAIL_VERIFIED,
+            user_id=user.id,
+            extra={"target_user_id": str(user.id)},
+        )
 
     async def resend_verification(self, email: str) -> None:
         """Doğrulama e-postasını yeniden gönder. Kullanıcı yoksa sessizce döner."""
         user = await self._repo.get_active_by_email(email)
-        if not user or user.is_verified:
-            return
+        target_email = email.lower()
+        if user and not user.is_verified:
+            target_email = user.email
+        else:
+            user = await self._repo.get_active_by_pending_email(email)
+            if not user or not user.pending_email:
+                return
+            target_email = user.pending_email
 
         token = secrets.token_urlsafe(32)
         await self._redis.setex(
-            EMAIL_VERIFY_KEY.format(token), settings.EMAIL_VERIFY_TTL, str(user.id)
+            EMAIL_VERIFY_KEY.format(token),
+            settings.EMAIL_VERIFY_TTL,
+            encode_email_verify_value(str(user.id), target_email),
         )
         await self._task_queue.enqueue(
-            send_verification_email, user.email, token, language_var.get()
+            send_verification_email,
+            target_email,
+            token,
+            language_var.get(),
+        )
+        await self._audit_log(
+            AuditAction.VERIFICATION_RESENT,
+            user_id=user.id,
+            extra={"target_user_id": str(user.id), "verification_email": target_email},
         )
 
     # ── Password Reset ────────────────────────────────────────────────────────
@@ -149,7 +199,9 @@ class AccountService(AuditableMixin):
         )
         await self._audit_log(self._get_password_reset_action(surface), user_id=user.id)
 
-    def _get_password_reset_task(self, surface: SurfaceType):
+    def _get_password_reset_task(
+        self, surface: SurfaceType
+    ) -> Callable[..., Awaitable[dict[str, Any]]]:
         if surface is SurfaceType.ADMIN:
             return send_admin_password_reset_email
         return send_password_reset_email

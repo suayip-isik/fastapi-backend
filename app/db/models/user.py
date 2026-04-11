@@ -57,6 +57,12 @@ class User(SoftDeleteMixin, BaseModel):
     __tablename__ = "users"
 
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    pending_email: Mapped[str | None] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=True,
+        index=True,
+    )
     username: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True, index=True)
     hashed_password: Mapped[str | None] = mapped_column(Text, nullable=True)
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -90,3 +96,13 @@ class User(SoftDeleteMixin, BaseModel):
     def __repr__(self) -> str:
         """Debug/log amacli kisa kullanici gosterimini dondurur."""
         return f"<User {self.email}>"
+
+    @property
+    def has_pending_email(self) -> bool:
+        """Kullanıcının bekleyen e-posta değişikliği var mı?"""
+        return bool(self.pending_email)
+
+    @property
+    def verification_required(self) -> bool:
+        """Kullanıcının e-posta doğrulaması bekleniyor mu?"""
+        return (not self.is_verified) or self.has_pending_email

@@ -77,6 +77,16 @@ class UserRepository(SoftDeleteRepository[User]):
         )
         return result.scalar_one_or_none()
 
+    async def get_by_pending_email(self, email: str) -> User | None:
+        """Bekleyen e-posta adresine göre kullanıcı getirir."""
+        result = await self._session.execute(
+            select(User).where(
+                User.pending_email == email.lower(),
+                User.deleted_at.is_(None),
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def get_by_username(self, username: str) -> User | None:
         """Username'e göre kullanıcı getirir.
 
@@ -129,7 +139,18 @@ class UserRepository(SoftDeleteRepository[User]):
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def email_exists(self, email: str) -> bool:
+    async def get_active_by_pending_email(self, email: str) -> User | None:
+        """Aktif kullanıcıyı pending email adresine göre getirir."""
+        result = await self._session.execute(
+            select(User).where(
+                User.pending_email == email.lower(),
+                User.is_active.is_(True),
+                User.deleted_at.is_(None),
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def email_exists(self, email: str, *, exclude_user_id: UUID | None = None) -> bool:
         """Email adresinin kayıtlı olup olmadığını kontrol eder.
 
         Kayıt sırasında duplicate email kontrolü için kullanılır.
@@ -145,11 +166,18 @@ class UserRepository(SoftDeleteRepository[User]):
             >>> if await repo.email_exists("new@example.com"):
             ...     raise ValueError("Email zaten kullanımda")
         """
-        result = await self._session.execute(
+        normalized = email.lower()
+        stmt = (
             select(func.count())
             .select_from(User)
-            .where(User.email == email.lower(), User.deleted_at.is_(None))
+            .where(
+                or_(User.email == normalized, User.pending_email == normalized),
+                User.deleted_at.is_(None),
+            )
         )
+        if exclude_user_id is not None:
+            stmt = stmt.where(User.id != exclude_user_id)
+        result = await self._session.execute(stmt)
         return result.scalar_one() > 0
 
     async def count_stats(self) -> tuple[int, int, int]:

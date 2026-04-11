@@ -33,6 +33,7 @@
   "error.auth.wrong_password": "Mevcut şifre hatalı.",
   "error.auth.password_wrong": "Şifre hatalı.",
   "error.user.self_action": "Kendi hesabınız üzerinde bu işlemi yapamazsınız.",
+  "error.user.protected_admin": "Admin rolündeki kullanıcılar user management işlemleriyle değiştirilemez.",
   "error.validation.request": "İstek doğrulama hatası.",
 
   "validation.missing": "Bu alan zorunludur.",

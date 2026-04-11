@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import defaultdict
+from typing import cast
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -220,9 +221,10 @@ def _decode_ws_message(message: dict[str, object]) -> dict[str, object] | None:
         if not isinstance(text, str):
             return None
         try:
-            return json.loads(text)
+            payload = json.loads(text)
         except ValueError:
             return None
+        return cast(dict[str, object], payload) if isinstance(payload, dict) else None
 
     if raw_bytes := message.get("bytes"):
         if not isinstance(raw_bytes, bytes):
@@ -230,9 +232,10 @@ def _decode_ws_message(message: dict[str, object]) -> dict[str, object] | None:
         if len(raw_bytes) > _WS_MAX_MESSAGE_BYTES:
             return {"type": "error", "reason": "Mesaj boyutu limiti aşıldı."}
         try:
-            return json.loads(raw_bytes)
+            payload = json.loads(raw_bytes)
         except ValueError:
             return None
+        return cast(dict[str, object], payload) if isinstance(payload, dict) else None
 
     return None
 
@@ -295,7 +298,7 @@ async def websocket_endpoint(
             if frame["type"] == "websocket.disconnect":
                 raise WebSocketDisconnect(frame.get("code", 1000))
 
-            data = _decode_ws_message(frame)
+            data = _decode_ws_message(dict(frame))
             if data is None:
                 await websocket.send_json({"type": "error", "reason": "Geçersiz JSON."})
                 continue

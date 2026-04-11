@@ -18,6 +18,8 @@ class Permission(str, PyEnum):
         USERS_CREATE_ADMIN: Admin kullanıcı oluşturma ve davet yeniden gönderme
         USERS_READ: Kullanıcı listesini görüntüleme
         USERS_WRITE: Kullanıcı bilgilerini güncelleme
+        USERS_CHANGE_EMAIL: Kullanıcı e-posta adresini değiştirme
+        USERS_RESEND_VERIFICATION: Kullanıcıya doğrulama e-postası yeniden gönderme
         USERS_DELETE: Kullanıcıyı silme / geri yükleme
         ROLES_READ: Rol listesini görüntüleme
         ROLES_WRITE: Rol oluşturma, güncelleme, silme
@@ -36,6 +38,8 @@ class Permission(str, PyEnum):
     USERS_CREATE_ADMIN = "users:create_admin"
     USERS_READ = "users:read"
     USERS_WRITE = "users:write"
+    USERS_CHANGE_EMAIL = "users:change_email"
+    USERS_RESEND_VERIFICATION = "users:resend_verification"
     USERS_DELETE = "users:delete"
 
     # Roles

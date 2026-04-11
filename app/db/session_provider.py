@@ -6,7 +6,7 @@ küçük adapter/protocol tanımları sağlar.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import TYPE_CHECKING, Protocol
 
 from app.db import session as db_session
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 class AsyncSessionFactoryProtocol(Protocol):
     """AsyncSession context manager üreten callable protocol'ü."""
 
-    def __call__(self) -> AsyncIterator[AsyncSession]:
+    def __call__(self, **local_kw: object) -> AbstractAsyncContextManager[AsyncSession]:
         """Yeni bir AsyncSession context manager döndür."""
 
 

@@ -5,6 +5,8 @@ Uygulama başlangıcında sistem rolleri ve varsayılan admin kullanıcısını 
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import structlog
 
 from app.core.config import settings
@@ -18,6 +20,9 @@ from app.db.models.role import Role, RolePermission
 from app.db.models.user import SurfaceType, User
 from app.db.repositories.user import UserRepository
 from app.db.session_provider import get_default_session_factory
+
+if TYPE_CHECKING:
+    from collections.abc import Set
 
 logger = structlog.get_logger(__name__)
 
@@ -73,7 +78,7 @@ async def seed_system_roles() -> dict[str, Role]:
                 logger.info("system_role_created", role=role_data["name"])
             else:
                 if hasattr(role, "id"):
-                    existing_permissions = getattr(role, "permission_set", set())
+                    existing_permissions: Set[str] = getattr(role, "permission_set", set())
                     for perm in role_data["permissions"]:
                         if perm not in existing_permissions:
                             session.add(RolePermission(role_id=role.id, permission=perm))
