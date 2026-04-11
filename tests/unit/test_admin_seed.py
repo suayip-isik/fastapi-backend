@@ -1,4 +1,4 @@
-"""Admin seed unit testleri."""
+"""Superadmin seed unit testleri."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.admin.seed import create_default_admin, seed_system_roles
+from app.admin.seed import create_default_superadmin, seed_system_roles
 from app.db.models.user import SurfaceType, User
 
 
@@ -84,35 +84,35 @@ async def test_seed_system_roles_skips_existing_roles() -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_default_admin_returns_if_admin_exists() -> None:
+async def test_create_default_superadmin_returns_if_superadmin_exists() -> None:
     session = _DummySession()
 
     with (
         patch("app.admin.seed.get_default_session_factory", return_value=lambda: session),
         patch("app.admin.seed.UserRepository.email_exists", new=AsyncMock(return_value=True)),
     ):
-        await create_default_admin()
+        await create_default_superadmin()
 
     assert session.added == []
     assert session.commit_count == 0
 
 
 @pytest.mark.asyncio
-async def test_create_default_admin_returns_if_admin_role_missing() -> None:
+async def test_create_default_superadmin_returns_if_admin_role_missing() -> None:
     session = _DummySession([None])
 
     with (
         patch("app.admin.seed.get_default_session_factory", return_value=lambda: session),
         patch("app.admin.seed.UserRepository.email_exists", new=AsyncMock(return_value=False)),
     ):
-        await create_default_admin()
+        await create_default_superadmin()
 
     assert session.added == []
     assert session.commit_count == 0
 
 
 @pytest.mark.asyncio
-async def test_create_default_admin_creates_admin_user() -> None:
+async def test_create_default_superadmin_creates_admin_user() -> None:
     admin_role = SimpleNamespace(id=uuid4(), name="admin")
     session = _DummySession([admin_role])
 
@@ -120,10 +120,10 @@ async def test_create_default_admin_creates_admin_user() -> None:
         patch("app.admin.seed.get_default_session_factory", return_value=lambda: session),
         patch("app.admin.seed.UserRepository.email_exists", new=AsyncMock(return_value=False)),
         patch("app.admin.seed.hash_password", return_value="hashed-pass"),
-        patch("app.admin.seed.settings.ADMIN_EMAIL", "admin@example.com"),
-        patch("app.admin.seed.settings.ADMIN_PASSWORD", "StrongPass1"),
+        patch("app.admin.seed.settings.SUPERADMIN_EMAIL", "admin@example.com"),
+        patch("app.admin.seed.settings.SUPERADMIN_PASSWORD", "StrongPass1"),
     ):
-        await create_default_admin()
+        await create_default_superadmin()
 
     assert session.commit_count == 1
     assert len(session.added) == 1

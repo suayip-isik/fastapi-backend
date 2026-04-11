@@ -132,7 +132,7 @@ keys:
 
 .PHONY: seed
 seed:
-	$(API) python -c "import asyncio; from app.admin.seed import create_default_admin; asyncio.run(create_default_admin())"
+	$(API) python -c "import asyncio; from app.admin.seed import create_default_superadmin; asyncio.run(create_default_superadmin())"
 
 .PHONY: env
 env:

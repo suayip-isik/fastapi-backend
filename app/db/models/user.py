@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -55,6 +55,27 @@ class User(SoftDeleteMixin, BaseModel):
     """
 
     __tablename__ = "users"
+    __table_args__ = (
+        Index("ix_users_filters", "role_id", "is_active", "is_verified", "deleted_at"),
+        Index(
+            "ix_users_email_trgm",
+            "email",
+            postgresql_using="gin",
+            postgresql_ops={"email": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_users_username_trgm",
+            "username",
+            postgresql_using="gin",
+            postgresql_ops={"username": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_users_full_name_trgm",
+            "full_name",
+            postgresql_using="gin",
+            postgresql_ops={"full_name": "gin_trgm_ops"},
+        ),
+    )
 
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     pending_email: Mapped[str | None] = mapped_column(

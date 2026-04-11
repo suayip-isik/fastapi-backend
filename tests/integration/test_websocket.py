@@ -31,11 +31,11 @@ def _patch_lifespan():
     TestClient'ın kendi event loop'u pytest-asyncio'nun function-scoped loop'larıyla
     çakışır. Bu iki lifespan yan etkisini devre dışı bırakır:
     - close_redis(): FakeRedis.aclose() yok → AttributeError
-    - create_default_admin(): asyncpg havuzunu kapalı loop'ta kullanır → RuntimeError
+    - create_default_superadmin(): asyncpg havuzunu kapalı loop'ta kullanır → RuntimeError
     """
     with (
         patch("app.main.close_redis", new=AsyncMock()),
-        patch("app.main.create_default_admin", new=AsyncMock()),
+        patch("app.main.create_default_superadmin", new=AsyncMock()),
         patch("app.main.seed_system_roles", new=AsyncMock()),
     ):
         yield

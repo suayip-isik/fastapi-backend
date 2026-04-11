@@ -41,7 +41,7 @@ class Settings(BaseSettings):
         JWT_PUBLIC_KEY: RSA public key (property ile okunur)
 
     Note:
-        - Production ortamında SECRET_KEY, ADMIN_PASSWORD güvenli değerler olmalı
+        - Production ortamında SECRET_KEY, SUPERADMIN_PASSWORD güvenli değerler olmalı
         - Production'da APP_DEBUG=False zorunludur
         - JWT key dosyaları keys/ klasöründe olmalı (private.pem, public.pem)
         - CORS_ORIGINS ve ALLOWED_UPLOAD_TYPES JSON array formatında verilmeli
@@ -244,9 +244,9 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     EMAILS_FROM_EMAIL: str = "noreply@example.com"
 
-    # ── Admin Seed ────────────────────────────────────────────────────────────
-    ADMIN_EMAIL: str = "admin@example.com"
-    ADMIN_PASSWORD: str = "changeme"
+    # ── Superadmin Seed ───────────────────────────────────────────────────────
+    SUPERADMIN_EMAIL: str = "admin@example.com"
+    SUPERADMIN_PASSWORD: str = "changeme"
 
     # ── Rate Limiting ─────────────────────────────────────────────────────────
     RATE_LIMIT_DEFAULT: str = "100/minute"
@@ -359,7 +359,7 @@ class Settings(BaseSettings):
         zorunlu tutar:
         - SECRET_KEY default değer olmamalı
         - DEBUG modu kapalı olmalı
-        - ADMIN_PASSWORD güvenli olmalı
+        - SUPERADMIN_PASSWORD güvenli olmalı
 
         Returns:
             Validate edilmiş Settings instance
@@ -382,8 +382,10 @@ class Settings(BaseSettings):
             if "localhost" in frontend_url or "127.0.0.1" in frontend_url:
                 raise ValueError("Production'da FRONTEND_URL gerçek frontend domain'i olmalı!")
             insecure_passwords = {"changeme", "admin", "password", "123456", ""}
-            if (self.ADMIN_PASSWORD or "").strip().lower() in insecure_passwords:
-                raise ValueError("Production'da ADMIN_PASSWORD güvenli bir değere ayarlanmalı!")
+            if (self.SUPERADMIN_PASSWORD or "").strip().lower() in insecure_passwords:
+                raise ValueError(
+                    "Production'da SUPERADMIN_PASSWORD güvenli bir değere ayarlanmalı!"
+                )
             self.RATE_LIMIT_ENABLED = True
             if not self.JWT_PRIVATE_KEY_PATH.exists():
                 raise ValueError(
