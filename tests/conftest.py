@@ -88,6 +88,15 @@ def disable_rate_limits():
 
 
 @pytest.fixture(autouse=True)
+def disable_schema_guard():
+    """Test DB create_all kullandığı için startup schema guard'ını kapat."""
+    original = settings.ENFORCE_DB_SCHEMA_CHECK
+    settings.ENFORCE_DB_SCHEMA_CHECK = False
+    yield
+    settings.ENFORCE_DB_SCHEMA_CHECK = original
+
+
+@pytest.fixture(autouse=True)
 def mock_enqueue():
     """
     Tüm testlerde ARQ enqueue'yu mock'la.

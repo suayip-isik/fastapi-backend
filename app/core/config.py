@@ -262,6 +262,9 @@ class Settings(BaseSettings):
     PASSWORD_RESET_TTL: int = 900  # 15 minutes in seconds
     LOGIN_PARTIAL_TTL: int = 300  # 5 minutes in seconds
 
+    # ── Startup Guards ────────────────────────────────────────────────────────
+    ENFORCE_DB_SCHEMA_CHECK: bool = True
+
     # ── Sentry ────────────────────────────────────────────────────────────────
     SENTRY_DSN: str = ""
     SENTRY_TRACES_SAMPLE_RATE: float = 0.1  # production için 0.1, dev için 1.0

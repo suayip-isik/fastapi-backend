@@ -31,6 +31,7 @@ from app.core.middleware import (
     TimingMiddleware,
 )
 from app.core.redis import close_redis
+from app.db.schema_guard import validate_database_schema
 from app.db.session import engine
 
 
@@ -88,6 +89,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     logger = get_logger(__name__)
     logger.info("app_starting", version=settings.APP_VERSION, env=settings.APP_ENV)
+    if settings.ENFORCE_DB_SCHEMA_CHECK:
+        await validate_database_schema(engine)
     await seed_system_roles()
     await create_default_admin()
     yield
