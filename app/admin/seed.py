@@ -1,5 +1,5 @@
 """
-Uygulama başlangıcında sistem rolleri ve varsayılan admin kullanıcısını oluşturur.
+Uygulama başlangıcında sistem rolleri ve varsayılan superadmin kullanıcısını oluşturur.
 İdempotent: mevcut kayıtlar varsa atlanır.
 """
 
@@ -91,8 +91,8 @@ async def seed_system_roles() -> dict[str, Role]:
     return roles
 
 
-async def create_default_admin() -> None:
-    """Varsayılan admin kullanıcısını yoksa oluşturur.
+async def create_default_superadmin() -> None:
+    """Varsayılan superadmin kullanıcısını yoksa oluşturur.
 
     Sistem rolleri seed edilmiş olmalıdır (seed_system_roles çağrısı önceden yapılmalı).
     """
@@ -103,26 +103,31 @@ async def create_default_admin() -> None:
     async with session_factory() as session:
         user_repo = UserRepository(session)
 
-        if await user_repo.email_exists(settings.ADMIN_EMAIL):
-            logger.info("admin_already_exists", email=settings.ADMIN_EMAIL)
+        if await user_repo.email_exists(settings.SUPERADMIN_EMAIL):
+            logger.info("superadmin_already_exists", email=settings.SUPERADMIN_EMAIL)
             return
 
         result = await session.execute(select(Role).where(Role.name == "admin"))
         admin_role = result.scalar_one_or_none()
 
         if not admin_role:
-            logger.error("admin_role_not_found_cannot_create_admin")
+            logger.error("admin_role_not_found_cannot_create_superadmin")
             return
 
-        admin = User(
-            email=settings.ADMIN_EMAIL.lower(),
-            hashed_password=hash_password(settings.ADMIN_PASSWORD),
-            full_name="Admin",
+        superadmin = User(
+            email=settings.SUPERADMIN_EMAIL.lower(),
+            hashed_password=hash_password(settings.SUPERADMIN_PASSWORD),
+            full_name="Superadmin",
             surface=SurfaceType.ADMIN.value,
             role_id=admin_role.id,
             is_active=True,
             is_verified=True,
         )
-        session.add(admin)
+        session.add(superadmin)
         await session.commit()
-        logger.info("default_admin_created", email=settings.ADMIN_EMAIL)
+        logger.info("default_superadmin_created", email=settings.SUPERADMIN_EMAIL)
+
+
+async def create_default_admin() -> None:
+    """Geriye dönük uyumluluk için varsayılan superadmin oluşturur."""
+    await create_default_superadmin()

@@ -317,7 +317,7 @@ make dev          # api, worker, db, redis, minio container'larını başlatır
 make migrate      # Veritabanı tablolarını oluşturur
 
 # 6. Admin kullanıcı oluştur
-make seed         # .env'deki ADMIN_EMAIL ve ADMIN_PASSWORD ile admin oluşturur
+make seed         # .env'deki SUPERADMIN_EMAIL ve SUPERADMIN_PASSWORD ile superadmin oluşturur
 
 # 7. API dokümantasyonunu aç
 open http://localhost:8000/docs
@@ -344,8 +344,8 @@ docker compose exec api alembic upgrade head
 
 docker compose exec api python -c "
 import asyncio
-from app.admin.seed import create_default_admin
-asyncio.run(create_default_admin())
+from app.admin.seed import create_default_superadmin
+asyncio.run(create_default_superadmin())
 "
 ```
 
@@ -486,10 +486,10 @@ Tüm değerleri `.env.example`'dan `.env`'e kopyaladıktan sonra ihtiyacına gö
 
 ### Admin Seed
 
-| Değişken         | Örnek Değer         | Açıklama                                    |
-| ---------------- | ------------------- | ------------------------------------------- |
-| `ADMIN_EMAIL`    | `admin@example.com` | `make seed` ile oluşturulan admin e-postası |
-| `ADMIN_PASSWORD` | `changeme`          | Admin şifresi (production'da güçlü ol)      |
+| Değişken              | Örnek Değer         | Açıklama                                         |
+| --------------------- | ------------------- | ------------------------------------------------ |
+| `SUPERADMIN_EMAIL`    | `admin@example.com` | `make seed` ile oluşturulan superadmin e-postası |
+| `SUPERADMIN_PASSWORD` | `changeme`          | Superadmin şifresi (production'da güçlü ol)      |
 
 ### Rate Limiting
 
@@ -698,8 +698,8 @@ Endpoint veya service içinde dağınık yetki kontrolü yazmak yerine ortak pol
 
 **Varsayılan Giriş Bilgileri** (`.env` dosyasındaki değerler):
 
-- E-posta: `ADMIN_EMAIL` (varsayılan: `admin@example.com`)
-- Şifre: `ADMIN_PASSWORD` (varsayılan: `changeme`)
+- E-posta: `SUPERADMIN_EMAIL` (varsayılan: `admin@example.com`)
+- Şifre: `SUPERADMIN_PASSWORD` (varsayılan: `changeme`)
 
 > `make seed` komutunu çalıştırmadan admin kullanıcı oluşturulmaz.
 
@@ -901,7 +901,7 @@ await self._audit_log(
 
 ### Diğer Güvenlik Önlemleri
 
-- **Production Validator** — `APP_ENV=production`'da `SECRET_KEY`, `ALLOWED_HOSTS`, `CORS_ORIGINS`, `APP_DEBUG` güvensiz değerler için uygulama başlamaz; `ADMIN_PASSWORD` zayıf veya boş değerler (`""`, `changeme`, `admin`, `password`, `123456`) için de reddedilir
+- **Production Validator** — `APP_ENV=production`'da `SECRET_KEY`, `ALLOWED_HOSTS`, `CORS_ORIGINS`, `APP_DEBUG` güvensiz değerler için uygulama başlamaz; `SUPERADMIN_PASSWORD` zayıf veya boş değerler (`""`, `changeme`, `admin`, `password`, `123456`) için de reddedilir
 - **SQL Injection Koruması** — ORM + parameterized query
 - **Request ID Tracking** — Her isteğe benzersiz ID atanır, loglar ve response header'larında taşınır
 - **Password Hashing** — bcrypt (12 rounds), timing-attack resistant
@@ -1321,7 +1321,7 @@ openssl rand -hex 32   # → SECRET_KEY değeri olarak kullan
 | `STORAGE_BACKEND`                 | `minio`                 | `s3`                                    |
 | `S3_ENDPOINT_URL`                 | `http://minio:9000`     | boş bırak (AWS otomatik)                |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | `minioadmin`            | AWS IAM credentials                     |
-| `ADMIN_PASSWORD`                  | `changeme`              | güçlü şifre (`changeme` → hata verir)   |
+| `SUPERADMIN_PASSWORD`             | `changeme`              | güçlü şifre (`changeme` → hata verir)   |
 
 ### 4. docker-compose.prod.yml Kullanımı
 
@@ -1621,7 +1621,7 @@ groups:
 Canlıya almadan önce:
 
 - [ ] `SECRET_KEY` rastgele üretildi (`openssl rand -hex 32`)
-- [ ] `ADMIN_PASSWORD` güçlü bir değerle değiştirildi (`changeme` production'da hata verir)
+- [ ] `SUPERADMIN_PASSWORD` güçlü bir değerle değiştirildi (`changeme` production'da hata verir)
 - [ ] `POSTGRES_PASSWORD` ve `REDIS_PASSWORD` rastgele üretildi
 - [ ] `APP_ENV=production` ve `APP_DEBUG=false` ayarlandı
 - [ ] `FRONTEND_URL` gerçek frontend domain'i ile ayarlandı
@@ -1645,22 +1645,22 @@ Canlıya almadan önce:
 
 ## Troubleshooting
 
-| Hata / Belirti                                             | Neden                                         | Çözüm                                                       |
-| ---------------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------- |
-| `FileNotFoundError: keys/private.pem`                      | RSA key üretilmedi                            | `make keys` çalıştır                                        |
-| `ValueError: ADMIN_PASSWORD is too simple` (production)    | `changeme` production'da geçersiz             | Güçlü bir şifre ile `ADMIN_PASSWORD` değiştir               |
-| `ValueError: CORS_ORIGINS=["*"] not allowed` (production)  | Production validator reddetti                 | Gerçek domain listesi ile güncelle                          |
-| `ValueError: ALLOWED_HOSTS=["*"] not allowed` (production) | Production validator reddetti                 | Gerçek host listesi ile güncelle                            |
-| Container başlamıyor, health check fail                    | DB / Redis henüz hazır değil                  | `docker compose logs db` ile incele, birkaç saniye bekle    |
-| `alembic.util.exc.CommandError: Can't locate revision`     | Migration uygulanmamış veya sürüm uyuşmazlığı | `make migrate` çalıştır                                     |
-| `relation "users" does not exist`                          | Migration hiç uygulanmamış                    | `make migrate` çalıştır                                     |
-| MinIO bucket bulunamadı                                    | `init` container'ı bucket'ı oluşturmadı       | `docker compose up init` veya `make dev` ile yeniden başlat |
-| `mypy` strict hatası                                       | Eksik veya yanlış tip annotation              | `make typecheck` ile hata listesini gör, annotation ekle    |
-| `ruff` format hatası CI'da                                 | Kod formatlanmamış                            | `make format` ile yerel olarak formatla, commit'e ekle      |
-| WebSocket bağlantısı anında kapanıyor (4001)               | Geçersiz veya süresi dolmuş token             | Yeni access token ile tekrar auth mesajı gönder             |
-| WebSocket bağlantısı 10 saniyede kapanıyor (4008)          | Auth mesajı timeout içinde gelmedi            | Bağlandıktan sonra hemen `{"type": "auth", ...}` gönder     |
-| Testler `fakeredis` hatası veriyor                         | Redis key formatı uyuşmazlığı                 | `make test-fast` ile coverage atla, fixture'a bak           |
-| `docker compose exec api` → `no such service`              | Container adı yanlış                          | `make ps` ile container'ları kontrol et                     |
+| Hata / Belirti                                               | Neden                                         | Çözüm                                                       |
+| ------------------------------------------------------------ | --------------------------------------------- | ----------------------------------------------------------- |
+| `FileNotFoundError: keys/private.pem`                        | RSA key üretilmedi                            | `make keys` çalıştır                                        |
+| `ValueError: SUPERADMIN_PASSWORD is too simple` (production) | `changeme` production'da geçersiz             | Güçlü bir şifre ile `SUPERADMIN_PASSWORD` değiştir          |
+| `ValueError: CORS_ORIGINS=["*"] not allowed` (production)    | Production validator reddetti                 | Gerçek domain listesi ile güncelle                          |
+| `ValueError: ALLOWED_HOSTS=["*"] not allowed` (production)   | Production validator reddetti                 | Gerçek host listesi ile güncelle                            |
+| Container başlamıyor, health check fail                      | DB / Redis henüz hazır değil                  | `docker compose logs db` ile incele, birkaç saniye bekle    |
+| `alembic.util.exc.CommandError: Can't locate revision`       | Migration uygulanmamış veya sürüm uyuşmazlığı | `make migrate` çalıştır                                     |
+| `relation "users" does not exist`                            | Migration hiç uygulanmamış                    | `make migrate` çalıştır                                     |
+| MinIO bucket bulunamadı                                      | `init` container'ı bucket'ı oluşturmadı       | `docker compose up init` veya `make dev` ile yeniden başlat |
+| `mypy` strict hatası                                         | Eksik veya yanlış tip annotation              | `make typecheck` ile hata listesini gör, annotation ekle    |
+| `ruff` format hatası CI'da                                   | Kod formatlanmamış                            | `make format` ile yerel olarak formatla, commit'e ekle      |
+| WebSocket bağlantısı anında kapanıyor (4001)                 | Geçersiz veya süresi dolmuş token             | Yeni access token ile tekrar auth mesajı gönder             |
+| WebSocket bağlantısı 10 saniyede kapanıyor (4008)            | Auth mesajı timeout içinde gelmedi            | Bağlandıktan sonra hemen `{"type": "auth", ...}` gönder     |
+| Testler `fakeredis` hatası veriyor                           | Redis key formatı uyuşmazlığı                 | `make test-fast` ile coverage atla, fixture'a bak           |
+| `docker compose exec api` → `no such service`                | Container adı yanlış                          | `make ps` ile container'ları kontrol et                     |
 
 ---
 

@@ -50,14 +50,14 @@ async def test_lifespan_runs_schema_guard_before_seeding() -> None:
     """Startup sırasında schema guard ve seed işlemleri çağrılmalı."""
     validate_schema = AsyncMock()
     seed_roles = AsyncMock()
-    create_admin = AsyncMock()
+    create_superadmin = AsyncMock()
     close_redis = AsyncMock()
     mock_engine = SimpleNamespace(dispose=AsyncMock())
 
     with (
         patch("app.main.validate_database_schema", validate_schema),
         patch("app.main.seed_system_roles", seed_roles),
-        patch("app.main.create_default_admin", create_admin),
+        patch("app.main.create_default_superadmin", create_superadmin),
         patch("app.main.close_redis", close_redis),
         patch("app.main.engine", mock_engine),
         patch("app.main.settings.ENFORCE_DB_SCHEMA_CHECK", True),
@@ -67,4 +67,4 @@ async def test_lifespan_runs_schema_guard_before_seeding() -> None:
 
     validate_schema.assert_awaited_once_with(mock_engine)
     seed_roles.assert_awaited_once()
-    create_admin.assert_awaited_once()
+    create_superadmin.assert_awaited_once()
