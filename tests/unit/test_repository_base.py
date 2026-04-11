@@ -21,6 +21,8 @@ async def _create_users(repo: UserRepository, count: int, prefix: str = "user") 
 
 
 class TestGetPage:
+    """TestGetPage test grubunu içerir."""
+
     async def test_empty_table_returns_empty_list_and_zero_total(
         self, db_session: AsyncSession
     ) -> None:

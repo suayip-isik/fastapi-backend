@@ -19,6 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    """Bildirim sistemi için notifications tablosunu oluşturur."""
     op.create_table(
         'notifications',
         sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -46,6 +47,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """notifications tablosunu ve notificationtype enum'ını siler."""
     op.drop_index(op.f('ix_notifications_is_read'), table_name='notifications')
     op.drop_index(op.f('ix_notifications_user_id'), table_name='notifications')
     op.drop_table('notifications')

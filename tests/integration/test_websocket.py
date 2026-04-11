@@ -1,5 +1,5 @@
 """
-WebSocket endpoint testleri — /api/v1/ws/{room_id}
+WebSocket endpoint testleri — /api/v1/shared/ws/{room_id}
 
 Bağlantı protokolü:
   1. Client bağlanır (accept)
@@ -22,7 +22,7 @@ from app.main import app
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
-WS_URL = "/api/v1/ws/test-room"
+WS_URL = "/api/v1/shared/ws/test-room"
 
 
 @pytest.fixture(autouse=True)
@@ -36,6 +36,7 @@ def _patch_lifespan():
     with (
         patch("app.main.close_redis", new=AsyncMock()),
         patch("app.main.create_default_admin", new=AsyncMock()),
+        patch("app.main.seed_system_roles", new=AsyncMock()),
     ):
         yield
 
@@ -59,29 +60,25 @@ def _ws_close_code(message: dict) -> int:
 # ── Auth Hata Senaryoları ─────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
-async def test_ws_wrong_auth_message_type():
+def test_ws_wrong_auth_message_type():
     """type='auth' olmayan ilk mesaj → 4001 ile kapatılmalı."""
     code = _ws_close_code({"type": "message", "content": "hello"})
     assert code == 4001
 
 
-@pytest.mark.asyncio
-async def test_ws_auth_message_missing_token():
+def test_ws_auth_message_missing_token():
     """type='auth' fakat token alanı yok → 4001 ile kapatılmalı."""
     code = _ws_close_code({"type": "auth"})
     assert code == 4001
 
 
-@pytest.mark.asyncio
-async def test_ws_auth_message_empty_token():
+def test_ws_auth_message_empty_token():
     """token değeri boş string → 4001 ile kapatılmalı."""
     code = _ws_close_code({"type": "auth", "token": ""})
     assert code == 4001
 
 
-@pytest.mark.asyncio
-async def test_ws_invalid_jwt_token():
+def test_ws_invalid_jwt_token():
     """Geçersiz JWT string → 4001 ile kapatılmalı."""
     code = _ws_close_code({"type": "auth", "token": "not.a.valid.jwt"})
     assert code == 4001
@@ -90,11 +87,9 @@ async def test_ws_invalid_jwt_token():
 # ── Başarılı Bağlantı Senaryoları ─────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
-async def test_ws_valid_auth_connects_successfully():
+def test_ws_valid_auth_connects_successfully():
     """Geçerli access token ile bağlantı kurulmalı (ping → pong)."""
     token = create_access_token(str(uuid4()))
-
     with TestClient(app) as client, client.websocket_connect(WS_URL) as ws:
         ws.send_json({"type": "auth", "token": token})
         ws.send_json({"type": "ping"})
@@ -102,11 +97,9 @@ async def test_ws_valid_auth_connects_successfully():
         assert resp == {"type": "pong"}
 
 
-@pytest.mark.asyncio
-async def test_ws_ping_pong_multiple_times():
+def test_ws_ping_pong_multiple_times():
     """Bağlantı aktif kaldığı sürece birden fazla ping/pong çalışmalı."""
     token = create_access_token(str(uuid4()))
-
     with TestClient(app) as client, client.websocket_connect(WS_URL) as ws:
         ws.send_json({"type": "auth", "token": token})
         for _ in range(3):
@@ -115,22 +108,16 @@ async def test_ws_ping_pong_multiple_times():
             assert resp["type"] == "pong"
 
 
-@pytest.mark.asyncio
-async def test_ws_broadcast_message_to_room():
+def test_ws_broadcast_message_to_room():
     """İki kullanıcı aynı odada: biri mesaj gönderince diğeri almalı."""
     token_a = create_access_token(str(uuid4()))
     token_b = create_access_token(str(uuid4()))
-
     with TestClient(app) as client, client.websocket_connect(WS_URL) as ws_a:
         ws_a.send_json({"type": "auth", "token": token_a})
-
         with client.websocket_connect(WS_URL) as ws_b:
-            # ws_b auth gönder — ws_a'nın user_joined mesajını alması gerek
             ws_b.send_json({"type": "auth", "token": token_b})
             joined = ws_a.receive_json()
             assert joined["type"] == "user_joined"
-
-            # ws_b mesaj gönder — ws_a almalı
             ws_b.send_json({"type": "message", "content": "merhaba"})
             msg = ws_a.receive_json()
             assert msg["type"] == "message"
@@ -138,28 +125,20 @@ async def test_ws_broadcast_message_to_room():
             assert msg["room_id"] == "test-room"
 
 
-@pytest.mark.asyncio
-async def test_ws_message_not_echoed_to_sender():
+def test_ws_message_not_echoed_to_sender():
     """Gönderilen mesaj gönderen kullanıcıya echo edilmemeli."""
     token_a = create_access_token(str(uuid4()))
     token_b = create_access_token(str(uuid4()))
-    # Her test için taze room — manager singleton'da stale state kalmasın
     room = f"echo-test-{str(uuid4())[:8]}"
-
-    with TestClient(app) as client, client.websocket_connect(f"/api/v1/ws/{room}") as ws_a:
+    with TestClient(app) as client, client.websocket_connect(f"/api/v1/shared/ws/{room}") as ws_a:
         ws_a.send_json({"type": "auth", "token": token_a})
-
-        with client.websocket_connect(f"/api/v1/ws/{room}") as ws_b:
+        with client.websocket_connect(f"/api/v1/shared/ws/{room}") as ws_b:
             ws_b.send_json({"type": "auth", "token": token_b})
             ws_a.receive_json()  # user_joined tüket
-
-            # ws_b mesaj gönderir — ws_a almalı, ws_b kendi mesajını almamalı
             ws_b.send_json({"type": "message", "content": "no-echo"})
             msg = ws_a.receive_json()
             assert msg["type"] == "message"
             assert msg["content"] == "no-echo"
-
-            # ws_b ping gönder → pong almalı (kuyruğunda kendi mesajı yok)
             ws_b.send_json({"type": "ping"})
             pong = ws_b.receive_json()
             assert pong["type"] == "pong"

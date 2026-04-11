@@ -8,6 +8,7 @@ from app.admin import views as _views_module
 
 
 def get_all_views() -> list[type[ModelView]]:
+    """app.admin.views modulundeki tum ModelView siniflarini toplar."""
     return [
         cls
         for _, cls in inspect.getmembers(_views_module, inspect.isclass)

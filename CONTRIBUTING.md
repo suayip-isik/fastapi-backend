@@ -29,8 +29,13 @@ Follow the layered architecture defined in `CLAUDE.md`:
 4. **Service** → `app/services/` (business logic only, inject repository)
 5. **Schema** → `app/schemas/` (Pydantic request/response models)
 6. **Endpoint** → `app/api/v1/endpoints/` (thin handlers, delegate to service)
-7. **Router** → Register in `app/api/v1/router.py`
-8. **Tests** → `tests/integration/test_myfeature.py`
+7. **Surface seçimi** → Yeni endpoint yalnız bir canonical surface altında yaşamalı:
+   - `client`
+   - `admin`
+   - `shared`
+8. **Router** → Register in `app/api/v1/router.py`
+9. **Docs** → README/CHANGELOG ve etkilenen diğer referans dokümanlar (`LEARNING_ROADMAP.md`, `.env.example` vb.) aynı PR'da güncellenmeli
+10. **Tests** → `tests/integration/test_myfeature.py`
 
 ## Code Standards
 
@@ -39,6 +44,11 @@ Follow the layered architecture defined in `CLAUDE.md`:
 - Test coverage must remain ≥ 80%
 - No direct SQLAlchemy calls from services or endpoints — use repositories
 - No business logic in endpoints — delegate to services
+- Policy-first authorization: inline `surface` / permission kombinasyonları yazmak yerine ortak policy/dependency helper'ları kullan
+- Global `AsyncSessionFactory` import'u service/policy katmanına sızdırma; request dışı DB erişimini provider/gateway arkasına al
+- Admin-only erişim yalnız permission ile değil, `surface=admin` kuralıyla da korunmalı
+- Security-sensitive failure'larda varsayılan davranış `deny`; side-effect servislerinde `log + degrade`
+- Legacy route eklenmez; yalnız canonical `client/admin/shared` path'leri kullanılır
 
 ## Testing
 
@@ -50,10 +60,16 @@ make test-file f=tests/integration/test_auth.py
 ```
 
 Test fixtures are in `tests/conftest.py`:
+
 - `client` — async httpx client with DB override
 - `db_session` — fresh DB session per test
 - `fake_redis` — fakeredis (no real Redis needed)
 - `mock_enqueue` — ARQ tasks are mocked
+
+Resmi codegen kaynakları:
+
+- `/schema/client/openapi.json`
+- `/schema/admin/openapi.json`
 
 ## Environment Variables
 

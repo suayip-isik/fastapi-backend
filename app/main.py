@@ -18,18 +18,20 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.admin import get_all_views
 from app.admin.auth import AdminAuthBackend
-from app.admin.seed import create_default_admin
+from app.admin.seed import create_default_admin, seed_system_roles
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.limiter import limiter
 from app.core.logging import setup_logging
 from app.core.middleware import (
+    LanguageMiddleware,
     RequestIDMiddleware,
     SecurityHeadersMiddleware,
     TimingMiddleware,
 )
 from app.core.redis import close_redis
+from app.db.schema_guard import validate_database_schema
 from app.db.session import engine
 
 
@@ -49,6 +51,7 @@ def _setup_sentry() -> None:
         request = event.get("request")
         if isinstance(request, dict):
             request.pop("cookies", None)
+            request.pop("data", None)
             headers = request.get("headers")
             if isinstance(headers, dict):
                 headers.pop("authorization", None)
@@ -68,12 +71,27 @@ def _setup_sentry() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Uygulama yasam dongusunu yonetir.
+
+    Baslangicta loglama/Sentry kurulumunu yapar ve varsayilan admin
+    kullanicisini olusturur. Kapanista DB engine ve Redis baglantisini
+    guvenli sekilde kapatir.
+
+    Args:
+        app: FastAPI uygulama nesnesi.
+
+    Yields:
+        Uygulama calisirken kontrolu FastAPI'ye birakir.
+    """
     setup_logging()
     _setup_sentry()
     from app.core.logging import get_logger
 
     logger = get_logger(__name__)
     logger.info("app_starting", version=settings.APP_VERSION, env=settings.APP_ENV)
+    if settings.ENFORCE_DB_SCHEMA_CHECK:
+        await validate_database_schema(engine)
+    await seed_system_roles()
     await create_default_admin()
     yield
     await engine.dispose()
@@ -82,6 +100,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 def create_app() -> FastAPI:
+    """FastAPI uygulamasini olusturur ve tum bilesenleri kaydeder.
+
+    Middleware, exception handler, router, admin panel, metrics ve docs
+    endpoint'lerini tek merkezde baglar.
+
+    Returns:
+        Konfiguru edilmis FastAPI uygulama nesnesi.
+    """
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
@@ -112,6 +138,7 @@ def create_app() -> FastAPI:
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(TimingMiddleware)
     app.add_middleware(RequestIDMiddleware)
+    app.add_middleware(LanguageMiddleware)
 
     # Exception Handlers
     register_exception_handlers(app)
@@ -139,6 +166,7 @@ def create_app() -> FastAPI:
     # Docs
     @app.get("/docs", include_in_schema=False)
     async def swagger_ui() -> HTMLResponse:
+        """Swagger UI sayfasini dondurur."""
         return get_swagger_ui_html(
             openapi_url="/openapi.json",
             title=f"{settings.APP_NAME} - Swagger UI",
@@ -148,10 +176,56 @@ def create_app() -> FastAPI:
 
     @app.get("/redoc", include_in_schema=False)
     async def redoc_ui() -> HTMLResponse:
+        """ReDoc sayfasini dondurur."""
         return get_redoc_html(
             openapi_url="/openapi.json",
             title=f"{settings.APP_NAME} - ReDoc",
             redoc_js_url="https://unpkg.com/redoc@latest/bundles/redoc.standalone.js",
+        )
+
+    # Audience-specific OpenAPI schemas
+    from typing import Any
+
+    from app.api.v1.openapi import generate_audience_schema
+
+    @app.get("/schema/admin/openapi.json", include_in_schema=False)
+    async def admin_openapi() -> Any:
+        """Admin audience icin filtrelenmis OpenAPI semasini dondurur."""
+        return generate_audience_schema(
+            app,
+            audience="admin",
+            title=f"{settings.APP_NAME} — Admin API",
+            version=settings.APP_VERSION,
+        )
+
+    @app.get("/schema/client/openapi.json", include_in_schema=False)
+    async def client_openapi() -> Any:
+        """Client surface için filtrelenmiş OpenAPI şemasını döndürür."""
+        return generate_audience_schema(
+            app,
+            audience="client",
+            title=f"{settings.APP_NAME} — Client API",
+            version=settings.APP_VERSION,
+        )
+
+    @app.get("/schema/admin/docs", include_in_schema=False)
+    async def admin_docs() -> HTMLResponse:
+        """Admin audience icin Swagger UI sayfasini dondurur."""
+        return get_swagger_ui_html(
+            openapi_url="/schema/admin/openapi.json",
+            title=f"{settings.APP_NAME} Admin — Swagger UI",
+            swagger_js_url="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js",
+            swagger_css_url="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css",
+        )
+
+    @app.get("/schema/client/docs", include_in_schema=False)
+    async def client_docs() -> HTMLResponse:
+        """Client surface için Swagger UI sayfasını döndürür."""
+        return get_swagger_ui_html(
+            openapi_url="/schema/client/openapi.json",
+            title=f"{settings.APP_NAME} Client — Swagger UI",
+            swagger_js_url="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js",
+            swagger_css_url="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css",
         )
 
     # Health Check

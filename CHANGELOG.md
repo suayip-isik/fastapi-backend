@@ -9,41 +9,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- TOTP / 2FA support (`POST /api/v1/auth/totp/setup|verify|disable`)
-- API Key authentication (`X-API-Key` header, `POST/GET/DELETE /api/v1/api-keys`)
-- In-app notification system (`/api/v1/notifications`)
-- Prometheus metrics endpoint (`/metrics`)
-- Sentry error tracking integration
-- Real health check endpoints with DB/Redis/Storage probes (`/health`, `/health/live`, `/health/ready`)
-- `Makefile` with common dev commands
-- GitHub Actions test CI workflow
-- Dev Container support (`.devcontainer/`)
-- Production Docker Compose override (`docker-compose.prod.yml`)
-- Nginx reverse proxy configuration (`docker/nginx.conf`)
-- HSTS, Cross-Origin-Opener-Policy, Cross-Origin-Resource-Policy security headers
-- **OAuth CSRF protection** — state parameter (cryptographically random, Redis-backed TTL=600s) added to Google and GitHub OAuth flows; callbacks validate and consume state before processing
-- **`send_welcome_email` task** — fully implemented with SMTP delivery via `send_email()`; previously a stub
-- **`cleanup_expired_tokens` cron job** — scans Redis key prefixes (`blacklist:*`, `email_verify:*`, `password_reset:*`, `oauth_state:*`) and deletes orphaned keys (TTL=-1); runs nightly at midnight via ARQ cron
-- **mypy pre-commit hook** — `mirrors-mypy v1.11.2` with strict mode added to `.pre-commit-config.yaml`
-- **Test: `tests/unit/test_middleware.py`** — RequestIDMiddleware, TimingMiddleware, SecurityHeadersMiddleware coverage (9 tests)
-- **Test: `tests/unit/test_repository_base.py`** — `BaseRepository.get_page()` window function pagination scenarios (7 tests)
-- **Test: `tests/unit/test_health.py`** — `check_redis`, `check_storage` unit tests + degraded/503 endpoint scenarios (7 tests)
-- **Test: `tests/integration/test_audit_log.py`** — `AuditableMixin._audit_log` call assertions for REGISTER, LOGIN_SUCCESS, LOGIN_FAILED, LOGOUT, TOKEN_REFRESHED actions (7 tests)
-- **Test: `tests/integration/test_admin.py`** — admin panel access control (unauthenticated redirect, login page, wrong credentials, mocked authenticated access) (5 tests)
-- `OAUTH_STATE_KEY` constant in `app/services/_keys.py`
+- `surface` tabanlı actor ayrımı (`client`, `admin`)
+- Canonical API surface modeli:
+  - `/api/v1/client/*`
+  - `/api/v1/admin/*`
+  - `/api/v1/shared/*`
+- Consumer-specific OpenAPI kaynakları:
+  - `/schema/client/openapi.json`
+  - `/schema/admin/openapi.json`
+- Admin panel erişimi için `admin:panel_access`
+- Admin kullanıcı oluşturma ve davet akışı:
+  - `POST /api/v1/admin/users`
+  - `POST /api/v1/admin/users/{user_id}/resend-invite`
+- Yeni permission: `users:create_admin`
+- Yeni worker görevi: `send_admin_invite_email`
+- Admin daveti için yeni audit action'lar:
+  - `admin_user_created`
+  - `admin_invite_resent`
+- Admin invite permission/audit backfill migration'ı
+- Surface ve legacy removal regression testleri
+- Merkezi authorization policy helper'ları
+- Permission provider/cache/query ayrımı
+- Session provider abstraction (`AsyncSessionFactory` doğrudan servis katmanına sızmıyor)
 
 ### Changed
 
-- `LoginRequest` now accepts optional `totp_code` field
-- `get_current_user` dependency now accepts `X-API-Key` header in addition to Bearer token
-- `/health` endpoint now checks real DB, Redis, and Storage connectivity
-- `OAuthService.get_google_auth_url()` and `get_github_auth_url()` are now `async` (state generation requires Redis write)
-- `OAuthService.google_callback()` and `github_callback()` now require `state: str` parameter for CSRF validation
-- `google_login` and `github_login` endpoints now `await` the auth URL methods
-- `google_callback` and `github_callback` endpoints now accept `state: str` query parameter
-- `validate_production_settings()` now rejects weak `ADMIN_PASSWORD` values (`changeme`, `admin`, `password`, `123456`, empty) in production
-- `tests/integration/test_oauth.py` updated: callback tests now include `state` query param and pre-seed `oauth_state:{state}` in FakeRedis; redirect tests verify `state=` in Location header; invalid state tests added (expect HTTP 401)
-- `pyproject.toml`: added `TCH002`/`TCH003` to `tests/**/*.py` per-file-ignores (fixture type hints don't need `TYPE_CHECKING` guards)
+- Web ve mobil istemciler artık tek `client` surface üzerinden çalışır
+- Admin panel ve admin API erişimi yalnız `surface=admin` kullanıcılar için geçerlidir
+- SQLAdmin auth artık `admin:panel_access` gerektirir; `admin:access` compatibility fallback'i kaldırıldı
+- Client kullanıcı oluşturma artık yalnız self-register akışıyla yapılır: `/api/v1/client/auth/register`
+- Admin kullanıcı oluşturma yalnız admin surface altında yapılır ve şifre doğrudan atanmaz
+- Admin davet e-postası mevcut `reset-password` ekranını yeniden kullanır
+- Davet edilen admin kullanıcı ilk şifresini kurduğunda `is_verified=true` olur
+- Shared upload “delete any file” yetkisi artık `surface=admin` + `admin:panel_access` gerektirir
+- Admin auth, permission çözümleme ve audit servisleri daha düşük coupling ile injectable provider/gateway sınırlarına taşındı
+- Email/worker/websocket exception boundary'leri daraltıldı
+- Dokümantasyon canonical surface modeliyle eşitlendi
+
+### Removed
+
+- Legacy route ailesi:
+  - `/api/v1/auth/*`
+  - `/api/v1/users/*`
+  - root-level alias admin/shared endpoint'leri
+- Legacy schema alias'ları:
+  - `/schema/user/*`
+  - `/schema/mobile/*`
+- Legacy deprecation middleware
+- `admin:access` compatibility fallback'i
 
 ## [1.0.0] - 2026-03-01
 
@@ -51,7 +64,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release
 - Email/password authentication with bcrypt + RS256 JWT
-- Google and GitHub OAuth2 integration
 - User management with roles (ADMIN, USER, MODERATOR)
 - File uploads via S3/MinIO with validation
 - WebSocket room-based messaging

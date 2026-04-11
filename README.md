@@ -6,60 +6,133 @@
 [![Tests](../../actions/workflows/test.yml/badge.svg)](../../actions/workflows/test.yml)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 
-FastAPI tabanlı, production kullanımına hazır bir backend boilerplate. Katmanlı mimari, async PostgreSQL, Redis, S3 uyumlu depolama, WebSocket, 2FA, OAuth2, audit log ve daha fazlasını içerir.
+FastAPI tabanlı, production kullanımına hazır bir backend boilerplate. Katmanlı mimari, async PostgreSQL, Redis, S3 uyumlu depolama, WebSocket, 2FA, audit log ve daha fazlasını içerir.
+
+---
+
+## Temel Özellikler
+
+### 🔐 Kimlik Doğrulama & Güvenlik
+
+| Özellik           | Açıklama                                                       |
+| ----------------- | -------------------------------------------------------------- |
+| **JWT RS256**     | Private/public key çifti ile imzalanmış access & refresh token |
+| **TOTP/2FA**      | pyotp ile RFC 6238 uyumlu iki faktörlü doğrulama               |
+| **API Key**       | M2M entegrasyonları için `X-API-Key` header desteği            |
+| **Rate Limiting** | Redis-backed sliding window rate limiting                      |
+| **Audit Logging** | Tüm kritik işlemlerin kaydı                                    |
+
+### 🛡️ TOTP / İki Faktörlü Doğrulama (2FA)
+
+- **pyotp** kütüphanesi ile TOTP implementasyonu
+- **QR Code Generation**: `otpauth://` URI formatı, Google Authenticator / Authy uyumlu
+- **Backup Codes**: 10 adet tek kullanımlık yedek kod (bcrypt hash'li)
+- **Fernet Encryption**: TOTP secret'ları veritabanında şifrelenmiş saklanır
+- **Time Drift Tolerance**: ±1 zaman penceresi (30 saniyelik drift toleransı)
+
+### 👨‍💼 Admin Panel
+
+- **SQLAdmin** entegrasyonu ile görsel veritabanı yönetimi
+- **Role-Based Access**: Yalnızca `surface=admin` ve `admin:panel_access` taşıyan hesaplar erişebilir
+- **JWT Authentication**: Admin panel için ayrı authentication backend
+- **Admin Invite Flow**: Yetkili admin kullanıcı yeni admin hesap açar, kullanıcı şifresini e-posta linki ile belirler
+- **Model Yönetimi**: User, Role, AuditLog modelleri
+- **Güvenlik**: Production validator ile zayıf admin şifreleri reddedilir
+
+### 🔌 WebSocket Entegrasyonu
+
+- **Room-Based Messaging**: Oda bazlı çoklu kullanıcı desteği
+- **Token Authentication**: İlk mesajda JWT ile kimlik doğrulama
+- **Real-time Events**: `user_joined`, `user_left`, `message` olayları
+- **Ping/Pong**: Bağlantı sağlık kontrolü
+- **Timeout Protection**: 10 saniye auth timeout, otomatik bağlantı kesme
+
+### 🔔 Bildirim Sistemi
+
+- **In-App Notifications**: Veritabanında kalıcı bildirim saklama
+- **WebSocket Push**: Bağlı kullanıcılara anlık bildirim iletimi
+- **Read/Unread Status**: Okundu/okunmadı durumu takibi
+- **Bildirim Tipleri**: INFO, SUCCESS, WARNING, ERROR, SYSTEM, MENTION, FILE_PROCESSED
+- **Bulk Operations**: Tümünü okundu işaretle, toplu silme
+
+### 🔑 API Key Authentication
+
+- **Programmatic Access**: Servis-to-servis entegrasyonlar için
+- **X-API-Key Header**: `X-API-Key: sk_live_...` veya `Authorization: ApiKey sk_live_...`
+- **Prefix Convention**: `sk_live_` (production) / `sk_test_` (staging)
+- **Scope-Based Permissions**: read, write, admin scope'ları
+- **Expiration**: Opsiyonel son kullanma tarihi desteği
+- **Secure Storage**: Sadece bcrypt hash saklanır, plain key bir kez gösterilir
+
+### 📁 Dosya Depolama
+
+- **S3-Compatible**: MinIO (local) / AWS S3 (production)
+- **Secure Upload**: Dosya tipi ve boyut validasyonu
+- **Ownership Control**: Kullanıcı bazlı erişim kontrolü
+
+### ⚡ Performans & Altyapı
+
+- **Async PostgreSQL**: asyncpg driver ile non-blocking DB operasyonları
+- **Redis Cache**: Rate limiting, token blacklist, session store
+- **Background Tasks**: ARQ ile async task queue (e-posta, dosya işleme)
+- **Prometheus Metrics**: Request latency, error rate, custom metrics
+- **Structured Logging**: structlog ile JSON formatında loglar
 
 ---
 
 ## İçindekiler
 
-1. [Tech Stack](#tech-stack)
-2. [Proje Yapısı](#proje-yapısı)
-3. [Mimari Prensipler](#mimari-prensipler)
-4. [Ön Gereksinimler](#ön-gereksinimler)
-5. [Hızlı Başlangıç](#hızlı-başlangıç)
-6. [Makefile Komutları](#makefile-komutları)
-7. [Ortam Değişkenleri](#ortam-değişkenleri)
-8. [API Endpointleri](#api-endpointleri)
-9. [Admin Panel](#admin-panel)
-10. [Güvenlik Özellikleri](#güvenlik-özellikleri)
-11. [WebSocket Entegrasyonu](#websocket-entegrasyonu)
-12. [Bildirim Sistemi](#bildirim-sistemi)
-13. [Yeni Özellik Ekleme Rehberi](#yeni-özellik-ekleme-rehberi)
-14. [Testler](#testler)
-15. [Kod Kalitesi](#kod-kalitesi)
-16. [CI/CD Pipeline](#cicd-pipeline)
-17. [Production Deployment](#production-deployment)
-18. [Troubleshooting](#troubleshooting)
-19. [Katkıda Bulunma](#katkıda-bulunma)
+1. [Temel Özellikler](#temel-özellikler)
+2. [Tech Stack](#tech-stack)
+3. [Proje Yapısı](#proje-yapısı)
+4. [Mimari Prensipler](#mimari-prensipler)
+5. [Ön Gereksinimler](#ön-gereksinimler)
+6. [Hızlı Başlangıç](#hızlı-başlangıç)
+7. [Makefile Komutları](#makefile-komutları)
+8. [Ortam Değişkenleri](#ortam-değişkenleri)
+9. [API Endpointleri](#api-endpointleri)
+10. [Admin Panel](#admin-panel)
+11. [Güvenlik Özellikleri](#güvenlik-özellikleri)
+12. [WebSocket Entegrasyonu](#websocket-entegrasyonu)
+13. [Bildirim Sistemi](#bildirim-sistemi)
+14. [Yeni Özellik Ekleme Rehberi](#yeni-özellik-ekleme-rehberi)
+15. [Testler](#testler)
+16. [Kod Kalitesi](#kod-kalitesi)
+17. [CI/CD Pipeline](#cicd-pipeline)
+18. [Production Deployment](#production-deployment)
+19. [Troubleshooting](#troubleshooting)
+20. [Katkıda Bulunma](#katkıda-bulunma)
 
 ---
 
 ## Tech Stack
 
-| Katman           | Teknoloji                                        |
-| ---------------- | ------------------------------------------------ |
-| Framework        | FastAPI + Python 3.12                            |
-| Veritabanı       | PostgreSQL 16 + SQLAlchemy 2.0 (async, asyncpg)  |
-| Migrations       | Alembic                                          |
-| Cache / Queue    | Redis 7 (rate limiting, token blacklist, ARQ)    |
-| Background Jobs  | ARQ (Redis-based async task queue)               |
-| Auth             | OAuth2 + JWT RS256 + TOTP/2FA + API Key          |
-| OAuth Providers  | Google, GitHub                                   |
-| Depolama         | S3-uyumlu (MinIO lokal / AWS S3 prod)            |
-| WebSocket        | FastAPI native (room tabanlı)                    |
-| Rate Limiting    | slowapi (Redis-backed, endpoint-specific)        |
-| Validation       | Pydantic v2                                      |
-| Admin Panel      | SQLAdmin (rol tabanlı, JWT doğrulamalı)          |
-| Metrikler        | Prometheus (`prometheus-fastapi-instrumentator`) |
-| Hata Takibi      | Sentry (`sentry-sdk[fastapi]`)                   |
-| Loglama          | structlog (JSON formatında yapısal log)          |
-| Containerization | Docker + Docker Compose                          |
-| Testler          | pytest + pytest-asyncio (asyncio_mode=auto)      |
-| Linting          | ruff 0.6.9 (linter + formatter)                  |
-| Tip Kontrolü     | mypy 1.11.2 (strict mode)                        |
-| Kod Kalitesi     | pre-commit hooks                                 |
-| CI               | GitHub Actions (lint + test paralel job'lar)     |
-| API Docs         | OpenAPI (Swagger UI + ReDoc — otomatik üretilir) |
+| Katman           | Teknoloji                                         |
+| ---------------- | ------------------------------------------------- |
+| Framework        | FastAPI + Python 3.12                             |
+| Veritabanı       | PostgreSQL 16 + SQLAlchemy 2.0 (async, asyncpg)   |
+| Migrations       | Alembic                                           |
+| Cache / Queue    | Redis 7 (rate limiting, token blacklist, ARQ)     |
+| Background Jobs  | ARQ (Redis-based async task queue)                |
+| Auth             | JWT RS256 + TOTP/2FA + API Key                    |
+| 2FA              | pyotp 2.9.0 (TOTP tabanlı iki faktörlü doğrulama) |
+| HTTP Client      | httpx 0.27.2 (harici API çağrıları)               |
+| Depolama         | S3-uyumlu (MinIO lokal / AWS S3 prod)             |
+| WebSocket        | FastAPI native (room tabanlı)                     |
+| Rate Limiting    | slowapi 0.1.9 (Redis-backed, endpoint-specific)   |
+| Validation       | Pydantic v2                                       |
+| Admin Panel      | sqladmin 0.18.0 (rol tabanlı, JWT doğrulamalı)    |
+| E-posta          | aiosmtplib 3.0.1 (async SMTP gönderimi)           |
+| Metrikler        | Prometheus (`prometheus-fastapi-instrumentator`)  |
+| Hata Takibi      | Sentry (`sentry-sdk[fastapi]`)                    |
+| Loglama          | structlog (JSON formatında yapısal log)           |
+| Containerization | Docker + Docker Compose                           |
+| Testler          | pytest + pytest-asyncio (asyncio_mode=auto)       |
+| Linting          | ruff 0.6.9 (linter + formatter)                   |
+| Tip Kontrolü     | mypy 1.11.2 (strict mode)                         |
+| Kod Kalitesi     | pre-commit hooks                                  |
+| CI               | GitHub Actions (lint + test paralel job'lar)      |
+| API Docs         | OpenAPI (Swagger UI + ReDoc — otomatik üretilir)  |
 
 ---
 
@@ -75,9 +148,10 @@ fastapi-backend/
 │   │   └── v1/
 │   │       ├── router.py               # Ana router (tüm endpoint'leri birleştirir)
 │   │       └── endpoints/
-│   │           ├── auth.py             # Kayıt, giriş, çıkış, OAuth, e-posta doğrulama, şifre sıfırlama
-│   │           ├── totp.py             # 2FA kurulum, doğrulama, devre dışı bırakma
-│   │           ├── users.py            # Kullanıcı profili ve yönetimi
+│   │           ├── auth.py             # Client kayıt, client/admin giriş, doğrulama, şifre sıfırlama
+│   │           ├── totp.py             # 2FA kurulum, doğrulama, yedek kod yönetimi
+│   │           ├── users.py            # Profil, admin kullanıcı yönetimi ve admin invite akışı
+│   │           ├── roles.py            # Rol yönetimi (CRUD, sistem rolü koruma)
 │   │           ├── api_keys.py         # API key oluşturma, listeleme, iptal
 │   │           ├── audit_logs.py       # Audit log listeleme ve sorgulama (admin)
 │   │           ├── notifications.py    # Uygulama içi bildirimler
@@ -97,25 +171,26 @@ fastapi-backend/
 │   │   ├── session.py                  # Async DB session factory ve engine
 │   │   ├── models/
 │   │   │   ├── base.py                 # BaseModel (UUID PK, created_at, updated_at)
-│   │   │   ├── user.py                 # User modeli (rol, TOTP, OAuth ilişkileri)
-│   │   │   ├── oauth_account.py        # OAuth hesap bağlantıları
+│   │   │   ├── user.py                 # User modeli (rol, TOTP, soft-delete)
+│   │   │   ├── role.py                 # Role ve RolePermission modelleri (RBAC)
 │   │   │   ├── api_key.py              # API key saklama (bcrypt hash)
-│   │   │   ├── audit_log.py            # Denetim kayıtları
-│   │   │   └── notification.py         # Uygulama içi bildirimler
+│   │   │   ├── audit_log.py            # Denetim kayıtları (AuditAction enum)
+│   │   │   ├── notification.py         # Uygulama içi bildirimler
+│   │   │   └── totp_backup_code.py     # TOTP yedek kodlar (tek kullanımlık, bcrypt)
 │   │   └── repositories/
 │   │       ├── base.py                 # Generic BaseRepository[T] (get_page window fn)
 │   │       ├── user.py                 # UserRepository
-│   │       ├── oauth_account.py        # OAuthAccountRepository (provider upsert)
 │   │       ├── api_key.py              # APIKeyRepository
 │   │       ├── audit_log.py            # AuditLogRepository
 │   │       └── notification.py         # NotificationRepository
 │   ├── services/
 │   │   ├── base.py                     # AuditableMixin (audit log paylaşımlı helper)
 │   │   ├── _keys.py                    # Redis key sabitleri (magic string'leri önler)
-│   │   ├── auth.py                     # AuthService — kayıt, giriş, çıkış, token yönetimi
-│   │   ├── oauth.py                    # OAuthService — Google ve GitHub OAuth akışları
-│   │   ├── account.py                  # AccountService — e-posta doğrulama, şifre sıfırlama
-│   │   ├── user.py                     # UserService — kullanıcı CRUD + sayfalama
+│   │   ├── cache.py                    # Redis cache yardımcıları (get/set/delete)
+│   │   ├── auth.py                     # AuthService — client kayıt, giriş, çıkış, token yönetimi
+│   │   ├── account.py                  # AccountService — e-posta doğrulama, şifre sıfırlama, ilk şifre kurulumu
+│   │   ├── user.py                     # UserService — kullanıcı CRUD, admin invite, soft-delete, sayfalama
+│   │   ├── role.py                     # RoleService — rol CRUD, izin yönetimi
 │   │   ├── api_key.py                  # APIKeyService — key oluşturma, doğrulama, iptal
 │   │   ├── notification.py             # NotificationService — bildirim + WebSocket push
 │   │   ├── totp.py                     # TOTPService — 2FA kurulum, doğrulama, yedek kodlar
@@ -154,7 +229,6 @@ fastapi-backend/
 │   ├── integration/                    # Integration testler (gerçek DB kullanır)
 │   │   ├── test_auth.py               # Kayıt, giriş, çıkış, token, e-posta, şifre sıfırlama
 │   │   ├── test_users.py              # Profil, şifre değiştirme, admin yönetimi
-│   │   ├── test_oauth.py              # Google ve GitHub OAuth akışları
 │   │   ├── test_new_features.py       # TOTP/2FA, API keys, bildirimler
 │   │   ├── test_uploads.py            # Dosya yükleme/silme, sahiplik kontrolü
 │   │   ├── test_websocket.py          # WebSocket auth, ping/pong, broadcast
@@ -354,6 +428,7 @@ Tüm değerleri `.env.example`'dan `.env`'e kopyaladıktan sonra ihtiyacına gö
 | `APP_DEBUG`     | `true`                      | Debug modu (production'da `false` olmalı) | Hayır   |
 | `APP_VERSION`   | `1.0.0`                     | Versiyon string'i                         | Hayır   |
 | `APP_URL`       | `http://localhost:8000`     | Base URL                                  | Evet    |
+| `FRONTEND_URL`  | `http://localhost:3000`     | Kullanıcıya gönderilen frontend base URL  | Evet    |
 | `SECRET_KEY`    | `change-this-...`           | Session/CSRF için rastgele anahtar        | Evet    |
 | `ALLOWED_HOSTS` | `["*"]`                     | İzin verilen host'lar (JSON array)        | Evet    |
 | `CORS_ORIGINS`  | `["http://localhost:3000"]` | CORS izin verilen origin'ler (JSON array) | Evet    |
@@ -388,16 +463,13 @@ Tüm değerleri `.env.example`'dan `.env`'e kopyaladıktan sonra ihtiyacına gö
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30`                 | Access token geçerlilik süresi  | Hayır   |
 | `REFRESH_TOKEN_EXPIRE_DAYS`   | `30`                 | Refresh token geçerlilik süresi | Hayır   |
 
-### OAuth2 Sağlayıcıları
+### Cookie
 
-| Değişken               | Örnek Değer                                         | Açıklama               |
-| ---------------------- | --------------------------------------------------- | ---------------------- |
-| `GOOGLE_CLIENT_ID`     | (Google API Console'dan al)                         | Google OAuth Client ID |
-| `GOOGLE_CLIENT_SECRET` | (Google API Console'dan al)                         | Google OAuth Secret    |
-| `GOOGLE_REDIRECT_URI`  | `http://localhost:8000/api/v1/auth/google/callback` | Google callback URL    |
-| `GITHUB_CLIENT_ID`     | (GitHub App'ten al)                                 | GitHub OAuth Client ID |
-| `GITHUB_CLIENT_SECRET` | (GitHub App'ten al)                                 | GitHub OAuth Secret    |
-| `GITHUB_REDIRECT_URI`  | `http://localhost:8000/api/v1/auth/github/callback` | GitHub callback URL    |
+| Değişken          | Varsayılan | Açıklama                                                      |
+| ----------------- | ---------- | ------------------------------------------------------------- |
+| `COOKIE_DOMAIN`   | (boş)      | Cookie domain (boş = request domain)                          |
+| `COOKIE_SECURE`   | `true`     | Secure flag — HTTPS zorunluluğu (production'da `true` olmalı) |
+| `COOKIE_SAMESITE` | `lax`      | SameSite politikası (`lax`, `strict`, `none`)                 |
 
 ### Depolama (S3 / MinIO)
 
@@ -421,13 +493,15 @@ Tüm değerleri `.env.example`'dan `.env`'e kopyaladıktan sonra ihtiyacına gö
 
 ### Rate Limiting
 
-| Değişken                | Varsayılan   | Uygulanan Endpoint'ler             |
-| ----------------------- | ------------ | ---------------------------------- |
-| `RATE_LIMIT_DEFAULT`    | `100/minute` | Tüm endpoint'ler                   |
-| `RATE_LIMIT_AUTH`       | `5/minute`   | Login, şifre sıfırlama             |
-| `RATE_LIMIT_AUTH_EMAIL` | `3/hour`     | E-posta doğrulama, şifremi unuttum |
-| `RATE_LIMIT_REGISTER`   | `3/hour`     | Kayıt                              |
-| `RATE_LIMIT_UPLOAD`     | `20/hour`    | Dosya yükleme                      |
+| Değişken                | Varsayılan   | Uygulanan Endpoint'ler                          |
+| ----------------------- | ------------ | ----------------------------------------------- |
+| `RATE_LIMIT_ENABLED`    | `true`       | Global rate limiting aç/kapat                   |
+| `RATE_LIMIT_DEFAULT`    | `100/minute` | Tüm endpoint'ler                                |
+| `RATE_LIMIT_AUTH`       | `5/minute`   | Login, şifre sıfırlama                          |
+| `RATE_LIMIT_AUTH_EMAIL` | `3/hour`     | Şifremi unuttum, doğrulama tekrar, admin invite |
+| `RATE_LIMIT_REGISTER`   | `3/hour`     | Sadece client self-register                     |
+| `RATE_LIMIT_UPLOAD`     | `20/hour`    | Dosya yükleme                                   |
+| `RATE_LIMIT_API_KEYS`   | `20/minute`  | API key oluşturma                               |
 
 ### E-posta (SMTP)
 
@@ -438,6 +512,8 @@ Tüm değerleri `.env.example`'dan `.env`'e kopyaladıktan sonra ihtiyacına gö
 | `SMTP_USER`         | `user@domain.com`       | SMTP kullanıcı adı                      |
 | `SMTP_PASSWORD`     | (SMTP şifresi)          | SMTP şifresi                            |
 | `EMAILS_FROM_EMAIL` | `noreply@example.com`   | Gönderen e-posta adresi                 |
+
+> `SMTP_HOST` boş bırakılırsa geliştirme/test ortamında e-posta gönderilmez; bunun yerine doğrulama veya şifre sıfırlama linki log'a yazılır. SMTP gönderimi hata verirse exception worker'a propagate edilir ve job başarısız sayılır.
 
 ### Sentry (opsiyonel)
 
@@ -459,94 +535,142 @@ Tüm değerleri `.env.example`'dan `.env`'e kopyaladıktan sonra ihtiyacına gö
 
 Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt şemaları ve deneme için: **http://localhost:8000/docs**
 
-### Auth (`/auth`)
+> **Toplam:** ~50 endpoint (Auth: 10, TOTP: 5, Users: 13, Roles: 5, API Keys: 3, Notifications: 5, Uploads: 2, Audit Logs: 3, WebSocket: 1, Health: 3)
 
-| Method | Path                        | Açıklama                                 | Auth  |
-| ------ | --------------------------- | ---------------------------------------- | ----- |
-| POST   | `/auth/register`            | Yeni kullanıcı kaydı                     | Hayır |
-| POST   | `/auth/login`               | E-posta/şifre ile giriş (TOTP opsiyonel) | Hayır |
-| POST   | `/auth/refresh`             | Access token yenile (rotation ile)       | Hayır |
-| POST   | `/auth/logout`              | Çıkış (token blacklist'e eklenir)        | Evet  |
-| GET    | `/auth/google`              | Google OAuth akışını başlat              | Hayır |
-| GET    | `/auth/google/callback`     | Google OAuth callback                    | Hayır |
-| GET    | `/auth/github`              | GitHub OAuth akışını başlat              | Hayır |
-| GET    | `/auth/github/callback`     | GitHub OAuth callback                    | Hayır |
-| POST   | `/auth/verify-email`        | E-posta adresini doğrula                 | Hayır |
-| POST   | `/auth/resend-verification` | Doğrulama e-postasını tekrar gönder      | Hayır |
-| POST   | `/auth/forgot-password`     | Şifre sıfırlama e-postası gönder         | Hayır |
-| POST   | `/auth/reset-password`      | Token ile şifre sıfırla                  | Hayır |
-| GET    | `/auth/me`                  | Mevcut kullanıcı bilgileri               | Evet  |
+### 1. Auth (`/client/auth` + `/admin/auth` + `/shared/auth`) — 10 endpoint
 
-### TOTP / 2FA (`/auth/totp`)
+| Method | Path                               | Açıklama                                                        | Auth  |
+| ------ | ---------------------------------- | --------------------------------------------------------------- | ----- |
+| POST   | `/client/auth/register`            | Yeni client kullanıcı kaydı                                     | Hayır |
+| POST   | `/client/auth/login`               | Client user girişi — adım 1 (TOTP varsa partial_token döner)    | Hayır |
+| POST   | `/admin/auth/login`                | Admin user için token tabanlı giriş                             | Hayır |
+| POST   | `/shared/auth/forgot-password`     | Admin ve client kullanıcı için şifre sıfırlama e-postası gönder | Hayır |
+| POST   | `/shared/auth/reset-password`      | Admin ve client kullanıcı için token ile şifre sıfırlar         | Hayır |
+| POST   | `/shared/auth/totp-challenge`      | TOTP doğrulama — adım 2 (partial_token + kod ile tamamla)       | Hayır |
+| POST   | `/shared/auth/refresh`             | Access token yenile (rotation ile)                              | Hayır |
+| POST   | `/shared/auth/logout`              | Çıkış (token blacklist'e eklenir)                               | Evet  |
+| POST   | `/client/auth/verify-email`        | E-posta adresini doğrula                                        | Hayır |
+| POST   | `/client/auth/resend-verification` | Doğrulama e-postasını tekrar gönder                             | Hayır |
 
-| Method | Path                 | Açıklama                                             | Auth |
-| ------ | -------------------- | ---------------------------------------------------- | ---- |
-| POST   | `/auth/totp/setup`   | 2FA kurulumu başlat (QR kodu + secret döner)         | Evet |
-| POST   | `/auth/totp/verify`  | Kodu doğrula ve 2FA'yı aktif et (yedek kodlar döner) | Evet |
-| POST   | `/auth/totp/disable` | 2FA'yı devre dışı bırak                              | Evet |
+> Shared forgot-password/reset-password endpoint'leri kullanıcı tipini backend'de belirler. Client şifre sıfırlama e-postası frontend'e `FRONTEND_URL/reset-password?token=...` ile yönlenir. Admin invite ve admin forgot-password akışları aynı ekranı `surface=admin` query parametresi ile kullanır: `FRONTEND_URL/reset-password?token=...&surface=admin`. E-posta doğrulama linki ise backend doğrulama endpoint'ini kullanır: `APP_URL/api/v1/client/auth/verify-email?token=...`.
 
-### Kullanıcılar (`/users`)
+> Legacy route desteği yoktur. Resmi yüzeyler yalnız `/api/v1/client/*`, `/api/v1/admin/*` ve `/api/v1/shared/*` altındadır.
 
-| Method | Path               | Açıklama                  | Auth  |
-| ------ | ------------------ | ------------------------- | ----- |
-| GET    | `/users/me`        | Mevcut kullanıcı profili  | Evet  |
-| PATCH  | `/users/me`        | Profili güncelle          | Evet  |
-| GET    | `/users`           | Tüm kullanıcıları listele | Admin |
-| GET    | `/users/{user_id}` | Belirli kullanıcıyı getir | Admin |
-| DELETE | `/users/{user_id}` | Kullanıcıyı deaktif et    | Admin |
+### 2. TOTP / 2FA (`/shared/auth/totp`) — 5 endpoint
 
-### API Keys (`/api-keys`)
+| Method | Path                                        | Açıklama                                     | Auth |
+| ------ | ------------------------------------------- | -------------------------------------------- | ---- |
+| POST   | `/shared/auth/totp/setup`                   | 2FA kurulumu başlat (QR kodu + secret döner) | Evet |
+| POST   | `/shared/auth/totp/verify`                  | Kodu doğrula ve 2FA'yı aktif et              | Evet |
+| POST   | `/shared/auth/totp/disable`                 | 2FA'yı devre dışı bırak                      | Evet |
+| GET    | `/shared/auth/totp/backup-codes/count`      | Kalan yedek kod sayısını getir               | Evet |
+| POST   | `/shared/auth/totp/backup-codes/regenerate` | Yeni yedek kodlar üret                       | Evet |
 
-| Method | Path                 | Açıklama             | Auth |
-| ------ | -------------------- | -------------------- | ---- |
-| POST   | `/api-keys`          | Yeni API key oluştur | Evet |
-| GET    | `/api-keys`          | API key'leri listele | Evet |
-| DELETE | `/api-keys/{key_id}` | API key'i iptal et   | Evet |
+### 3. Kullanıcılar (`/shared/me` + `/admin/users`) — 13 endpoint
 
-### Bildirimler (`/notifications`)
+| Method | Path                                   | Açıklama                                            | Auth  |
+| ------ | -------------------------------------- | --------------------------------------------------- | ----- |
+| GET    | `/shared/me`                           | Mevcut kullanıcı profili                            | Evet  |
+| PATCH  | `/shared/me`                           | Profili güncelle                                    | Evet  |
+| GET    | `/admin/users`                         | Tüm kullanıcıları listele (filtreli)                | Admin |
+| POST   | `/admin/users`                         | Yeni admin kullanıcı oluştur + davet gönder         | Admin |
+| GET    | `/admin/users/stats`                   | Aktif/pasif/toplam kullanıcı istatistikleri         | Admin |
+| GET    | `/admin/users/deleted`                 | Soft-delete kullanıcıları listele                   | Admin |
+| GET    | `/admin/users/{user_id}`               | Belirli kullanıcıyı getir                           | Admin |
+| POST   | `/admin/users/{user_id}/resend-invite` | Şifresi kurulmamış admin için daveti yeniden gönder | Admin |
+| POST   | `/admin/users/{user_id}/activate`      | Kullanıcıyı aktif et                                | Admin |
+| POST   | `/admin/users/{user_id}/deactivate`    | Kullanıcıyı deaktif et                              | Admin |
+| PATCH  | `/admin/users/{user_id}/role`          | Kullanıcı rolünü değiştir                           | Admin |
+| DELETE | `/admin/users/{user_id}`               | Kullanıcıyı soft-delete et                          | Admin |
+| POST   | `/admin/users/{user_id}/restore`       | Soft-delete kullanıcıyı geri al                     | Admin |
 
-| Method | Path                               | Açıklama                         | Auth |
-| ------ | ---------------------------------- | -------------------------------- | ---- |
-| GET    | `/notifications`                   | Bildirimleri listele (sayfalı)   | Evet |
-| GET    | `/notifications/unread-count`      | Okunmamış bildirim sayısı        | Evet |
-| PATCH  | `/notifications/read-all`          | Tüm bildirimleri okundu işaretle | Evet |
-| PATCH  | `/notifications/{notification_id}` | Tek bildirimi okundu işaretle    | Evet |
-| DELETE | `/notifications/{notification_id}` | Bildirimi sil                    | Evet |
+> `POST /admin/users` yalnızca `surface=admin` kullanıcı üretir. Client kullanıcı oluşturma desteklenmez; client hesaplar sadece `/client/auth/register` üzerinden kendilerini kaydeder.
 
-### Audit Loglar (`/audit-logs`)
+> Admin kullanıcı oluşturma ve davet yeniden gönderme için ek permission gerekir: `users:create_admin`. Atanacak rolün ayrıca `admin:panel_access` taşıması zorunludur.
 
-| Method | Path                   | Açıklama                                   | Auth  |
-| ------ | ---------------------- | ------------------------------------------ | ----- |
-| GET    | `/audit-logs`          | Audit logları listele (sayfalı + filtreli) | Admin |
-| GET    | `/audit-logs/{log_id}` | Tek audit log kaydını getir                | Admin |
+### 4. Roller (`/admin/roles`) — 5 endpoint
+
+| Method | Path                     | Açıklama                                  | Auth  |
+| ------ | ------------------------ | ----------------------------------------- | ----- |
+| GET    | `/admin/roles`           | Tüm rolleri listele (izinlerle birlikte)  | Admin |
+| POST   | `/admin/roles`           | Yeni özel rol oluştur                     | Admin |
+| GET    | `/admin/roles/{role_id}` | Rol detayını getir                        | Admin |
+| PATCH  | `/admin/roles/{role_id}` | Rol açıklamasını veya izinlerini güncelle | Admin |
+| DELETE | `/admin/roles/{role_id}` | Özel rolü sil                             | Admin |
+
+### 5. API Keys (`/shared/api-keys`) — 3 endpoint
+
+| Method | Path                        | Açıklama             | Auth |
+| ------ | --------------------------- | -------------------- | ---- |
+| POST   | `/shared/api-keys`          | Yeni API key oluştur | Evet |
+| GET    | `/shared/api-keys`          | API key'leri listele | Evet |
+| DELETE | `/shared/api-keys/{key_id}` | API key'i iptal et   | Evet |
+
+### 6. Bildirimler (`/shared/notifications`) — 5 endpoint
+
+| Method | Path                                      | Açıklama                         | Auth |
+| ------ | ----------------------------------------- | -------------------------------- | ---- |
+| GET    | `/shared/notifications`                   | Bildirimleri listele (sayfalı)   | Evet |
+| GET    | `/shared/notifications/unread-count`      | Okunmamış bildirim sayısı        | Evet |
+| PATCH  | `/shared/notifications/read-all`          | Tüm bildirimleri okundu işaretle | Evet |
+| PATCH  | `/shared/notifications/{notification_id}` | Tek bildirimi okundu işaretle    | Evet |
+| DELETE | `/shared/notifications/{notification_id}` | Bildirimi sil                    | Evet |
+
+### 7. Dosya Yükleme (`/shared/uploads`) — 2 endpoint
+
+| Method | Path              | Açıklama                                    | Auth |
+| ------ | ----------------- | ------------------------------------------- | ---- |
+| POST   | `/shared/uploads` | Dosya yükle (max 10MB, izinli MIME türleri) | Evet |
+| DELETE | `/shared/uploads` | Dosya sil (sahip veya admin)                | Evet |
+
+### 8. Audit Loglar (`/admin/audit-logs`) — 3 endpoint
+
+| Method | Path                         | Açıklama                                   | Auth  |
+| ------ | ---------------------------- | ------------------------------------------ | ----- |
+| GET    | `/admin/audit-logs`          | Audit logları listele (sayfalı + filtreli) | Admin |
+| GET    | `/admin/audit-logs/stream`   | Cursor tabanlı audit log stream            | Admin |
+| GET    | `/admin/audit-logs/{log_id}` | Tek audit log kaydını getir                | Admin |
 
 **Sorgu parametreleri:** `page`, `size`, `user_id`, `action`, `date_from`, `date_to`, `ip_address`
 
-### Dosya Yükleme (`/uploads`)
+### 9. WebSocket (`/ws`) — 1 endpoint
 
-| Method | Path       | Açıklama                                    | Auth |
-| ------ | ---------- | ------------------------------------------- | ---- |
-| POST   | `/uploads` | Dosya yükle (max 10MB, izinli MIME türleri) | Evet |
-| DELETE | `/uploads` | Dosya sil (sahip veya admin)                | Evet |
+| Tip       | Path                          | Açıklama                            | Auth              |
+| --------- | ----------------------------- | ----------------------------------- | ----------------- |
+| WebSocket | `/api/v1/shared/ws/{room_id}` | Oda tabanlı gerçek zamanlı bağlantı | JWT (ilk mesajda) |
 
-### WebSocket
+**WebSocket Detayları:**
 
-| Tip       | Path                   | Açıklama                            |
-| --------- | ---------------------- | ----------------------------------- |
-| WebSocket | `/api/v1/ws/{room_id}` | Oda tabanlı gerçek zamanlı bağlantı |
+- Bağlantı: `ws://localhost:8000/api/v1/shared/ws/{room_id}`
+- İlk mesaj: `{"type": "auth", "token": "<access_token>"}`
+- Mesaj türleri: `message`, `ping`, `user_joined`, `user_left`
+- Max mesaj boyutu: 64 KB
+- Auth timeout: 10 saniye
 
-### Sistem
+### 10. Health & Sistem — 3 endpoint
 
-| Method | Path            | Açıklama                                  |
-| ------ | --------------- | ----------------------------------------- |
-| GET    | `/health`       | Tam sağlık durumu (DB, Redis, Storage)    |
-| GET    | `/health/live`  | Canlılık probe'u (Kubernetes)             |
-| GET    | `/health/ready` | Hazırlık probe'u (bağımlılık kontrolleri) |
-| GET    | `/metrics`      | Prometheus metrikleri                     |
-| GET    | `/docs`         | Swagger UI                                |
-| GET    | `/redoc`        | ReDoc dokümantasyonu                      |
+| Method | Path            | Açıklama                                         | Auth  |
+| ------ | --------------- | ------------------------------------------------ | ----- |
+| GET    | `/health`       | Tam sağlık durumu (DB, Redis, Storage)           | Hayır |
+| GET    | `/health/live`  | Kubernetes liveness probe (hafif)                | Hayır |
+| GET    | `/health/ready` | Kubernetes readiness probe (DB + Redis kontrolü) | Hayır |
 
-> API key kimlik doğrulaması desteklenir: `Authorization: Bearer <token>` yerine `X-API-Key: sk_live_<key>` header'ı kullanılabilir.
+**Diğer Sistem Endpoint'leri:**
+
+| Method | Path       | Açıklama              |
+| ------ | ---------- | --------------------- |
+| GET    | `/metrics` | Prometheus metrikleri |
+| GET    | `/docs`    | Swagger UI            |
+| GET    | `/redoc`   | ReDoc dokümantasyonu  |
+
+### Kimlik Doğrulama Seçenekleri
+
+| Yöntem    | Header                          | Açıklama                          |
+| --------- | ------------------------------- | --------------------------------- |
+| JWT Token | `Authorization: Bearer <token>` | Access token ile kimlik doğrulama |
+| API Key   | `X-API-Key: sk_live_<key>`      | API key ile kimlik doğrulama      |
+
+> **Not:** API key'ler yalnızca `CurrentUserDep` gerektiren endpoint'lerde kullanılabilir. Admin endpoint'leri JWT gerektirir.
 
 ---
 
@@ -554,7 +678,23 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 
 **Adres:** http://localhost:8000/admin
 
-Yalnızca `ADMIN` rolüne sahip kullanıcılar giriş yapabilir. Giriş bilgileri mevcut hesapla (e-posta + şifre) aynıdır — ayrı bir hesap gerekmez.
+Yalnızca `surface=admin` olan ve `admin:panel_access` yetkisine sahip kullanıcılar giriş yapabilir. Giriş bilgileri mevcut hesapla (e-posta + şifre) aynıdır; fakat client kullanıcılar admin panele giriş yapamaz.
+
+Yeni admin kullanıcı oluşturma akışı API-first çalışır:
+
+- Yetkili kullanıcı `POST /api/v1/admin/users` ile admin hesabı açar
+- Backend kullanıcıyı şifresiz oluşturur ve davet e-postası yollar
+- Kullanıcı e-postadaki `reset-password` linki üzerinden ilk şifresini belirler
+- İlk şifre kurulumu tamamlandığında hesap `is_verified=true` olur ve `/api/v1/admin/auth/login` ile giriş yapabilir
+
+Authorization kararları policy-first yaklaşımıyla uygulanır:
+
+- surface erişimi (`client`, `admin`, `shared`)
+- actor type (`surface`)
+- panel access (`admin:panel_access`)
+- resource permission seti
+
+Endpoint veya service içinde dağınık yetki kontrolü yazmak yerine ortak policy/dependency katmanı kullanılır.
 
 **Varsayılan Giriş Bilgileri** (`.env` dosyasındaki değerler):
 
@@ -565,10 +705,9 @@ Yalnızca `ADMIN` rolüne sahip kullanıcılar giriş yapabilir. Giriş bilgiler
 
 **Mevcut View'lar:**
 
-| View            | İzinler     |
-| --------------- | ----------- |
-| Kullanıcılar    | Tam CRUD    |
-| OAuth Hesapları | Salt okunur |
+| View         | İzinler  |
+| ------------ | -------- |
+| Kullanıcılar | Tam CRUD |
 
 **Yeni view eklemek:** `app/admin/views.py`'e `ModelView` subclass'ı ekle — otomatik kaydedilir.
 
@@ -576,28 +715,196 @@ Yalnızca `ADMIN` rolüne sahip kullanıcılar giriş yapabilir. Giriş bilgiler
 
 ## API Dokümantasyonu
 
-| Arayüz       | URL                                  | Açıklama                           |
-| ------------ | ------------------------------------ | ---------------------------------- |
-| Swagger UI   | `http://localhost:8000/docs`         | Etkileşimli API explorer           |
-| ReDoc        | `http://localhost:8000/redoc`        | Okunabilir referans dokümantasyonu |
-| OpenAPI JSON | `http://localhost:8000/openapi.json` | Ham şema (CI/SDK üretimi için)     |
+| Arayüz              | URL                                                | Açıklama                              |
+| ------------------- | -------------------------------------------------- | ------------------------------------- |
+| Swagger UI          | `http://localhost:8000/docs`                       | Full app docs                         |
+| ReDoc               | `http://localhost:8000/redoc`                      | Okunabilir referans dokümantasyonu    |
+| Client Swagger UI   | `http://localhost:8000/schema/client/docs`         | Web/mobile frontend için resmi kaynak |
+| Admin Swagger UI    | `http://localhost:8000/schema/admin/docs`          | Admin panel için resmi kaynak         |
+| Client OpenAPI JSON | `http://localhost:8000/schema/client/openapi.json` | Client codegen kaynağı                |
+| Admin OpenAPI JSON  | `http://localhost:8000/schema/admin/openapi.json`  | Admin codegen kaynağı                 |
 
 ## Güvenlik Özellikleri
+
+### JWT & Token Yönetimi
 
 - **RS256 JWT** — Private/public key çifti ile imzalanmış token'lar. Key'ler uygulama başlangıcında bir kez okunur (istek başına disk I/O yok)
 - **Token Blacklisting** — Çıkış yapıldığında token'lar Redis'te kara listeye alınır
 - **Refresh Token Rotation** — Her yenileme isteğinde eski token geçersizleşir, yeni çift verilir
-- **TOTP / 2FA** — TOTP doğrulaması + yedek kodlar. Secret Fernet şifreleme ile DB'de saklanır
-- **API Key Auth** — `sk_live_` prefix'li key'ler bcrypt ile hash'lenerek saklanır; `X-API-Key` header'ı ile kimlik doğrulama
-- **OAuth2** — Google ve GitHub; `OAuthAccount` tablosuna kaydedilir, sağlayıcı izolasyonu sağlanır
-- **OAuth CSRF Koruması** — State parametresi: her OAuth isteğinde kriptografik rastgele bir `state` üretilir, Redis'te 10 dakika TTL ile saklanır; callback'te atomik `GETDEL` ile tek seferde doğrulanıp tüketilir — race condition olmadan replay saldırılarına karşı koruma. OAuth URL parametreleri `urllib.parse.urlencode` ile encode edilir (`redirect_uri` gibi değerlerdeki `:`, `/` karakterlerinin bozmaması için)
-- **Rate Limiting** — Redis-backed, endpoint bazlı (login, kayıt, yükleme için farklı limitler)
 - **WebSocket Token Güvenliği** — Token URL query param'ında değil, bağlandıktan sonra ilk mesajla iletilir (Nginx log sızıntısı riski yok)
+
+### TOTP / 2FA (Two-Factor Authentication)
+
+`pyotp` kütüphanesi ile RFC 6238 uyumlu TOTP implementasyonu:
+
+```python
+# 2FA Yönetim Akışı (oturum açık kullanıcı)
+POST /api/v1/shared/auth/totp/setup    # Secret üretir, QR kodu döner
+POST /api/v1/shared/auth/totp/verify   # TOTP kodu ile doğrulama + yedek kodlar üretilir
+POST /api/v1/shared/auth/totp/disable  # Mevcut TOTP koduyla 2FA devre dışı bırakma
+
+# İki Adımlı Login Akışı (2FA aktifse)
+# Adım 1 — email + şifre
+POST /api/v1/client/auth/login
+# → TOTP yoksa: { access_token, refresh_token }
+# → TOTP varsa: { requires_totp: true, partial_token: "..." }  (5 dk geçerli)
+
+# Adım 2 — partial_token + TOTP kodu (veya yedek kod)
+POST /api/v1/shared/auth/totp-challenge
+# → { access_token, refresh_token }
+```
+
+| Özellik        | Detay                                                 |
+| -------------- | ----------------------------------------------------- |
+| Secret Saklama | Fernet symmetric encryption ile DB'de şifrelenmiş     |
+| Yedek Kodlar   | 10 adet tek kullanımlık, bcrypt hash'li               |
+| QR Code        | `otpauth://` URI formatı, Google Authenticator uyumlu |
+| Tolerans       | ±1 zaman penceresi (30 saniyelik drift)               |
+
+### API Key Authentication
+
+Machine-to-machine (M2M) ve servis entegrasyonları için API Key desteği:
+
+```bash
+# API Key ile istek
+curl -H "X-API-Key: sk_live_abc123..." https://api.example.com/v1/resource
+
+# Bearer token yerine kullanılabilir
+curl -H "Authorization: ApiKey sk_live_abc123..." https://api.example.com/v1/resource
+```
+
+| Özellik    | Detay                                                                      |
+| ---------- | -------------------------------------------------------------------------- |
+| Format     | `sk_live_` prefix                                                          |
+| Saklama    | Sadece bcrypt hash DB'de saklanır (plain key bir kez gösterilir)           |
+| Scope      | Key bazlı izin kısıtlaması (etkin yetkiler kullanıcı yetkileriyle kesişir) |
+| Expiry     | Opsiyonel son kullanma tarihi                                              |
+| Rate Limit | Key başına ayrı limit takibi                                               |
+
+```python
+# Endpoint koruması
+@router.get("/data")
+async def get_data(api_key: APIKey = Depends(require_api_key(scopes=["read"]))):
+    ...
+```
+
+### Rate Limiting
+
+`slowapi` + Redis backend ile distributed rate limiting:
+
+```python
+# Settings tabanlı limitler (app/core/config.py)
+RATE_LIMIT_AUTH = "5/minute"         # login, reset-password
+RATE_LIMIT_AUTH_EMAIL = "3/hour"     # forgot-password, resend-verification, admin invite
+RATE_LIMIT_REGISTER = "3/hour"       # client register
+RATE_LIMIT_UPLOAD = "20/hour"        # dosya yükleme
+```
+
+| Özellik   | Detay                                                             |
+| --------- | ----------------------------------------------------------------- |
+| Backend   | Redis (distributed, multi-instance uyumlu)                        |
+| Algoritma | Sliding window counter                                            |
+| Key       | IP + User ID (authenticated) veya sadece IP                       |
+| Headers   | `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` |
+| Bypass    | `RATE_LIMIT_ENABLED=false` (development)                          |
+
+```bash
+# Rate limit aşıldığında
+HTTP/1.1 429 Too Many Requests
+Retry-After: 45
+X-RateLimit-Limit: 5
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1699999999
+```
+
+### Security Headers
+
+`SecurityHeadersMiddleware` ile tüm response'lara eklenen header'lar:
+
+```python
+# app/core/middleware.py - Production headers
+{
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "X-XSS-Protection": "1; mode=block",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+}
+```
+
+**CORS Yapılandırması** (`app/core/config.py`):
+
+```python
+CORS_ORIGINS = ["https://app.example.com", "https://admin.example.com"]
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH"]
+CORS_ALLOW_HEADERS = ["Authorization", "Content-Type", "X-API-Key", "X-Request-ID"]
+```
+
+### Audit Logging
+
+Tüm güvenlik açısından kritik işlemler `audit_logs` tablosuna kaydedilir:
+
+```python
+# Kaydedilen olaylar (app/db/models/audit_log.py — AuditAction enum)
+AuditAction.LOGIN_SUCCESS          # Başarılı giriş
+AuditAction.LOGIN_FAILED           # Başarısız giriş denemesi
+AuditAction.LOGOUT                 # Çıkış
+AuditAction.REGISTER               # Yeni kayıt
+AuditAction.EMAIL_VERIFIED         # E-posta doğrulama
+AuditAction.PASSWORD_RESET_REQUESTED  # Şifre sıfırlama talebi
+AuditAction.PASSWORD_RESET         # Şifre sıfırlama tamamlandı
+AuditAction.PASSWORD_CHANGED       # Şifre değiştirme
+AuditAction.TOKEN_REFRESHED        # Token yenileme
+AuditAction.PROFILE_UPDATED        # Profil güncelleme
+AuditAction.USER_DEACTIVATED       # Kullanıcı deaktif edildi
+AuditAction.USER_ACTIVATED         # Kullanıcı aktif edildi
+AuditAction.USER_DELETED           # Soft-delete
+AuditAction.USER_RESTORED          # Geri yükleme
+AuditAction.ROLE_CHANGED           # Rol değişikliği
+AuditAction.ROLE_CREATED           # Yeni rol oluşturuldu
+AuditAction.ROLE_UPDATED           # Rol güncellendi
+AuditAction.ROLE_DELETED           # Rol silindi
+AuditAction.TOTP_SETUP_STARTED     # 2FA kurulumu başlatıldı
+AuditAction.TOTP_ENABLED           # 2FA aktif edildi
+AuditAction.TOTP_DISABLED          # 2FA devre dışı bırakıldı
+AuditAction.TOTP_BACKUP_CODES_REGENERATED  # Yedek kodlar yenilendi
+AuditAction.API_KEY_CREATED        # API key oluşturuldu
+AuditAction.API_KEY_REVOKED        # API key iptal edildi
+AuditAction.API_KEY_USED           # API key ile doğrulama yapıldı
+AuditAction.FILE_UPLOADED          # Dosya yüklendi
+AuditAction.FILE_DELETED           # Dosya silindi
+AuditAction.NOTIFICATION_READ      # Bildirim okundu
+AuditAction.NOTIFICATION_DELETED   # Bildirim silindi
+```
+
+| Alan         | Açıklama                              |
+| ------------ | ------------------------------------- |
+| `action`     | Olay tipi (`AuditAction` enum değeri) |
+| `user_id`    | İşlemi yapan kullanıcı (nullable)     |
+| `ip_address` | İstek IP adresi (IPv6 uyumlu)         |
+| `user_agent` | Tarayıcı/client bilgisi               |
+| `extra`      | JSONB formatında ek detaylar          |
+| `created_at` | Zaman damgası (UTC, değiştirilemez)   |
+
+```python
+# Audit log kullanımı (AuditableMixin üzerinden)
+await self._audit_log(
+    action=AuditAction.LOGIN_SUCCESS,
+    user_id=user.id,
+    ip_address=request.client.host,
+    extra={"method": "password"}
+)
+```
+
+### Diğer Güvenlik Önlemleri
+
 - **Production Validator** — `APP_ENV=production`'da `SECRET_KEY`, `ALLOWED_HOSTS`, `CORS_ORIGINS`, `APP_DEBUG` güvensiz değerler için uygulama başlamaz; `ADMIN_PASSWORD` zayıf veya boş değerler (`""`, `changeme`, `admin`, `password`, `123456`) için de reddedilir
-- **CORS** — Konfigüre edilmiş origin listesi ile kısıtlı
 - **SQL Injection Koruması** — ORM + parameterized query
 - **Request ID Tracking** — Her isteğe benzersiz ID atanır, loglar ve response header'larında taşınır
-- **Audit Log** — Tüm önemli işlemler (giriş, çıkış, şifre sıfırlama, dosya yükleme vb.) DB'ye kaydedilir
+- **Password Hashing** — bcrypt (12 rounds), timing-attack resistant
 
 ---
 
@@ -606,7 +913,7 @@ Yalnızca `ADMIN` rolüne sahip kullanıcılar giriş yapabilir. Giriş bilgiler
 ### Bağlantı Protokolü
 
 ```
-1. İstemci bağlanır:  ws://localhost:8000/api/v1/ws/{room_id}
+1. İstemci bağlanır:  ws://localhost:8000/api/v1/shared/ws/{room_id}
 2. İlk mesaj (auth): {"type": "auth", "token": "<access_token>"}
 3. Geçerli token    → bağlantı kabul edilir, odaya katılınır
 4. Geçersiz/eksik  → 4001 kodu ile kapatılır
@@ -620,7 +927,7 @@ import json
 import websocket  # pip install websocket-client
 
 ws = websocket.WebSocket()
-ws.connect("ws://localhost:8000/api/v1/ws/room-123")
+ws.connect("ws://localhost:8000/api/v1/shared/ws/room-123")
 
 # 1. Kimlik doğrula
 ws.send(json.dumps({"type": "auth", "token": "<access_token>"}))
@@ -638,7 +945,7 @@ ws.close()
 ### JavaScript Örneği
 
 ```javascript
-const ws = new WebSocket("ws://localhost:8000/api/v1/ws/room-123");
+const ws = new WebSocket("ws://localhost:8000/api/v1/shared/ws/room-123");
 
 ws.onopen = () => {
   // 1. Kimlik doğrula
@@ -700,10 +1007,10 @@ Servis → NotificationService.create() çağrılır
          ↓
          Kullanıcı WebSocket'e bağlıysa anlık iletilir
          ↓
-GET /notifications  → Sayfalı liste (okunmamış önce)
-PATCH /notifications/{id}  → Okundu işaretle
-PATCH /notifications/read-all  → Tümünü okundu işaretle
-DELETE /notifications/{id}  → Sil
+GET /shared/notifications  → Sayfalı liste (okunmamış önce)
+PATCH /shared/notifications/{id}  → Okundu işaretle
+PATCH /shared/notifications/read-all  → Tümünü okundu işaretle
+DELETE /shared/notifications/{id}  → Sil
 ```
 
 ### WebSocket ile Gerçek Zamanlı Bildirim
@@ -857,9 +1164,11 @@ make test-k k=test_login               # İsim desenine göre
 | `tests/unit/test_repository_base.py`        | Unit        | `BaseRepository.get_page()` sayfalama: boş tablo, ilk/son sayfa, limit > toplam                                          |
 | `tests/unit/test_health.py`                 | Unit        | `check_redis`, `check_storage` — başarılı ve hatalı senaryolar; degraded/503 endpoint                                    |
 | `tests/integration/test_auth.py`            | Integration | Kayıt, giriş, çıkış, token refresh, e-posta doğrulama, şifre sıfırlama, zaten-doğrulanmış senaryosu                      |
-| `tests/integration/test_oauth.py`           | Integration | Google ve GitHub OAuth akışları, state CSRF koruması, geçersiz/eksik state                                               |
 | `tests/integration/test_users.py`           | Integration | Profil güncelleme, şifre değiştirme, yetki kontrolleri                                                                   |
-| `tests/integration/test_new_features.py`    | Integration | TOTP/2FA (setup/verify/disable/backup code), API key (CRUD, expiry), bildirimler (sahiplik kontrolü dahil)               |
+| `tests/integration/test_totp.py`            | Integration | TOTP setup/verify/disable, yedek kod sayımı ve yenileme                                                                  |
+| `tests/integration/test_api_keys.py`        | Integration | API key CRUD, X-API-Key ile auth, expiry, iptal sonrası erişim reddi                                                     |
+| `tests/integration/test_roles.py`           | Integration | Rol CRUD, sistem rolü koruma, kullanıcıya rol atama                                                                      |
+| `tests/integration/test_notifications.py`   | Integration | Bildirim CRUD, okundu işaretleme, sahiplik kontrolü                                                                      |
 | `tests/integration/test_uploads.py`         | Integration | Dosya yükleme, silme, sahiplik kontrolü                                                                                  |
 | `tests/integration/test_websocket.py`       | Integration | Auth hata senaryoları, ping/pong, broadcast, echo kontrolü                                                               |
 | `tests/integration/test_audit_log.py`       | Integration | REGISTER, LOGIN_SUCCESS/FAILED, LOGOUT, TOKEN_REFRESHED aksiyonları audit edilmeli                                       |
@@ -876,7 +1185,7 @@ make test-k k=test_login               # İsim desenine göre
 - `asyncio_mode = "auto"` — tüm testler async
 - Her test transaction rollback ile izole çalışır
 - Coverage eşiği: `--cov-fail-under=80`
-- `AuditService` test izolasyonu: bağımsız `AsyncSessionFactory` kullandığından `_audit_log` mock'lanır
+- `AuditService` test izolasyonu: bağımsız session provider kullandığından `_audit_log` mock'lanır
 - `fake_redis` fixture'ı autouse — tüm testlerde gerçek Redis gerekmez
 - Unit testler `app.*` modüllerini doğrudan import eder — HTTP client veya DB gerekmez
 - E2E testler integration ile aynı fixture'ları kullanır; çok adımlı kullanıcı yolculuklarını test eder
@@ -997,69 +1306,317 @@ openssl rand -hex 32   # → SECRET_KEY değeri olarak kullan
 
 ### 3. .env Production Değerleri
 
-| Değişken                                      | Dev                     | Production                              |
-| --------------------------------------------- | ----------------------- | --------------------------------------- |
-| `APP_ENV`                                     | `development`           | `production`                            |
-| `APP_DEBUG`                                   | `true`                  | `false`                                 |
-| `APP_URL`                                     | `http://localhost:8000` | `https://api.yourdomain.com`            |
-| `SECRET_KEY`                                  | rastgele                | `openssl rand -hex 32` çıktısı          |
-| `POSTGRES_PASSWORD`                           | zayıf                   | güçlü, rastgele                         |
-| `REDIS_PASSWORD`                              | boş                     | güçlü şifre                             |
-| `CORS_ORIGINS`                                | `["*"]`                 | `["https://yourdomain.com"]`            |
-| `ALLOWED_HOSTS`                               | `["*"]`                 | `["api.yourdomain.com"]`                |
-| `SMTP_HOST`                                   | boş                     | `smtp.provider.com` (SES, SendGrid vb.) |
-| `STORAGE_BACKEND`                             | `minio`                 | `s3`                                    |
-| `S3_ENDPOINT_URL`                             | `http://minio:9000`     | boş bırak (AWS otomatik)                |
-| `S3_ACCESS_KEY` / `S3_SECRET_KEY`             | `minioadmin`            | AWS IAM credentials                     |
-| `ADMIN_PASSWORD`                              | `changeme`              | güçlü şifre (`changeme` → hata verir)   |
-| `GOOGLE_REDIRECT_URI` / `GITHUB_REDIRECT_URI` | `localhost`             | production domain                       |
+| Değişken                          | Dev                     | Production                              |
+| --------------------------------- | ----------------------- | --------------------------------------- |
+| `APP_ENV`                         | `development`           | `production`                            |
+| `APP_DEBUG`                       | `true`                  | `false`                                 |
+| `APP_URL`                         | `http://localhost:8000` | `https://api.yourdomain.com`            |
+| `FRONTEND_URL`                    | `http://localhost:3000` | `https://yourdomain.com`                |
+| `SECRET_KEY`                      | rastgele                | `openssl rand -hex 32` çıktısı          |
+| `POSTGRES_PASSWORD`               | zayıf                   | güçlü, rastgele                         |
+| `REDIS_PASSWORD`                  | boş                     | güçlü şifre                             |
+| `CORS_ORIGINS`                    | `["*"]`                 | `["https://yourdomain.com"]`            |
+| `ALLOWED_HOSTS`                   | `["*"]`                 | `["api.yourdomain.com"]`                |
+| `SMTP_HOST`                       | boş                     | `smtp.provider.com` (SES, SendGrid vb.) |
+| `STORAGE_BACKEND`                 | `minio`                 | `s3`                                    |
+| `S3_ENDPOINT_URL`                 | `http://minio:9000`     | boş bırak (AWS otomatik)                |
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | `minioadmin`            | AWS IAM credentials                     |
+| `ADMIN_PASSWORD`                  | `changeme`              | güçlü şifre (`changeme` → hata verir)   |
 
-### 4. Başlatma
+### 4. docker-compose.prod.yml Kullanımı
+
+Production override dosyası (`docker-compose.prod.yml`) ile servisleri başlatın:
 
 ```bash
-# Image'ı build et
-docker compose -f docker-compose.prod.yml build
+# Tek komutla build + up (önerilen)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
-# Tüm servisleri başlat
-docker compose -f docker-compose.prod.yml up -d
+# Sadece build
+docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+
+# Migration uygula
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec api alembic upgrade head
 
 # Log takibi
-docker compose -f docker-compose.prod.yml logs -f api
-docker compose -f docker-compose.prod.yml logs -f worker
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f api worker
+
+# Servisleri ölçekle (yük altında)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --scale api=4 --scale worker=2
 ```
 
-### 5. Nginx Reverse Proxy
+**Production override özellikleri:**
+
+| Özellik         | Development                   | Production                             |
+| --------------- | ----------------------------- | -------------------------------------- |
+| Build target    | `development`                 | `production` (multi-stage, slim image) |
+| API replicas    | 1                             | 2+ (scale ile artırılabilir)           |
+| Resource limits | Yok                           | CPU: 1.0, Memory: 512M                 |
+| Volume mounts   | Kod mount edilir (hot-reload) | Mount yok (image içinde)               |
+| DB/Redis ports  | Host'a açık                   | Sadece internal network                |
+| Nginx           | Yok                           | Aktif (SSL termination, rate limit)    |
+| Log format      | `text`                        | `json` (log aggregation için)          |
+
+> `docker-compose.prod.yml` production ortamında `RATE_LIMIT_ENABLED=true` değerini zorunlu olarak set eder.
+
+### 5. SSL/TLS Setup (Nginx + Let's Encrypt)
+
+#### İlk Sertifika Alma (Certbot)
+
+```bash
+# Certbot container'ı ekle (docker-compose.prod.yml içine)
+# veya host üzerinde:
+apt install certbot
+certbot certonly --webroot -w /var/www/certbot -d api.yourdomain.com
+
+# Sertifikaları nginx volume'una kopyala
+cp /etc/letsencrypt/live/api.yourdomain.com/fullchain.pem ./docker/certs/
+cp /etc/letsencrypt/live/api.yourdomain.com/privkey.pem ./docker/certs/
+```
+
+#### Otomatik Yenileme (Cron)
+
+```bash
+# /etc/cron.d/certbot-renew
+0 3 * * * root certbot renew --quiet && docker compose -f /path/to/docker-compose.prod.yml exec nginx nginx -s reload
+```
+
+#### Nginx SSL Konfigürasyonu
+
+Proje içindeki `docker/nginx.conf` production-ready SSL ayarları içerir:
+
+- **TLS 1.2/1.3** — Eski protokoller devre dışı
+- **Modern cipher suites** — ECDHE-ECDSA ve ECDHE-RSA
+- **HSTS** — 1 yıl, includeSubDomains
+- **Security headers** — X-Content-Type-Options, X-Frame-Options, X-XSS-Protection
+- **HTTP/2** — Performans için aktif
 
 ```nginx
-server {
-    listen 80;
-    server_name api.yourdomain.com;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl;
-    server_name api.yourdomain.com;
-
-    ssl_certificate     /etc/letsencrypt/live/api.yourdomain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api.yourdomain.com/privkey.pem;
-
-    location / {
-        proxy_pass         http://localhost:8000;
-        proxy_set_header   Host $host;
-        proxy_set_header   X-Real-IP $remote_addr;
-        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $scheme;
-
-        # WebSocket desteği
-        proxy_http_version 1.1;
-        proxy_set_header   Upgrade $http_upgrade;
-        proxy_set_header   Connection "upgrade";
-    }
-}
+# Temel SSL ayarları (docker/nginx.conf'tan)
+ssl_protocols TLSv1.2 TLSv1.3;
+ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:...;
+ssl_prefer_server_ciphers off;
+ssl_session_cache shared:SSL:10m;
 ```
 
-### 6. Güvenlik Kontrol Listesi
+### 6. Health Check Endpoints
+
+API, servis durumunu kontrol etmek için health endpoint'leri sunar:
+
+| Endpoint            | Amaç                                                    | Rate Limit |
+| ------------------- | ------------------------------------------------------- | ---------- |
+| `GET /health`       | Tam sağlık durumu (DB, Redis, Storage kontrolü)         | Yok        |
+| `GET /health/live`  | Kubernetes liveness probe — hafif, sadece API yanıtı    | Yok        |
+| `GET /health/ready` | Kubernetes readiness probe (DB, Redis bağlantıları OK?) | Yok        |
+
+```bash
+# Kubernetes / Docker health check örneği
+curl -f http://localhost:8000/health || exit 1
+
+# Load balancer readiness check
+curl -sf http://localhost:8000/health/ready | jq '.status'
+```
+
+**docker-compose.yml health check:**
+
+```yaml
+api:
+  healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 40s
+```
+
+### 7. Log Aggregation
+
+Production'da JSON log formatı aktif (`LOG_FORMAT=json`). Logları merkezi sistemlere yönlendirin:
+
+#### Loki + Promtail (Önerilen)
+
+```yaml
+# docker-compose.prod.yml'e ekle
+promtail:
+  image: grafana/promtail:latest
+  volumes:
+    - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    - ./promtail-config.yml:/etc/promtail/config.yml
+  command: -config.file=/etc/promtail/config.yml
+```
+
+```yaml
+# promtail-config.yml
+scrape_configs:
+  - job_name: fastapi
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+    relabel_configs:
+      - source_labels: [__meta_docker_container_name]
+        target_label: container
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            request_id: request_id
+            path: path
+```
+
+#### Alternatif Çözümler
+
+| Sistem             | Entegrasyon                                    |
+| ------------------ | ---------------------------------------------- |
+| **ELK Stack**      | Filebeat → Logstash → Elasticsearch            |
+| **Datadog**        | `DD_LOGS_ENABLED=true` env + Datadog Agent     |
+| **AWS CloudWatch** | `awslogs` log driver, CloudWatch Logs Insights |
+| **Fluentd**        | Fluentd container + S3/Elasticsearch output    |
+
+### 8. Backup Stratejisi
+
+#### PostgreSQL Backup
+
+```bash
+# Günlük otomatik backup (cron)
+0 2 * * * docker compose exec -T db pg_dump -U postgres app_db | gzip > /backups/db_$(date +\%Y\%m\%d).sql.gz
+
+# Manuel backup
+docker compose exec db pg_dump -U postgres app_db > backup.sql
+
+# Restore
+cat backup.sql | docker compose exec -T db psql -U postgres app_db
+```
+
+#### S3'e Otomatik Backup
+
+```bash
+#!/bin/bash
+# scripts/backup.sh
+set -e
+
+BACKUP_FILE="backup_$(date +%Y%m%d_%H%M%S).sql.gz"
+
+# Dump + compress
+docker compose exec -T db pg_dump -U postgres app_db | gzip > "/tmp/$BACKUP_FILE"
+
+# S3'e yükle
+aws s3 cp "/tmp/$BACKUP_FILE" "s3://your-backup-bucket/db/$BACKUP_FILE"
+
+# 30 günden eski backup'ları sil
+aws s3 ls s3://your-backup-bucket/db/ | while read -r line; do
+  createDate=$(echo "$line" | awk '{print $1" "$2}')
+  createDate=$(date -d "$createDate" +%s)
+  olderThan=$(date -d "30 days ago" +%s)
+  if [[ $createDate -lt $olderThan ]]; then
+    fileName=$(echo "$line" | awk '{print $4}')
+    aws s3 rm "s3://your-backup-bucket/db/$fileName"
+  fi
+done
+```
+
+#### Backup Kontrol Listesi
+
+- [ ] Günlük PostgreSQL backup (retention: 30 gün)
+- [ ] Haftalık full backup (retention: 12 hafta)
+- [ ] Aylık archive backup (retention: 1 yıl)
+- [ ] Redis RDB snapshot (persistence aktif)
+- [ ] S3 bucket versioning açık
+- [ ] Backup restore testi (ayda 1 kez)
+
+### 9. Monitoring (Prometheus + Grafana)
+
+#### Prometheus Metrics
+
+API, Prometheus formatında metrikler sunar:
+
+```yaml
+# docker-compose.prod.yml'e ekle
+prometheus:
+  image: prom/prometheus:latest
+  volumes:
+    - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    - prometheus_data:/prometheus
+  ports:
+    - "9090:9090"
+  networks:
+    - app_network
+
+grafana:
+  image: grafana/grafana:latest
+  volumes:
+    - grafana_data:/var/lib/grafana
+  ports:
+    - "3000:3000"
+  environment:
+    - GF_SECURITY_ADMIN_PASSWORD=admin
+  networks:
+    - app_network
+```
+
+```yaml
+# prometheus.yml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "fastapi"
+    static_configs:
+      - targets: ["api:8000"]
+    metrics_path: /metrics
+
+  - job_name: "postgres"
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  - job_name: "redis"
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+
+  - job_name: "nginx"
+    static_configs:
+      - targets: ["nginx-exporter:9113"]
+```
+
+#### Önerilen Grafana Dashboard'ları
+
+| Dashboard ID | İsim                      | Amaç                 |
+| ------------ | ------------------------- | -------------------- |
+| 1860         | Node Exporter Full        | Host metrikleri      |
+| 763          | Redis Dashboard           | Redis performansı    |
+| 9628         | PostgreSQL Database       | DB performansı       |
+| 12708        | NGINX Prometheus Exporter | Nginx istatistikleri |
+
+#### Alert Kuralları (Önerilen)
+
+```yaml
+# prometheus/alerts.yml
+groups:
+  - name: fastapi
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High 5xx error rate"
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "95th percentile latency > 1s"
+
+      - alert: DatabaseDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL is down"
+```
+
+### 10. Güvenlik Kontrol Listesi
 
 Canlıya almadan önce:
 
@@ -1067,15 +1624,20 @@ Canlıya almadan önce:
 - [ ] `ADMIN_PASSWORD` güçlü bir değerle değiştirildi (`changeme` production'da hata verir)
 - [ ] `POSTGRES_PASSWORD` ve `REDIS_PASSWORD` rastgele üretildi
 - [ ] `APP_ENV=production` ve `APP_DEBUG=false` ayarlandı
+- [ ] `FRONTEND_URL` gerçek frontend domain'i ile ayarlandı
 - [ ] `CORS_ORIGINS` yalnızca gerçek domain'i içeriyor (`["*"]` production'da hata verir)
 - [ ] `ALLOWED_HOSTS` yalnızca gerçek domain'i içeriyor (`["*"]` production'da hata verir)
 - [ ] JWT key dosyaları (`keys/private.pem`, `keys/public.pem`) yeniden üretildi
 - [ ] `keys/` ve `.env` dosyalarının `.gitignore`'da olduğu doğrulandı
 - [ ] `SMTP_HOST` gerçek bir SMTP sağlayıcısıyla dolduruldu
 - [ ] `STORAGE_BACKEND=s3`, `S3_ENDPOINT_URL` boş, S3 credentials doğru
-- [ ] OAuth redirect URI'leri production domain'ine güncellendi
+- [ ] Production'da rate limiting etkin (`RATE_LIMIT_ENABLED` otomatik açık)
 - [ ] Nginx SSL sertifikası aktif ve yenilenebilir (Let's Encrypt vb.)
 - [ ] Rate limit eşikleri gözden geçirildi ve gerekirse sıkılaştırıldı
+- [ ] Health check endpoint'leri load balancer'a tanımlandı
+- [ ] Backup scriptleri test edildi ve cron'a eklendi
+- [ ] Prometheus/Grafana alert kuralları aktif
+- [ ] Log aggregation pipeline çalışıyor
 
 > `APP_ENV=production` ile başlatıldığında uygulama, kritik güvensiz değerleri otomatik olarak kontrol eder ve başlamayı reddeder.
 

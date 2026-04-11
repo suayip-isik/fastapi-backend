@@ -19,6 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    """API key yönetimi için api_keys tablosunu oluşturur."""
     op.create_table(
         'api_keys',
         sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
@@ -40,6 +41,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """api_keys tablosunu siler."""
     op.drop_index(op.f('ix_api_keys_key_prefix'), table_name='api_keys')
     op.drop_index(op.f('ix_api_keys_user_id'), table_name='api_keys')
     op.drop_table('api_keys')

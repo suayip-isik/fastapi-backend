@@ -8,16 +8,17 @@ from __future__ import annotations
 from sqladmin import ModelView
 
 from app.db.models.audit_log import AuditLog
-from app.db.models.oauth_account import OAuthAccount
+from app.db.models.role import Role
 from app.db.models.user import User
 
 
 class UserAdmin(ModelView, model=User):
+    """User modeli için SQLAdmin panel view."""
+
     name = "Kullanıcı"
     name_plural = "Kullanıcılar"
     icon = "fa-solid fa-users"
 
-    # Listede görünecek kolonlar
     column_list = [
         User.id,
         User.email,
@@ -28,16 +29,10 @@ class UserAdmin(ModelView, model=User):
         User.created_at,
     ]
 
-    # Arama yapılabilecek kolonlar
     column_searchable_list = [User.email, User.full_name, User.username]
+    column_filters = [User.is_active, User.is_verified]
+    column_sortable_list = [User.email, User.created_at]
 
-    # Filtrelenebilecek kolonlar
-    column_filters = [User.role, User.is_active, User.is_verified]
-
-    # Sıralanabilecek kolonlar
-    column_sortable_list = [User.email, User.created_at, User.role]
-
-    # Detay sayfasında görünecek kolonlar
     column_details_list = [
         User.id,
         User.email,
@@ -51,7 +46,6 @@ class UserAdmin(ModelView, model=User):
         User.updated_at,
     ]
 
-    # Form'da görünecek alanlar (create/edit)
     form_columns = [
         User.email,
         User.username,
@@ -61,14 +55,9 @@ class UserAdmin(ModelView, model=User):
         User.is_verified,
     ]
 
-    # Gizlenecek hassas alanlar
-    # form_excluded_columns = [User.hashed_password]
-
-    # Sayfa başına kayıt sayısı
     page_size = 25
     page_size_options = [25, 50, 100]
 
-    # İzinler
     can_create = True
     can_edit = True
     can_delete = True
@@ -76,47 +65,53 @@ class UserAdmin(ModelView, model=User):
     can_export = True
 
 
-class OAuthAccountAdmin(ModelView, model=OAuthAccount):
-    name = "OAuth Hesabı"
-    name_plural = "OAuth Hesapları"
-    icon = "fa-solid fa-key"
+class RoleAdmin(ModelView, model=Role):
+    """Role modeli için SQLAdmin panel view.
+
+    Rolleri ve permission setlerini görüntüler.
+    Sistem rolleri silinmemelidir (is_system=True olanlar).
+    """
+
+    name = "Rol"
+    name_plural = "Roller"
+    icon = "fa-solid fa-shield"
 
     column_list = [
-        OAuthAccount.id,
-        OAuthAccount.user_id,
-        OAuthAccount.provider,
-        OAuthAccount.email,
-        OAuthAccount.created_at,
+        Role.name,
+        Role.description,
+        Role.is_system,
+        Role.created_at,
     ]
 
-    column_searchable_list = [OAuthAccount.email, OAuthAccount.provider]
-    column_filters = [OAuthAccount.provider]
-    column_sortable_list = [OAuthAccount.provider, OAuthAccount.created_at]
+    column_searchable_list = [Role.name, Role.description]
+    column_filters = [Role.is_system]
+    column_sortable_list = [Role.name, Role.created_at]
 
     column_details_list = [
-        OAuthAccount.id,
-        OAuthAccount.user_id,
-        OAuthAccount.provider,
-        OAuthAccount.provider_user_id,
-        OAuthAccount.email,
-        OAuthAccount.created_at,
-        OAuthAccount.updated_at,
+        Role.id,
+        Role.name,
+        Role.description,
+        Role.is_system,
+        Role.permissions,
+        Role.created_at,
+        Role.updated_at,
     ]
 
-    # Token'lar form'da görünmesin
-    form_excluded_columns = [
-        OAuthAccount.access_token,
-        OAuthAccount.refresh_token,
-    ]
+    form_columns = [Role.name, Role.description]
 
-    can_create = False  # OAuth hesapları manuel oluşturulmaz
-    can_edit = False  # Token'lar manuel düzenlenmez
+    page_size = 25
+    page_size_options = [25, 50]
+
+    can_create = True
+    can_edit = True
     can_delete = True
     can_view_details = True
-    can_export = False  # Token bilgileri export edilmesin
+    can_export = True
 
 
 class AuditLogAdmin(ModelView, model=AuditLog):
+    """AuditLog modeli için SQLAdmin panel view — salt okunur."""
+
     name = "Audit Log"
     name_plural = "Audit Loglar"
     icon = "fa-solid fa-shield-halved"

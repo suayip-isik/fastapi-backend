@@ -38,18 +38,22 @@ async def test_full_auth_journey(
     password = "StrongPass1"
 
     # Adım 1: Kayıt
-    reg = await client.post("/api/v1/auth/register", json={"email": email, "password": password})
+    reg = await client.post(
+        "/api/v1/client/auth/register", json={"email": email, "password": password}
+    )
     assert reg.status_code == 201
     assert reg.json()["email"] == email
 
     # Adım 2: E-posta doğrulama
     token = mock_enqueue.call_args.args[2]
-    verify = await client.post("/api/v1/auth/verify-email", json={"token": token})
+    verify = await client.post("/api/v1/client/auth/verify-email", json={"token": token})
     assert verify.status_code == 200
     assert await fake_redis.get(f"email_verify:{token}") is None  # token tüketildi
 
     # Adım 3: Giriş
-    login = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    login = await client.post(
+        "/api/v1/client/auth/login", json={"email": email, "password": password}
+    )
     assert login.status_code == 200
     tokens = login.json()
     access_token = tokens["access_token"]
@@ -57,13 +61,15 @@ async def test_full_auth_journey(
     auth_headers = {"Authorization": f"Bearer {access_token}"}
 
     # Adım 4: Profil
-    me = await client.get("/api/v1/users/me", headers=auth_headers)
+    me = await client.get("/api/v1/shared/me", headers=auth_headers)
     assert me.status_code == 200
     assert me.json()["email"] == email
     assert me.json()["is_verified"] is True
 
     # Adım 5: Token yenileme
-    refresh = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
+    refresh = await client.post(
+        "/api/v1/shared/auth/refresh", json={"refresh_token": refresh_token}
+    )
     assert refresh.status_code == 200
     new_tokens = refresh.json()
     new_access = new_tokens["access_token"]
@@ -72,26 +78,28 @@ async def test_full_auth_journey(
 
     # Eski refresh token artık geçersiz (rotation)
     old_refresh_res = await client.post(
-        "/api/v1/auth/refresh", json={"refresh_token": refresh_token}
+        "/api/v1/shared/auth/refresh", json={"refresh_token": refresh_token}
     )
     assert old_refresh_res.status_code == 401
 
     # Adım 6: Yeni access token çalışıyor
-    me2 = await client.get("/api/v1/users/me", headers=new_headers)
+    me2 = await client.get("/api/v1/shared/me", headers=new_headers)
     assert me2.status_code == 200
 
     # Adım 7: Çıkış
     logout = await client.post(
-        "/api/v1/auth/logout",
+        "/api/v1/shared/auth/logout",
         json={"refresh_token": new_refresh},
         headers=new_headers,
     )
     assert logout.status_code == 200
 
     # Adım 8: Access token blacklist'te
-    me3 = await client.get("/api/v1/users/me", headers=new_headers)
+    me3 = await client.get("/api/v1/shared/me", headers=new_headers)
     assert me3.status_code == 401
 
     # Adım 9: Refresh token blacklist'te
-    re_refresh = await client.post("/api/v1/auth/refresh", json={"refresh_token": new_refresh})
+    re_refresh = await client.post(
+        "/api/v1/shared/auth/refresh", json={"refresh_token": new_refresh}
+    )
     assert re_refresh.status_code == 401

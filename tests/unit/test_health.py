@@ -29,6 +29,8 @@ def _make_storage_mock(
 
 
 class TestCheckRedis:
+    """TestCheckRedis test grubunu içerir."""
+
     async def test_returns_true_when_connected(self, fake_redis: object) -> None:
         """fake_redis autouse fixture aktifken check_redis() → (True, 'ok')."""
         ok, msg = await check_redis()
@@ -38,7 +40,7 @@ class TestCheckRedis:
     async def test_returns_false_on_connection_error(self) -> None:
         """Redis bağlantısı başarısız olursa → (False, hata_mesajı)."""
         with patch(
-            "app.core.health.get_redis_client",
+            "app.core.health.RedisAdapter.ping",
             side_effect=Exception("connection refused"),
         ):
             ok, msg = await check_redis()
@@ -47,6 +49,8 @@ class TestCheckRedis:
 
 
 class TestCheckStorage:
+    """TestCheckStorage test grubunu içerir."""
+
     async def test_returns_true_when_bucket_accessible(self) -> None:
         """S3 bucket erişilebilirken → (True, 'ok')."""
         mock_session = _make_storage_mock()
@@ -65,10 +69,12 @@ class TestCheckStorage:
 
 
 class TestHealthEndpoints:
+    """TestHealthEndpoints test grubunu içerir."""
+
     async def test_health_ready_returns_503_when_redis_down(self, client: AsyncClient) -> None:
         """/health/ready Redis kapalıyken → 503 döndürmeli."""
         with patch(
-            "app.core.health.get_redis_client",
+            "app.core.health.RedisAdapter.ping",
             side_effect=Exception("redis down"),
         ):
             res = await client.get("/health/ready")

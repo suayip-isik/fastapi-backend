@@ -1,7 +1,7 @@
 """
 Audit log integration testleri.
 
-AuditService, AsyncSessionFactory kullandığından test DB'sine değil main DB'ye yazar.
+AuditService bağımsız session provider kullandığından test DB transaction'ından ayrıdır.
 Bu nedenle _audit_log çağrıları mock'lanır; doğru aksiyon ve user_id ile çağrıldığı assert edilir.
 Bu yaklaşım projede kullanılan mock_enqueue pattern'ıyla tutarlıdır.
 """
@@ -19,11 +19,15 @@ _PASSWORD = "StrongPass1!"
 
 
 async def _register(client: AsyncClient, email: str) -> None:
-    await client.post("/api/v1/auth/register", json={"email": email, "password": _PASSWORD})
+    """Yardımcı fonksiyon."""
+    await client.post("/api/v1/client/auth/register", json={"email": email, "password": _PASSWORD})
 
 
 async def _login_tokens(client: AsyncClient, email: str) -> dict:
-    res = await client.post("/api/v1/auth/login", json={"email": email, "password": _PASSWORD})
+    """Yardımcı fonksiyon."""
+    res = await client.post(
+        "/api/v1/client/auth/login", json={"email": email, "password": _PASSWORD}
+    )
     return res.json()
 
 
@@ -48,6 +52,8 @@ def _called_actions(mock: AsyncMock) -> list[AuditAction]:
 
 
 class TestRegisterAudit:
+    """TestRegisterAudit test grubunu içerir."""
+
     async def test_register_triggers_register_audit_action(
         self, client: AsyncClient, mock_audit: AsyncMock
     ) -> None:
@@ -71,6 +77,8 @@ class TestRegisterAudit:
 
 
 class TestLoginAudit:
+    """TestLoginAudit test grubunu içerir."""
+
     async def test_successful_login_triggers_login_success_audit(
         self, client: AsyncClient, mock_audit: AsyncMock
     ) -> None:
@@ -78,7 +86,8 @@ class TestLoginAudit:
         await _register(client, "audit_login@test.com")
         mock_audit.reset_mock()
         await client.post(
-            "/api/v1/auth/login", json={"email": "audit_login@test.com", "password": _PASSWORD}
+            "/api/v1/client/auth/login",
+            json={"email": "audit_login@test.com", "password": _PASSWORD},
         )
         assert AuditAction.LOGIN_SUCCESS in _called_actions(mock_audit)
 
@@ -87,7 +96,7 @@ class TestLoginAudit:
     ) -> None:
         """Hatalı giriş → LOGIN_FAILED aksiyonu audit edilmeli."""
         await client.post(
-            "/api/v1/auth/login",
+            "/api/v1/client/auth/login",
             json={"email": "nonexistent_audit@test.com", "password": "wrong"},
         )
         assert AuditAction.LOGIN_FAILED in _called_actions(mock_audit)
@@ -99,7 +108,7 @@ class TestLoginAudit:
         await _register(client, "audit_uid@test.com")
         mock_audit.reset_mock()
         await client.post(
-            "/api/v1/auth/login", json={"email": "audit_uid@test.com", "password": _PASSWORD}
+            "/api/v1/client/auth/login", json={"email": "audit_uid@test.com", "password": _PASSWORD}
         )
         success_calls = [
             c
@@ -112,6 +121,8 @@ class TestLoginAudit:
 
 
 class TestLogoutAudit:
+    """TestLogoutAudit test grubunu içerir."""
+
     async def test_logout_triggers_logout_audit(
         self, client: AsyncClient, mock_audit: AsyncMock
     ) -> None:
@@ -121,7 +132,7 @@ class TestLogoutAudit:
         mock_audit.reset_mock()
 
         await client.post(
-            "/api/v1/auth/logout",
+            "/api/v1/shared/auth/logout",
             json={"refresh_token": tokens["refresh_token"]},
             headers={"Authorization": f"Bearer {tokens['access_token']}"},
         )
@@ -129,6 +140,8 @@ class TestLogoutAudit:
 
 
 class TestTokenRefreshAudit:
+    """TestTokenRefreshAudit test grubunu içerir."""
+
     async def test_token_refresh_triggers_audit(
         self, client: AsyncClient, mock_audit: AsyncMock
     ) -> None:
@@ -138,7 +151,7 @@ class TestTokenRefreshAudit:
         mock_audit.reset_mock()
 
         await client.post(
-            "/api/v1/auth/refresh",
+            "/api/v1/shared/auth/refresh",
             json={"refresh_token": tokens["refresh_token"]},
         )
         assert AuditAction.TOKEN_REFRESHED in _called_actions(mock_audit)

@@ -44,6 +44,9 @@ ignore = [
 "app/core/config.py" = [
     "N802",  # uppercase property names: Pydantic Settings convention (DATABASE_URL, REDIS_URL vb.)
 ]
+"app/core/cookies.py" = [
+    "S105",  # cookie name sabitleri: access_token, refresh_token gerçek şifre değil
+]
 "app/admin/views.py" = [
     "RUF012",  # sqladmin ModelView class attributes: framework pattern
 ]
@@ -87,6 +90,11 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 addopts = "-v --cov=app --cov-report=term-missing --cov-fail-under=80"
+filterwarnings = [
+    "ignore:datetime\\.datetime\\.utcnow\\(\\) is deprecated.*:DeprecationWarning:jose\\.jwt",
+    "ignore:datetime\\.datetime\\.utcnow\\(\\) is deprecated.*:DeprecationWarning:botocore\\.auth",
+    "ignore:coroutine 'Connection\\._cancel' was never awaited:RuntimeWarning:_pytest\\.stash",
+]
 
 [tool.mypy]
 python_version = "3.12"

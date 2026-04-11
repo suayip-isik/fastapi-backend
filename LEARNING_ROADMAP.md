@@ -130,14 +130,17 @@ result = await httpx.AsyncClient().get("https://api.example.com")
 
 ### 3.2 REST API Tasarımı
 
-- Resource (kaynak) kavramı: `/users`, `/users/{id}`
-- URL yapısı: `/api/v1/users`
+- Resource (kaynak) kavramı: `/shared/me`, `/admin/users/{id}`
+- URL yapısı: `/api/v1/<surface>/<resource>`
 - Query param vs. path param vs. request body
 - JSON formatı
 
 **Bu projede:**
 
-- `app/api/v1/endpoints/` — tüm endpoint'ler `/api/v1/` prefix'i altında
+- `app/api/v1/endpoints/` — tüm endpoint'ler `/api/v1/` prefix'i altında ve üç canonical surface'e ayrılır:
+  - `/api/v1/client/*`
+  - `/api/v1/admin/*`
+  - `/api/v1/shared/*`
 - `app/api/v1/router.py` — router kayıtları
 
 ### 3.3 OpenAPI / Swagger
@@ -145,7 +148,7 @@ result = await httpx.AsyncClient().get("https://api.example.com")
 - API dokümantasyonunun otomatik üretimi
 - `GET /docs` adresinde interaktif test
 
-**Bu projede:** `app/main.py`'deki `/docs` ve `/redoc` endpoint'leri
+**Bu projede:** `app/main.py`'deki `/docs`, `/redoc`, `/schema/client/docs`, `/schema/admin/docs`
 
 ---
 
@@ -226,9 +229,9 @@ from fastapi import FastAPI
 
 app = FastAPI()
 
-@app.get("/users/{user_id}")
-async def get_user(user_id: int):
-    return {"id": user_id}
+@app.get("/api/v1/shared/me")
+async def get_me():
+    return {"email": "user@example.com"}
 ```
 
 - Route tanımlama: `@app.get`, `@app.post`
@@ -246,7 +249,7 @@ async def get_db():
     async with SessionLocal() as session:
         yield session
 
-@app.get("/users")
+@app.get("/api/v1/admin/users")
 async def list_users(db: AsyncSession = Depends(get_db)):
     ...
 ```
@@ -254,7 +257,7 @@ async def list_users(db: AsyncSession = Depends(get_db)):
 **Bu projede:**
 
 - `app/api/dependencies/` — tüm `Depends()` fonksiyonları
-- `app/api/dependencies/auth.py` — `CurrentUserDep`, `AdminDep`
+- `app/api/dependencies/auth.py` — `CurrentUserDep`, surface access ve permission dependency'leri
 
 ### 5.3 Middleware
 
@@ -382,50 +385,7 @@ eyJhbGci...  .eyJzdWIi...  .SflKxwRJ...
 **Bu projede:** `app/core/security.py` — `create_access_token`, `decode_token`
 Anahtarlar: `keys/private.pem`, `keys/public.pem`
 
-### 7.3 OAuth2 Social Login
-
-"Google ile giriş" akışı:
-
-```
-1. Kullanıcı "Google ile giriş"e tıklar
-2. Google'ın login sayfasına yönlendirilir (URL'de state parametresi var)
-3. Kullanıcı izin verir, Google code + state ile callback'e yönlendirir
-4. Backend state'i doğrular (Redis'teki ile karşılaştırır), sonra siler
-5. Backend, code ile Google'dan kullanıcı bilgisi alır
-6. Backend kendi JWT'sini oluşturur ve döner
-```
-
-**CSRF Koruması — State Parametresi:**
-
-OAuth callback'i sahte bir siteden tetiklenebilir (CSRF saldırısı). Bunu önlemek için:
-
-```python
-from urllib.parse import urlencode
-
-# 1. Yönlendirme sırasında: rastgele state üret, Redis'e kaydet
-state = secrets.token_urlsafe(32)
-await redis.setex(f"oauth_state:{state}", 600, "1")  # 10 dk TTL
-
-# URL parametreleri urlencode ile oluşturulur — redirect_uri içindeki
-# ":", "/" gibi karakterlerin OAuth URL'ini bozmaması için zorunludur
-params = {"client_id": "...", "redirect_uri": "...", "state": state, ...}
-redirect_url = f"https://accounts.google.com/o/oauth2/auth?{urlencode(params)}"
-
-# 2. Callback sırasında: state'i atomik GETDEL ile doğrula ve tüket
-# GET + DELETE yerine GETDEL kullanmak kritiktir:
-# İki ayrı komut arasındaki sürede iki eş zamanlı istek aynı state'i
-# kullanabilir (race condition → replay saldırısı). GETDEL atomiktir.
-if not await redis.getdel(f"oauth_state:{state}"):
-    raise InvalidTokenError("Geçersiz OAuth state.")
-```
-
-**Bu projede:**
-
-- `app/services/oauth.py` — Google ve GitHub akışları (state üretim + doğrulama)
-- `app/services/_keys.py` — `OAUTH_STATE_KEY = "oauth_state:{}"` sabiti
-- `app/db/repositories/oauth_account.py` — provider hesabı kaydı
-
-### 7.4 Güvenlik Başlıkları
+### 7.3 Güvenlik Başlıkları
 
 - `Strict-Transport-Security` (HSTS)
 - `X-Content-Type-Options`
@@ -476,7 +436,7 @@ Kullanıcı adı/şifre veya JWT yerine uzun ömürlü anahtar ile kimlik doğru
 ```python
 # İstemci kullanımı
 headers = {"X-API-Key": "sk_live_abc123..."}
-response = requests.get("/api/v1/users/me", headers=headers)
+response = requests.get("/api/v1/shared/me", headers=headers)
 ```
 
 **Bu projede:**
@@ -537,8 +497,8 @@ class WorkerSettings:
 
 - `app/tasks/worker.py` — worker tanımları ve görev fonksiyonları
 - `send_welcome_email` — kayıt sonrası hoşgeldiniz e-postası (SMTP)
-- `send_verification_email` / `send_password_reset_email` — hesap doğrulama e-postaları
-- `cleanup_expired_tokens` — her gece yarısı çalışır, TTL'siz orphaned Redis key'lerini temizler (`blacklist:*`, `email_verify:*`, `password_reset:*`, `oauth_state:*`); log event: `cleaning_orphaned_redis_keys`
+- `send_verification_email` / `send_password_reset_email` / `send_admin_invite_email` — hesap e-postaları
+- `cleanup_expired_tokens` — her gece yarısı çalışır, TTL'siz orphaned Redis key'lerini temizler (`blacklist:*`, `email_verify:*`, `password_reset:*`); log event: `cleaning_orphaned_redis_keys`
 
 ### 8.4 Bildirimler ve WebSocket Push
 
@@ -659,7 +619,7 @@ def mock_audit() -> AsyncMock:
         yield m
 
 async def test_login_audited(client, mock_audit):
-    await client.post("/api/v1/auth/login", json={...})
+    await client.post("/api/v1/client/auth/login", json={...})
     actions = [c.kwargs.get("action") for c in mock_audit.call_args_list]
     assert AuditAction.LOGIN_SUCCESS in actions
 ```
@@ -679,7 +639,7 @@ Gerçek HTTP isteği simüle eder.
 
 ```python
 async def test_login(client: AsyncClient):
-    resp = await client.post("/api/v1/auth/login", json={...})
+    resp = await client.post("/api/v1/client/auth/login", json={...})
     assert resp.status_code == 200
 ```
 
@@ -700,17 +660,17 @@ Integration testlerinden farkı: tek endpoint'i değil, tam bir akışı doğrul
 ```python
 async def test_full_auth_journey(client, fake_redis, mock_enqueue):
     # Adım 1: Kayıt
-    await client.post("/api/v1/auth/register", json={...})
+    await client.post("/api/v1/client/auth/register", json={...})
     # Adım 2: E-posta doğrulama
     token = mock_enqueue.call_args.args[2]
-    await client.post("/api/v1/auth/verify-email", json={"token": token})
+    await client.post("/api/v1/client/auth/verify-email", json={"token": token})
     # Adım 3: Giriş
-    login = await client.post("/api/v1/auth/login", json={...})
+    login = await client.post("/api/v1/client/auth/login", json={...})
     # Adım 4: Token yenileme
-    refresh = await client.post("/api/v1/auth/refresh", ...)
+    refresh = await client.post("/api/v1/shared/auth/refresh", ...)
     # Adım 5: Çıkış + blacklist kontrolü
-    await client.post("/api/v1/auth/logout", ...)
-    me = await client.get("/api/v1/users/me", ...)
+    await client.post("/api/v1/shared/auth/logout", ...)
+    me = await client.get("/api/v1/shared/me", ...)
     assert me.status_code == 401  # token blacklist'te
 ```
 
@@ -854,13 +814,13 @@ Neden bu ayrım? Bir katmanı değiştirdiğinizde diğerleri etkilenmez.
 
 ### 11.2 SOLID Prensipleri
 
-| Prensip                       | Açıklama                               | Bu Projede                                           |
-| ----------------------------- | -------------------------------------- | ---------------------------------------------------- |
-| **S** — Single Responsibility | Bir sınıf tek işi yapar                | `AuthService`, `OAuthService`, `AccountService` ayrı |
-| **O** — Open/Closed           | Genişletmeye açık, değiştirmeye kapalı | `BaseRepository` — extend et, değiştirme             |
-| **L** — Liskov Substitution   | Alt sınıf üst sınıfın yerine geçebilir | Repository miras zinciri                             |
-| **I** — Interface Segregation | Büyük interface yerine küçük olanlar   | Ayrı repository'ler                                  |
-| **D** — Dependency Inversion  | Somut değil, soyuta bağımlı ol         | `Depends()` ile injection                            |
+| Prensip                       | Açıklama                               | Bu Projede                               |
+| ----------------------------- | -------------------------------------- | ---------------------------------------- |
+| **S** — Single Responsibility | Bir sınıf tek işi yapar                | `AuthService`, `AccountService` ayrı     |
+| **O** — Open/Closed           | Genişletmeye açık, değiştirmeye kapalı | `BaseRepository` — extend et, değiştirme |
+| **L** — Liskov Substitution   | Alt sınıf üst sınıfın yerine geçebilir | Repository miras zinciri                 |
+| **I** — Interface Segregation | Büyük interface yerine küçük olanlar   | Ayrı repository'ler                      |
+| **D** — Dependency Inversion  | Somut değil, soyuta bağımlı ol         | `Depends()` ile injection                |
 
 ### 11.3 DRY (Don't Repeat Yourself)
 
@@ -1031,7 +991,7 @@ class UserAdmin(ModelView, model=User):
 
 **Bu projede:**
 
-- `app/admin/views.py` — `UserAdmin`, `OAuthAccountAdmin` view'ları
+- `app/admin/views.py` — `UserAdmin` view'ları
 - `app/admin/auth.py` — JWT doğrulamalı authentication backend
 - `app/admin/seed.py` — `ADMIN_EMAIL`/`ADMIN_PASSWORD` ile ilk admin oluşturur
 - Erişim: http://localhost:8000/admin (yalnızca `ADMIN` rolü)
@@ -1107,7 +1067,7 @@ Hafta 3:     Async programlama (Seviye 2)
 Hafta 4:     HTTP ve REST (Seviye 3)
 Hafta 5:     Pydantic + FastAPI (Seviye 4-5)
 Hafta 6-7:   Veritabanı — SQL + SQLAlchemy (Seviye 6)
-Hafta 8:     Güvenlik — JWT + OAuth2 + bcrypt + TOTP + API Key (Seviye 7)
+Hafta 8:     Güvenlik — JWT + bcrypt + TOTP + API Key (Seviye 7)
 Hafta 9:     Redis + ARQ + Bildirimler (Seviye 8)
 Hafta 10:    Docker + Dosya Depolama S3/MinIO (Seviye 9, 13.1)
 Hafta 11:    Test yazımı (Seviye 10)

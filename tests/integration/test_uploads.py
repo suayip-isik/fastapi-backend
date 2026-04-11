@@ -1,15 +1,20 @@
-"""Uploads endpoint testleri — /api/v1/uploads/"""
+"""Uploads endpoint testleri — /api/v1/shared/uploads/"""
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy import update as sa_update
 
+from app.api.dependencies.infrastructure import get_storage_port
 from app.core.exceptions import FileTooLargeError, InvalidFileTypeError
-from app.db.models.user import User, UserRole
+from app.core.permissions import Permission
+from app.db.models.role import Role, RolePermission
+from app.db.models.user import SurfaceType, User
+from app.main import app
 
 if TYPE_CHECKING:
     from httpx import AsyncClient
@@ -25,18 +30,53 @@ _TEXT_FILE = ("test.txt", b"hello", "text/plain")
 
 
 async def _auth_headers(client: AsyncClient, email: str, password: str = "StrongPass1") -> dict:
-    await client.post("/api/v1/auth/register", json={"email": email, "password": password})
-    res = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    """Yardımcı fonksiyon."""
+    await client.post("/api/v1/client/auth/register", json={"email": email, "password": password})
+    res = await client.post(
+        "/api/v1/client/auth/login", json={"email": email, "password": password}
+    )
     return {"Authorization": f"Bearer {res.json()['access_token']}"}
 
 
 async def _get_user_id(client: AsyncClient, headers: dict) -> str:
-    res = await client.get("/api/v1/users/me", headers=headers)
+    """Yardımcı fonksiyon."""
+    res = await client.get("/api/v1/shared/me", headers=headers)
     return res.json()["id"]
 
 
 async def _promote_to_admin(db_session: AsyncSession, email: str) -> None:
-    await db_session.execute(sa_update(User).where(User.email == email).values(role=UserRole.ADMIN))
+    """Yardımcı fonksiyon."""
+    from sqlalchemy import select
+
+    result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
+    admin_role_id = result.scalar_one()
+    await db_session.execute(
+        sa_update(User)
+        .where(User.email == email)
+        .values(role_id=admin_role_id, surface=SurfaceType.ADMIN.value)
+    )
+    await db_session.commit()
+    db_session.expire_all()
+
+
+async def _assign_role_by_name(db_session: AsyncSession, email: str, role_name: str) -> None:
+    """Kullanıcıya isme göre rol atar."""
+    from sqlalchemy import select
+
+    result = await db_session.execute(select(Role.id).where(Role.name == role_name))
+    role_id = result.scalar_one()
+    await db_session.execute(sa_update(User).where(User.email == email).values(role_id=role_id))
+    await db_session.commit()
+    db_session.expire_all()
+
+
+async def _create_custom_role_with_panel_access(db_session: AsyncSession, role_name: str) -> None:
+    """Sadece admin:panel_access permission'ı taşıyan özel rol oluşturur."""
+    role = Role(name=role_name, description="Custom admin access role", is_system=False)
+    db_session.add(role)
+    await db_session.flush()
+    db_session.add(RolePermission(role_id=role.id, permission=Permission.ADMIN_PANEL_ACCESS))
+    await db_session.commit()
     db_session.expire_all()
 
 
@@ -49,16 +89,26 @@ def _mock_storage(key: str = _FAKE_KEY, url: str = _FAKE_URL) -> MagicMock:
     return mock
 
 
+@contextmanager
+def _override_storage(mock: MagicMock):
+    app.dependency_overrides[get_storage_port] = lambda: mock
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(get_storage_port, None)
+
+
 # ── POST /uploads ─────────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
 async def test_upload_file_success(client: AsyncClient):
+    """test_upload_file_success senaryosunu test eder."""
     headers = await _auth_headers(client, "uploader@example.com")
 
-    with patch("app.api.v1.endpoints.uploads.storage", _mock_storage()):
+    with _override_storage(_mock_storage()):
         res = await client.post(
-            "/api/v1/uploads",
+            "/api/v1/shared/uploads",
             headers=headers,
             files={"file": _VALID_FILE},
         )
@@ -72,9 +122,10 @@ async def test_upload_file_success(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_upload_file_unauthorized(client: AsyncClient):
-    with patch("app.api.v1.endpoints.uploads.storage", _mock_storage()):
+    """test_upload_file_unauthorized senaryosunu test eder."""
+    with _override_storage(_mock_storage()):
         res = await client.post(
-            "/api/v1/uploads",
+            "/api/v1/shared/uploads",
             files={"file": _VALID_FILE},
         )
 
@@ -83,14 +134,15 @@ async def test_upload_file_unauthorized(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_upload_file_too_large(client: AsyncClient):
+    """test_upload_file_too_large senaryosunu test eder."""
     headers = await _auth_headers(client, "uploader_large@example.com")
 
     mock = _mock_storage()
     mock.upload = AsyncMock(side_effect=FileTooLargeError())
 
-    with patch("app.api.v1.endpoints.uploads.storage", mock):
+    with _override_storage(mock):
         res = await client.post(
-            "/api/v1/uploads",
+            "/api/v1/shared/uploads",
             headers=headers,
             files={"file": _VALID_FILE},
         )
@@ -100,14 +152,15 @@ async def test_upload_file_too_large(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_upload_file_invalid_type(client: AsyncClient):
+    """test_upload_file_invalid_type senaryosunu test eder."""
     headers = await _auth_headers(client, "uploader_type@example.com")
 
     mock = _mock_storage()
     mock.upload = AsyncMock(side_effect=InvalidFileTypeError())
 
-    with patch("app.api.v1.endpoints.uploads.storage", mock):
+    with _override_storage(mock):
         res = await client.post(
-            "/api/v1/uploads",
+            "/api/v1/shared/uploads",
             headers=headers,
             files={"file": _TEXT_FILE},
         )
@@ -123,9 +176,9 @@ async def test_upload_calls_storage_with_user_folder(client: AsyncClient):
 
     mock = _mock_storage()
 
-    with patch("app.api.v1.endpoints.uploads.storage", mock):
+    with _override_storage(mock):
         await client.post(
-            "/api/v1/uploads",
+            "/api/v1/shared/uploads",
             headers=headers,
             files={"file": _VALID_FILE},
         )
@@ -141,14 +194,15 @@ async def test_upload_calls_storage_with_user_folder(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_delete_file_as_owner(client: AsyncClient):
+    """test_delete_file_as_owner senaryosunu test eder."""
     headers = await _auth_headers(client, "owner_del@example.com")
     user_id = await _get_user_id(client, headers)
     key = f"users/{user_id}/myfile.jpg"
 
     mock = _mock_storage()
 
-    with patch("app.api.v1.endpoints.uploads.storage", mock):
-        res = await client.delete(f"/api/v1/uploads?key={key}", headers=headers)
+    with _override_storage(mock):
+        res = await client.delete(f"/api/v1/shared/uploads?key={key}", headers=headers)
 
     assert res.status_code == 200
     mock.delete.assert_called_once_with(key)
@@ -162,8 +216,8 @@ async def test_delete_file_not_owner(client: AsyncClient):
 
     mock = _mock_storage()
 
-    with patch("app.api.v1.endpoints.uploads.storage", mock):
-        res = await client.delete(f"/api/v1/uploads?key={other_key}", headers=headers)
+    with _override_storage(mock):
+        res = await client.delete(f"/api/v1/shared/uploads?key={other_key}", headers=headers)
 
     assert res.status_code == 403
     mock.delete.assert_not_called()
@@ -179,8 +233,29 @@ async def test_delete_file_as_admin(client: AsyncClient, db_session: AsyncSessio
     other_key = "users/00000000-0000-0000-0000-000000000000/anyfile.jpg"
     mock = _mock_storage()
 
-    with patch("app.api.v1.endpoints.uploads.storage", mock):
-        res = await client.delete(f"/api/v1/uploads?key={other_key}", headers=headers)
+    with _override_storage(mock):
+        res = await client.delete(f"/api/v1/shared/uploads?key={other_key}", headers=headers)
+
+    assert res.status_code == 200
+    mock.delete.assert_called_once_with(other_key)
+
+
+@pytest.mark.asyncio
+async def test_delete_file_with_custom_admin_access_role(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Admin surface + admin:panel_access taşıyan özel rol de başkasının dosyasını silebilmeli."""
+    email = "custom_admin_access_del@example.com"
+    headers = await _auth_headers(client, email)
+    await _promote_to_admin(db_session, email)
+    await _create_custom_role_with_panel_access(db_session, "file_admin")
+    await _assign_role_by_name(db_session, email, "file_admin")
+
+    other_key = "users/00000000-0000-0000-0000-000000000000/anyfile.jpg"
+    mock = _mock_storage()
+
+    with _override_storage(mock):
+        res = await client.delete(f"/api/v1/shared/uploads?key={other_key}", headers=headers)
 
     assert res.status_code == 200
     mock.delete.assert_called_once_with(other_key)
@@ -188,10 +263,11 @@ async def test_delete_file_as_admin(client: AsyncClient, db_session: AsyncSessio
 
 @pytest.mark.asyncio
 async def test_delete_file_unauthorized(client: AsyncClient):
+    """test_delete_file_unauthorized senaryosunu test eder."""
     mock = _mock_storage()
 
-    with patch("app.api.v1.endpoints.uploads.storage", mock):
-        res = await client.delete("/api/v1/uploads?key=users/some-id/file.jpg")
+    with _override_storage(mock):
+        res = await client.delete("/api/v1/shared/uploads?key=users/some-id/file.jpg")
 
     assert res.status_code == 401
     mock.delete.assert_not_called()
@@ -202,8 +278,8 @@ async def test_delete_file_missing_key_param(client: AsyncClient):
     """key query param olmadan DELETE isteği 422 dönmeli."""
     headers = await _auth_headers(client, "del_nokey@example.com")
 
-    with patch("app.api.v1.endpoints.uploads.storage", _mock_storage()):
-        res = await client.delete("/api/v1/uploads", headers=headers)
+    with _override_storage(_mock_storage()):
+        res = await client.delete("/api/v1/shared/uploads", headers=headers)
 
     assert res.status_code == 422
 
@@ -213,7 +289,7 @@ async def test_upload_no_file_field(client: AsyncClient):
     """file field'ı olmadan POST /uploads → 422."""
     headers = await _auth_headers(client, "nofile@example.com")
 
-    with patch("app.api.v1.endpoints.uploads.storage", _mock_storage()):
-        res = await client.post("/api/v1/uploads", headers=headers)
+    with _override_storage(_mock_storage()):
+        res = await client.post("/api/v1/shared/uploads", headers=headers)
 
     assert res.status_code == 422

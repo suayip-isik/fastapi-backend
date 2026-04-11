@@ -25,6 +25,7 @@ from app.core.security import hash_password
 
 
 async def make_admin(email: str) -> None:
+    """Mevcut kullanıcının rolünü ADMIN olarak günceller."""
     engine = create_async_engine(settings.DATABASE_URL)
     async with AsyncSession(engine) as session:
         result = await session.execute(
@@ -54,6 +55,7 @@ async def make_admin(email: str) -> None:
 
 
 async def create_admin(email: str, password: str) -> None:
+    """Yeni admin kullanıcı oluşturur veya mevcutsa rolünü günceller."""
     engine = create_async_engine(settings.DATABASE_URL)
     async with AsyncSession(engine) as session:
         result = await session.execute(
@@ -86,6 +88,7 @@ async def create_admin(email: str, password: str) -> None:
 
 
 def main() -> None:
+    """CLI argümanlarını parse eder ve ilgili admin işlemini çalıştırır."""
     parser = argparse.ArgumentParser(description="Admin kullanıcı yönetimi")
     parser.add_argument("--email", required=True, help="Kullanıcı e-posta adresi")
     parser.add_argument("--password", default="Admin1234!", help="Şifre (--create ile kullanılır)")
