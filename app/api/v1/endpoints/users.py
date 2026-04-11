@@ -6,7 +6,7 @@ Kullanıcı listeleme, güncelleme, silme işlemleri.
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import (
@@ -15,7 +15,12 @@ from app.api.dependencies.auth import (
     require_permissions,
     require_surface_access,
 )
-from app.api.dependencies.infrastructure import CacheServiceDep, RedisPortDep, TaskQueuePortDep
+from app.api.dependencies.infrastructure import (
+    CacheServiceDep,
+    RedisPortDep,
+    StoragePortDep,
+    TaskQueuePortDep,
+)
 from app.api.dependencies.services import get_audit_service
 from app.core.config import settings
 from app.core.i18n import t
@@ -50,6 +55,9 @@ _UsersResendVerificationDep = Annotated[
     User, Depends(require_permissions(Permission.USERS_RESEND_VERIFICATION))
 ]
 _UsersDeleteDep = Annotated[User, Depends(require_permissions(Permission.USERS_DELETE))]
+_UsersManageAvatarDep = Annotated[
+    User, Depends(require_permissions(Permission.USERS_MANAGE_AVATAR))
+]
 
 
 def get_user_service(
@@ -57,10 +65,11 @@ def get_user_service(
     audit: Annotated[AuditService, Depends(get_audit_service)],
     cache: CacheServiceDep,
     redis: RedisPortDep,
+    storage: StoragePortDep,
     task_queue: TaskQueuePortDep,
 ) -> UserService:
     """UserService dependency factory'si."""
-    return UserService(db, audit, cache=cache, redis=redis, task_queue=task_queue)
+    return UserService(db, audit, cache=cache, redis=redis, storage=storage, task_queue=task_queue)
 
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
@@ -110,6 +119,37 @@ async def update_me(
         Güncellenmiş kullanıcı profil bilgileri.
     """
     return await service.update_self(current_user.id, data)
+
+
+@shared_router.put(
+    "/avatar",
+    response_model=UserResponse,
+    openapi_extra={"x-surfaces": ["shared"]},
+)
+@limiter.limit(settings.RATE_LIMIT_UPLOAD)
+async def upload_my_avatar(
+    request: Request,
+    current_user: CurrentUserDep,
+    service: UserServiceDep,
+    file: UploadFile = File(...),
+) -> User:
+    """Giriş yapmış kullanıcının profil fotoğrafını yükler veya günceller."""
+    return await service.update_self_avatar(current_user.id, file=file)
+
+
+@shared_router.delete(
+    "/avatar",
+    response_model=UserResponse,
+    openapi_extra={"x-surfaces": ["shared"]},
+)
+@limiter.limit(settings.RATE_LIMIT_UPLOAD)
+async def delete_my_avatar(
+    request: Request,
+    current_user: CurrentUserDep,
+    service: UserServiceDep,
+) -> User:
+    """Giriş yapmış kullanıcının profil fotoğrafını siler."""
+    return await service.delete_self_avatar(current_user.id)
 
 
 @admin_router.get("", response_model=PaginatedResponse[UserResponse])
@@ -284,6 +324,35 @@ async def update_user(
 ) -> User:
     """Admin user-management ile kullanıcı profil alanlarını günceller."""
     return await service.admin_update(actor_user_id=current_user.id, user_id=user_id, data=data)
+
+
+@admin_router.put("/{user_id}/avatar", response_model=UserResponse)
+@limiter.limit(settings.RATE_LIMIT_UPLOAD)
+async def upload_user_avatar(
+    request: Request,
+    user_id: UUID,
+    _surface: _AdminSurfaceDep,
+    current_user: _UsersManageAvatarDep,
+    service: UserServiceDep,
+    file: UploadFile = File(...),
+) -> User:
+    """Yetkili admin hedef kullanıcının profil fotoğrafını yükler veya günceller."""
+    return await service.admin_update_avatar(
+        actor_user_id=current_user.id, user_id=user_id, file=file
+    )
+
+
+@admin_router.delete("/{user_id}/avatar", response_model=UserResponse)
+@limiter.limit(settings.RATE_LIMIT_UPLOAD)
+async def delete_user_avatar(
+    request: Request,
+    user_id: UUID,
+    _surface: _AdminSurfaceDep,
+    current_user: _UsersManageAvatarDep,
+    service: UserServiceDep,
+) -> User:
+    """Yetkili admin hedef kullanıcının profil fotoğrafını siler."""
+    return await service.admin_delete_avatar(actor_user_id=current_user.id, user_id=user_id)
 
 
 @admin_router.post("/{user_id}/change-email", response_model=UserResponse)

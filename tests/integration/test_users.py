@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy import update as sa_update
 
+from app.api.dependencies.infrastructure import get_storage_port
 from app.core.permissions import Permission
 from app.db.models.audit_log import AuditAction
 from app.db.models.role import Role, RolePermission
 from app.db.models.user import SurfaceType, User
+from app.main import app
 
 if TYPE_CHECKING:
     from httpx import AsyncClient
@@ -80,6 +84,24 @@ async def _promote_to_admin_surface_role(
     )
     await db_session.commit()
     db_session.expire_all()
+
+
+def _mock_storage(*, key: str, url: str) -> MagicMock:
+    """Avatar upload/delete için storage mock'u."""
+    mock = MagicMock()
+    mock.upload = AsyncMock(return_value=key)
+    mock.get_url = AsyncMock(return_value=url)
+    mock.delete = AsyncMock()
+    return mock
+
+
+@contextmanager
+def _override_storage(mock: MagicMock):
+    app.dependency_overrides[get_storage_port] = lambda: mock
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(get_storage_port, None)
 
 
 # ── GET /users/me ─────────────────────────────────────────────────────────────
@@ -235,6 +257,101 @@ async def test_update_me_unauthorized(client: AsyncClient):
     """test_update_me_unauthorized senaryosunu test eder."""
     res = await client.patch("/api/v1/shared/me", json={"full_name": "Foo"})
     assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_upload_my_avatar(client: AsyncClient):
+    """Authenticated kullanıcı kendi avatarını yükleyebilmeli."""
+    headers = await _auth_headers(client, "avatar_self@example.com")
+    storage = _mock_storage(
+        key="users/self-id/avatars/avatar.jpg",
+        url="http://minio:9000/app-uploads/users/self-id/avatars/avatar.jpg?sig=test",
+    )
+
+    with _override_storage(storage):
+        res = await client.put(
+            "/api/v1/shared/me/avatar",
+            headers=headers,
+            files={"file": ("avatar.jpg", b"image-bytes", "image/jpeg")},
+        )
+
+    assert res.status_code == 200
+    assert res.json()["avatar_url"] == storage.get_url.return_value
+    storage.upload.assert_called_once()
+    storage.delete.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_update_my_avatar_deletes_previous_file(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Yeni avatar yüklenince eski yönetilen dosya silinmeli."""
+    headers = await _auth_headers(client, "avatar_replace@example.com")
+    user_id = (await client.get("/api/v1/shared/me", headers=headers)).json()["id"]
+    old_url = f"http://minio:9000/app-uploads/users/{user_id}/avatars/old.jpg?old=1"
+    await db_session.execute(sa_update(User).where(User.id == user_id).values(avatar_url=old_url))
+    await db_session.commit()
+    db_session.expire_all()
+
+    new_key = f"users/{user_id}/avatars/new.jpg"
+    new_url = f"http://minio:9000/app-uploads/{new_key}?new=1"
+    storage = _mock_storage(key=new_key, url=new_url)
+
+    with _override_storage(storage):
+        res = await client.put(
+            "/api/v1/shared/me/avatar",
+            headers=headers,
+            files={"file": ("avatar.jpg", b"image-bytes", "image/jpeg")},
+        )
+
+    assert res.status_code == 200
+    assert res.json()["avatar_url"] == new_url
+    storage.delete.assert_awaited_once_with(f"users/{user_id}/avatars/old.jpg")
+
+
+@pytest.mark.asyncio
+async def test_delete_my_avatar(client: AsyncClient, db_session: AsyncSession):
+    """Authenticated kullanıcı kendi avatarını silebilmeli."""
+    headers = await _auth_headers(client, "avatar_delete_self@example.com")
+    user_id = (await client.get("/api/v1/shared/me", headers=headers)).json()["id"]
+    old_key = f"users/{user_id}/avatars/delete-me.jpg"
+    old_url = f"http://minio:9000/app-uploads/{old_key}?sig=test"
+    await db_session.execute(sa_update(User).where(User.id == user_id).values(avatar_url=old_url))
+    await db_session.commit()
+    db_session.expire_all()
+    storage = _mock_storage(key=old_key, url=old_url)
+
+    with _override_storage(storage):
+        res = await client.delete("/api/v1/shared/me/avatar", headers=headers)
+
+    assert res.status_code == 200
+    assert res.json()["avatar_url"] is None
+    storage.delete.assert_awaited_once_with(old_key)
+
+
+@pytest.mark.asyncio
+async def test_delete_my_avatar_with_unmanaged_url_skips_storage_delete(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Yönetilmeyen avatar URL'lerinde DB temizlenir, storage delete atlanır."""
+    headers = await _auth_headers(client, "avatar_external_delete@example.com")
+    user_id = (await client.get("/api/v1/shared/me", headers=headers)).json()["id"]
+    await db_session.execute(
+        sa_update(User)
+        .where(User.id == user_id)
+        .values(avatar_url="https://cdn.example.com/avatar.png")
+    )
+    await db_session.commit()
+    db_session.expire_all()
+    storage = _mock_storage(key="users/unused/avatars/file.jpg", url="http://unused")
+
+    with _override_storage(storage):
+        res = await client.delete("/api/v1/shared/me/avatar", headers=headers)
+
+    assert res.status_code == 200
+    assert res.json()["avatar_url"] is None
+    storage.delete.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -623,6 +740,167 @@ async def test_admin_update_user_profile_fields(client: AsyncClient, db_session:
     assert res.status_code == 200
     assert res.json()["full_name"] == "Managed User"
     assert res.json()["username"] == "managed_user"
+
+
+@pytest.mark.asyncio
+async def test_admin_update_user_avatar_requires_explicit_permission(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """users:manage_avatar yoksa admin başka kullanıcının avatarını yönetememeli."""
+    actor_email = "avatar_perm_missing@example.com"
+    target_email = "avatar_perm_target@example.com"
+    target_headers = await _auth_headers(client, target_email)
+    target_id = (await client.get("/api/v1/shared/me", headers=target_headers)).json()["id"]
+
+    headers = await _auth_headers(client, actor_email)
+    await _promote_to_admin_surface_role(
+        db_session,
+        email=actor_email,
+        role_name="write_only_avatar_blocked",
+        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_WRITE],
+    )
+    storage = _mock_storage(
+        key=f"users/{target_id}/avatars/new.jpg",
+        url=f"http://minio:9000/app-uploads/users/{target_id}/avatars/new.jpg?sig=test",
+    )
+
+    with _override_storage(storage):
+        res = await client.put(
+            f"/api/v1/admin/users/{target_id}/avatar",
+            headers=headers,
+            files={"file": ("avatar.jpg", b"image-bytes", "image/jpeg")},
+        )
+
+    assert res.status_code == 403
+    storage.upload.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_admin_update_user_avatar(client: AsyncClient, db_session: AsyncSession):
+    """Yetkili admin hedef kullanıcının avatarını yükleyebilmeli."""
+    actor_email = "avatar_manager@example.com"
+    target_email = "avatar_target@example.com"
+    target_headers = await _auth_headers(client, target_email)
+    target_id = (await client.get("/api/v1/shared/me", headers=target_headers)).json()["id"]
+
+    headers = await _auth_headers(client, actor_email)
+    await _promote_to_admin_surface_role(
+        db_session,
+        email=actor_email,
+        role_name="avatar_manager_role",
+        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_MANAGE_AVATAR],
+    )
+    key = f"users/{target_id}/avatars/new.jpg"
+    url = f"http://minio:9000/app-uploads/{key}?sig=test"
+    storage = _mock_storage(key=key, url=url)
+
+    with _override_storage(storage):
+        res = await client.put(
+            f"/api/v1/admin/users/{target_id}/avatar",
+            headers=headers,
+            files={"file": ("avatar.jpg", b"image-bytes", "image/jpeg")},
+        )
+
+    assert res.status_code == 200
+    assert res.json()["avatar_url"] == url
+    storage.upload.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_admin_delete_user_avatar(client: AsyncClient, db_session: AsyncSession):
+    """Yetkili admin hedef kullanıcının avatarını silebilmeli."""
+    actor_email = "avatar_delete_manager@example.com"
+    target_email = "avatar_delete_target@example.com"
+    target_headers = await _auth_headers(client, target_email)
+    target_id = (await client.get("/api/v1/shared/me", headers=target_headers)).json()["id"]
+    old_key = f"users/{target_id}/avatars/old.jpg"
+    old_url = f"http://minio:9000/app-uploads/{old_key}?sig=old"
+    await db_session.execute(sa_update(User).where(User.id == target_id).values(avatar_url=old_url))
+    await db_session.commit()
+    db_session.expire_all()
+
+    headers = await _auth_headers(client, actor_email)
+    await _promote_to_admin_surface_role(
+        db_session,
+        email=actor_email,
+        role_name="avatar_delete_role",
+        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_MANAGE_AVATAR],
+    )
+    storage = _mock_storage(key=old_key, url=old_url)
+
+    with _override_storage(storage):
+        res = await client.delete(f"/api/v1/admin/users/{target_id}/avatar", headers=headers)
+
+    assert res.status_code == 200
+    assert res.json()["avatar_url"] is None
+    storage.delete.assert_awaited_once_with(old_key)
+
+
+@pytest.mark.asyncio
+async def test_admin_update_user_avatar_blocks_self_action(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Admin target endpoint'i kendi hesabı için kullanamamalı."""
+    actor_email = "avatar_self_blocked@example.com"
+    headers = await _auth_headers(client, actor_email)
+    actor_id = (await client.get("/api/v1/shared/me", headers=headers)).json()["id"]
+    await _promote_to_admin_surface_role(
+        db_session,
+        email=actor_email,
+        role_name="avatar_self_blocked_role",
+        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_MANAGE_AVATAR],
+    )
+    storage = _mock_storage(
+        key=f"users/{actor_id}/avatars/new.jpg",
+        url=f"http://minio:9000/app-uploads/users/{actor_id}/avatars/new.jpg?sig=test",
+    )
+
+    with _override_storage(storage):
+        res = await client.put(
+            f"/api/v1/admin/users/{actor_id}/avatar",
+            headers=headers,
+            files={"file": ("avatar.jpg", b"image-bytes", "image/jpeg")},
+        )
+
+    assert res.status_code == 403
+    storage.upload.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_admin_update_user_avatar_blocks_protected_admin(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Protected admin role hedefinin avatarı admin target endpoint'i ile yönetilememeli."""
+    actor_email = "avatar_actor_admin@example.com"
+    target_email = "avatar_target_admin@example.com"
+    headers = await _auth_headers(client, actor_email)
+    target_headers = await _auth_headers(client, target_email)
+    target_id = (await client.get("/api/v1/shared/me", headers=target_headers)).json()["id"]
+
+    await _promote_to_admin_surface_role(
+        db_session,
+        email=actor_email,
+        role_name="avatar_admin_actor_role",
+        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_MANAGE_AVATAR],
+    )
+    await _promote_to_admin(db_session, target_email)
+    storage = _mock_storage(
+        key=f"users/{target_id}/avatars/new.jpg",
+        url=f"http://minio:9000/app-uploads/users/{target_id}/avatars/new.jpg?sig=test",
+    )
+
+    with _override_storage(storage):
+        res = await client.put(
+            f"/api/v1/admin/users/{target_id}/avatar",
+            headers=headers,
+            files={"file": ("avatar.jpg", b"image-bytes", "image/jpeg")},
+        )
+
+    assert res.status_code == 403
+    storage.upload.assert_not_called()
 
 
 @pytest.mark.asyncio

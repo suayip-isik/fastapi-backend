@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import secrets
 from typing import TYPE_CHECKING
+from urllib.parse import unquote, urlparse
 
 from app.adapters.infrastructure import ARQTaskQueueAdapter, RedisAdapter
 from app.core.config import settings
@@ -40,11 +41,12 @@ from app.tasks.worker import send_admin_invite_email, send_verification_email
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from fastapi import UploadFile
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.db.models.role import Role
     from app.db.models.user import User
-    from app.ports.infrastructure import RedisPort, TaskQueuePort
+    from app.ports.infrastructure import RedisPort, StoragePort, TaskQueuePort
     from app.schemas.user import (
         AdminChangeUserEmailRequest,
         AdminUpdateUserRequest,
@@ -54,6 +56,29 @@ if TYPE_CHECKING:
         UserStatsResponse,
     )
     from app.services.audit import AuditService
+
+
+def _extract_managed_storage_key(avatar_url: str | None, *, user_id: UUID) -> str | None:
+    """Yönetilen avatar URL'inden storage key'ini güvenli şekilde çözer."""
+    if not avatar_url:
+        return None
+
+    managed_prefix = f"users/{user_id}/"
+    if avatar_url.startswith(managed_prefix):
+        return avatar_url
+
+    parsed = urlparse(avatar_url)
+    if not parsed.path:
+        return None
+
+    path = unquote(parsed.path).lstrip("/")
+    bucket_prefix = f"{settings.S3_BUCKET_NAME}/"
+    if path.startswith(bucket_prefix):
+        path = path[len(bucket_prefix) :]
+
+    if path.startswith(managed_prefix):
+        return path
+    return None
 
 
 class UserService(AuditableMixin):
@@ -75,6 +100,7 @@ class UserService(AuditableMixin):
         *,
         cache: CacheService | None = None,
         redis: RedisPort | None = None,
+        storage: StoragePort | None = None,
         task_queue: TaskQueuePort | None = None,
     ) -> None:
         """UserService'i başlatır.
@@ -88,6 +114,7 @@ class UserService(AuditableMixin):
         self._audit = audit
         self._cache = cache or CacheService()
         self._redis = redis or RedisAdapter()
+        self._storage = storage
         self._task_queue = task_queue or ARQTaskQueueAdapter()
 
     async def _issue_admin_invite(self, user: User) -> None:
@@ -256,6 +283,81 @@ class UserService(AuditableMixin):
             keys.append(USER_PERMISSIONS_KEY.format(str(user_id)))
         await self._cache.delete(*keys)
 
+    def _avatar_folder(self, user_id: UUID) -> str:
+        return f"users/{user_id}/avatars"
+
+    async def _replace_avatar(
+        self,
+        *,
+        actor_user_id: UUID,
+        target_user: User,
+        file: UploadFile,
+        operation_scope: str,
+    ) -> User:
+        if self._storage is None:
+            raise RuntimeError("Storage dependency is required for avatar operations.")
+
+        previous_avatar_url = target_user.avatar_url
+        previous_key = _extract_managed_storage_key(previous_avatar_url, user_id=target_user.id)
+        new_key = await self._storage.upload(file, folder=self._avatar_folder(target_user.id))
+        new_url = await self._storage.get_url(new_key)
+
+        try:
+            if previous_key and previous_key != new_key:
+                await self._storage.delete(previous_key)
+            await self._invalidate_user_cache(target_user.id, target_user.email)
+            updated = await self._repo.update(target_user.id, avatar_url=new_url)
+        except Exception:
+            await self._storage.delete(new_key)
+            raise
+
+        action = (
+            AuditAction.PROFILE_AVATAR_UPDATED
+            if previous_avatar_url
+            else AuditAction.PROFILE_AVATAR_UPLOADED
+        )
+        await self._audit_log(
+            action,
+            user_id=actor_user_id,
+            extra={
+                "actor_user_id": str(actor_user_id),
+                "target_user_id": str(target_user.id),
+                "old_key": previous_key,
+                "new_key": new_key,
+                "operation_scope": operation_scope,
+            },
+        )
+        return updated
+
+    async def _clear_avatar(
+        self,
+        *,
+        actor_user_id: UUID,
+        target_user: User,
+        operation_scope: str,
+    ) -> User:
+        if not target_user.avatar_url:
+            raise BusinessRuleError("Kullanıcının silinecek bir profil fotoğrafı yok.")
+
+        previous_key = _extract_managed_storage_key(target_user.avatar_url, user_id=target_user.id)
+        if previous_key and self._storage is not None:
+            await self._storage.delete(previous_key)
+
+        await self._invalidate_user_cache(target_user.id, target_user.email)
+        updated = await self._repo.update(target_user.id, avatar_url=None)
+        await self._audit_log(
+            AuditAction.PROFILE_AVATAR_DELETED,
+            user_id=actor_user_id,
+            extra={
+                "actor_user_id": str(actor_user_id),
+                "target_user_id": str(target_user.id),
+                "old_key": previous_key,
+                "new_key": None,
+                "operation_scope": operation_scope,
+            },
+        )
+        return updated
+
     async def get_stats(self) -> UserStatsResponse:
         """Sistemdeki kullanıcı istatistiklerini döndürür.
 
@@ -405,6 +507,25 @@ class UserService(AuditableMixin):
 
         return user
 
+    async def update_self_avatar(self, user_id: UUID, *, file: UploadFile) -> User:
+        """Kullanıcının kendi avatarını yükler veya günceller."""
+        user = await self._repo.get_by_id_or_raise(user_id)
+        return await self._replace_avatar(
+            actor_user_id=user_id,
+            target_user=user,
+            file=file,
+            operation_scope="self",
+        )
+
+    async def delete_self_avatar(self, user_id: UUID) -> User:
+        """Kullanıcının kendi avatarını siler."""
+        user = await self._repo.get_by_id_or_raise(user_id)
+        return await self._clear_avatar(
+            actor_user_id=user_id,
+            target_user=user,
+            operation_scope="self",
+        )
+
     async def admin_update(
         self,
         *,
@@ -436,6 +557,44 @@ class UserService(AuditableMixin):
             },
         )
         return updated
+
+    async def admin_update_avatar(
+        self,
+        *,
+        actor_user_id: UUID,
+        user_id: UUID,
+        file: UploadFile,
+    ) -> User:
+        """Admin user-management ile hedef kullanıcının avatarını günceller."""
+        target_user = await self._get_manageable_target_or_raise(
+            actor_user_id=actor_user_id,
+            target_user_id=user_id,
+            operation="update_avatar",
+        )
+        return await self._replace_avatar(
+            actor_user_id=actor_user_id,
+            target_user=target_user,
+            file=file,
+            operation_scope="admin",
+        )
+
+    async def admin_delete_avatar(
+        self,
+        *,
+        actor_user_id: UUID,
+        user_id: UUID,
+    ) -> User:
+        """Admin user-management ile hedef kullanıcının avatarını siler."""
+        target_user = await self._get_manageable_target_or_raise(
+            actor_user_id=actor_user_id,
+            target_user_id=user_id,
+            operation="delete_avatar",
+        )
+        return await self._clear_avatar(
+            actor_user_id=actor_user_id,
+            target_user=target_user,
+            operation_scope="admin",
+        )
 
     async def admin_change_email(
         self,

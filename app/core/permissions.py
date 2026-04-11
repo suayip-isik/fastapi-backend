@@ -21,6 +21,7 @@ class Permission(str, PyEnum):
         USERS_CHANGE_EMAIL: Kullanıcı e-posta adresini değiştirme
         USERS_RESEND_VERIFICATION: Kullanıcıya doğrulama e-postası yeniden gönderme
         USERS_DELETE: Kullanıcıyı silme / geri yükleme
+        USERS_MANAGE_AVATAR: Diğer kullanıcıların profil fotoğrafını yönetme
         ROLES_READ: Rol listesini görüntüleme
         ROLES_WRITE: Rol oluşturma, güncelleme, silme
         AUDIT_READ: Audit logları görüntüleme
@@ -41,6 +42,7 @@ class Permission(str, PyEnum):
     USERS_CHANGE_EMAIL = "users:change_email"
     USERS_RESEND_VERIFICATION = "users:resend_verification"
     USERS_DELETE = "users:delete"
+    USERS_MANAGE_AVATAR = "users:manage_avatar"
 
     # Roles
     ROLES_READ = "roles:read"

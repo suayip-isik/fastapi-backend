@@ -44,6 +44,9 @@ class AuditAction(str, PyEnum):
         USER_MANAGEMENT_BLOCKED: User management işlemi güvenlik kuralı ile engellendi
         USER_DELETED: Kullanıcı hesabı silindi (soft delete)
         USER_RESTORED: Silinen kullanıcı geri yüklendi
+        PROFILE_AVATAR_UPLOADED: Profil fotoğrafı ilk kez yüklendi
+        PROFILE_AVATAR_UPDATED: Profil fotoğrafı güncellendi
+        PROFILE_AVATAR_DELETED: Profil fotoğrafı silindi
         FILE_UPLOADED: Dosya yüklendi
         FILE_DELETED: Dosya silindi
         API_KEY_CREATED: API key oluşturuldu
@@ -84,6 +87,9 @@ class AuditAction(str, PyEnum):
     USER_MANAGEMENT_BLOCKED = "user_management_blocked"
     USER_DELETED = "user_deleted"
     USER_RESTORED = "user_restored"
+    PROFILE_AVATAR_UPLOADED = "profile_avatar_uploaded"
+    PROFILE_AVATAR_UPDATED = "profile_avatar_updated"
+    PROFILE_AVATAR_DELETED = "profile_avatar_deleted"
     # Account
     PASSWORD_CHANGED = "password_changed"
     ACCOUNT_DELETED = "account_deleted"
