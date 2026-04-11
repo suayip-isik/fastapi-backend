@@ -290,7 +290,7 @@ def require_permissions(*perms: Permission) -> Any:
     Example:
         >>> @router.get("/users")
         >>> async def list_users(
-        ...     _: Annotated[User, Depends(require_permissions(Permission.USERS_READ))]
+        ...     _: Annotated[User, Depends(require_permissions(Permission.USERS_LIST))]
         ... ): ...
     """
 

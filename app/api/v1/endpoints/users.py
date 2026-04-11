@@ -47,17 +47,38 @@ shared_router = APIRouter(prefix="/shared/me", tags=["Shared Profile"])
 
 # Modül yüklendiğinde bir kez oluşturulur — her request'te tek Redis GET maliyeti.
 _AdminSurfaceDep = Annotated[User, Depends(require_surface_access(Surface.ADMIN))]
+_ProfileViewDep = Annotated[User, Depends(require_permissions(Permission.PROFILE_VIEW))]
+_ProfileUpdateDep = Annotated[User, Depends(require_permissions(Permission.PROFILE_UPDATE))]
+_ProfileUploadAvatarDep = Annotated[
+    User, Depends(require_permissions(Permission.PROFILE_UPLOAD_AVATAR))
+]
+_ProfileDeleteAvatarDep = Annotated[
+    User, Depends(require_permissions(Permission.PROFILE_DELETE_AVATAR))
+]
 _UsersCreateAdminDep = Annotated[User, Depends(require_permissions(Permission.USERS_CREATE_ADMIN))]
-_UsersReadDep = Annotated[User, Depends(require_permissions(Permission.USERS_READ))]
-_UsersWriteDep = Annotated[User, Depends(require_permissions(Permission.USERS_WRITE))]
+_UsersListDep = Annotated[User, Depends(require_permissions(Permission.USERS_LIST))]
+_UsersViewDep = Annotated[User, Depends(require_permissions(Permission.USERS_VIEW))]
+_UsersViewStatsDep = Annotated[User, Depends(require_permissions(Permission.USERS_VIEW_STATS))]
+_UsersListDeletedDep = Annotated[User, Depends(require_permissions(Permission.USERS_LIST_DELETED))]
+_UsersUpdateDep = Annotated[User, Depends(require_permissions(Permission.USERS_UPDATE))]
+_UsersUploadAvatarDep = Annotated[
+    User, Depends(require_permissions(Permission.USERS_UPLOAD_AVATAR))
+]
+_UsersDeleteAvatarDep = Annotated[
+    User, Depends(require_permissions(Permission.USERS_DELETE_AVATAR))
+]
 _UsersChangeEmailDep = Annotated[User, Depends(require_permissions(Permission.USERS_CHANGE_EMAIL))]
 _UsersResendVerificationDep = Annotated[
     User, Depends(require_permissions(Permission.USERS_RESEND_VERIFICATION))
 ]
-_UsersDeleteDep = Annotated[User, Depends(require_permissions(Permission.USERS_DELETE))]
-_UsersManageAvatarDep = Annotated[
-    User, Depends(require_permissions(Permission.USERS_MANAGE_AVATAR))
+_UsersResendAdminInviteDep = Annotated[
+    User, Depends(require_permissions(Permission.USERS_RESEND_ADMIN_INVITE))
 ]
+_UsersActivateDep = Annotated[User, Depends(require_permissions(Permission.USERS_ACTIVATE))]
+_UsersDeactivateDep = Annotated[User, Depends(require_permissions(Permission.USERS_DEACTIVATE))]
+_UsersAssignRoleDep = Annotated[User, Depends(require_permissions(Permission.USERS_ASSIGN_ROLE))]
+_UsersDeleteDep = Annotated[User, Depends(require_permissions(Permission.USERS_DELETE))]
+_UsersRestoreDep = Annotated[User, Depends(require_permissions(Permission.USERS_RESTORE))]
 
 
 def get_user_service(
@@ -80,7 +101,10 @@ UserServiceDep = Annotated[UserService, Depends(get_user_service)]
     response_model=UserResponse,
     openapi_extra={"x-surfaces": ["shared"]},
 )
-async def get_me(current_user: CurrentUserDep) -> User:
+async def get_me(
+    _: _ProfileViewDep,
+    current_user: CurrentUserDep,
+) -> User:
     """Giriş yapmış kullanıcının profil bilgilerini getirir.
 
     Kimlik doğrulaması yapılmış kullanıcının kendi profil bilgilerini
@@ -102,6 +126,7 @@ async def get_me(current_user: CurrentUserDep) -> User:
 )
 async def update_me(
     data: UpdateUserRequest,
+    _: _ProfileUpdateDep,
     current_user: CurrentUserDep,
     service: UserServiceDep,
 ) -> User:
@@ -129,6 +154,7 @@ async def update_me(
 @limiter.limit(settings.RATE_LIMIT_UPLOAD)
 async def upload_my_avatar(
     request: Request,
+    _: _ProfileUploadAvatarDep,
     current_user: CurrentUserDep,
     service: UserServiceDep,
     file: UploadFile = File(...),
@@ -145,6 +171,7 @@ async def upload_my_avatar(
 @limiter.limit(settings.RATE_LIMIT_UPLOAD)
 async def delete_my_avatar(
     request: Request,
+    _: _ProfileDeleteAvatarDep,
     current_user: CurrentUserDep,
     service: UserServiceDep,
 ) -> User:
@@ -155,7 +182,7 @@ async def delete_my_avatar(
 @admin_router.get("", response_model=PaginatedResponse[UserResponse])
 async def list_users(
     _surface: _AdminSurfaceDep,
-    _: _UsersReadDep,
+    _: _UsersListDep,
     service: UserServiceDep,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
@@ -218,7 +245,7 @@ async def create_admin_user(
 @admin_router.get("/stats", response_model=UserStatsResponse)
 async def get_user_stats(
     _surface: _AdminSurfaceDep,
-    _: _UsersReadDep,
+    _: _UsersViewStatsDep,
     service: UserServiceDep,
 ) -> UserStatsResponse:
     """Kullanıcı istatistiklerini döndürür.
@@ -240,7 +267,7 @@ async def get_user_stats(
 @admin_router.get("/deleted", response_model=PaginatedResponse[DeletedUserResponse])
 async def list_deleted_users(
     _surface: _AdminSurfaceDep,
-    _: _UsersReadDep,
+    _: _UsersListDeletedDep,
     service: UserServiceDep,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
@@ -292,7 +319,7 @@ async def list_deleted_users(
 async def get_user(
     user_id: UUID,
     _surface: _AdminSurfaceDep,
-    _: _UsersReadDep,
+    _: _UsersViewDep,
     service: UserServiceDep,
 ) -> UserResponse:
     """Belirtilen kullanıcının detaylı bilgilerini getirir.
@@ -319,7 +346,7 @@ async def update_user(
     user_id: UUID,
     data: AdminUpdateUserRequest,
     _surface: _AdminSurfaceDep,
-    current_user: _UsersWriteDep,
+    current_user: _UsersUpdateDep,
     service: UserServiceDep,
 ) -> User:
     """Admin user-management ile kullanıcı profil alanlarını günceller."""
@@ -332,7 +359,7 @@ async def upload_user_avatar(
     request: Request,
     user_id: UUID,
     _surface: _AdminSurfaceDep,
-    current_user: _UsersManageAvatarDep,
+    current_user: _UsersUploadAvatarDep,
     service: UserServiceDep,
     file: UploadFile = File(...),
 ) -> User:
@@ -348,7 +375,7 @@ async def delete_user_avatar(
     request: Request,
     user_id: UUID,
     _surface: _AdminSurfaceDep,
-    current_user: _UsersManageAvatarDep,
+    current_user: _UsersDeleteAvatarDep,
     service: UserServiceDep,
 ) -> User:
     """Yetkili admin hedef kullanıcının profil fotoğrafını siler."""
@@ -393,7 +420,7 @@ async def resend_admin_invite(
     request: Request,
     user_id: UUID,
     _surface: _AdminSurfaceDep,
-    current_user: _UsersCreateAdminDep,
+    current_user: _UsersResendAdminInviteDep,
     service: UserServiceDep,
 ) -> MessageResponse:
     """Şifresi henüz belirlenmemiş admin kullanıcıya davet e-postasını yeniden yollar."""
@@ -405,7 +432,7 @@ async def resend_admin_invite(
 async def activate_user(
     user_id: UUID,
     _surface: _AdminSurfaceDep,
-    current_user: _UsersWriteDep,
+    current_user: _UsersActivateDep,
     service: UserServiceDep,
 ) -> User:
     """Deaktif edilmiş bir kullanıcıyı tekrar aktif eder.
@@ -434,7 +461,7 @@ async def assign_user_role(
     user_id: UUID,
     data: AssignRoleRequest,
     _surface: _AdminSurfaceDep,
-    current_user: _UsersWriteDep,
+    current_user: _UsersAssignRoleDep,
     service: UserServiceDep,
 ) -> User:
     """Kullanıcıya rol atar.
@@ -463,7 +490,7 @@ async def assign_user_role(
 async def deactivate_user(
     user_id: UUID,
     _surface: _AdminSurfaceDep,
-    current_user: _UsersWriteDep,
+    current_user: _UsersDeactivateDep,
     service: UserServiceDep,
 ) -> User:
     """Aktif bir kullanıcıyı deaktif eder.
@@ -520,7 +547,7 @@ async def delete_user(
 async def restore_user(
     user_id: UUID,
     _surface: _AdminSurfaceDep,
-    current_user: _UsersDeleteDep,
+    current_user: _UsersRestoreDep,
     service: UserServiceDep,
 ) -> User:
     """Soft-delete ile silinmiş kullanıcıyı geri yükler.

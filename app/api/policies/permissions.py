@@ -40,7 +40,7 @@ def can_delete_any_uploaded_file(surface: str, effective_permissions: set[str]) 
 
 def can_manage_other_users_avatar(surface: str, effective_permissions: set[str]) -> bool:
     """Kullanıcı başka kullanıcıların avatarını yönetebilir mi?"""
-    return surface == SurfaceType.ADMIN.value and has_permissions_all(
+    return surface == SurfaceType.ADMIN.value and has_permissions_any(
         effective_permissions,
-        [Permission.USERS_MANAGE_AVATAR],
+        [Permission.USERS_UPLOAD_AVATAR, Permission.USERS_DELETE_AVATAR],
     )

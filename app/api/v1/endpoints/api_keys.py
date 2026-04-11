@@ -26,8 +26,9 @@ from app.services.api_key import APIKeyService
 
 router = APIRouter(prefix="/api-keys", tags=["API Keys"])
 
-_APIKeysReadDep = Annotated[object, Depends(require_permissions(Permission.API_KEYS_READ))]
-_APIKeysWriteDep = Annotated[object, Depends(require_permissions(Permission.API_KEYS_WRITE))]
+_APIKeysListDep = Annotated[object, Depends(require_permissions(Permission.API_KEYS_LIST))]
+_APIKeysCreateDep = Annotated[object, Depends(require_permissions(Permission.API_KEYS_CREATE))]
+_APIKeysRevokeDep = Annotated[object, Depends(require_permissions(Permission.API_KEYS_REVOKE))]
 
 
 def get_api_key_service(
@@ -135,7 +136,7 @@ class APIKeyResponse(BaseModel):
 async def create_api_key(
     request: Request,
     data: CreateAPIKeyRequest,
-    _: _APIKeysWriteDep,
+    _: _APIKeysCreateDep,
     current_user: CurrentUserDep,
     service: APIKeyServiceDep,
 ) -> APIKeyCreatedResponse:
@@ -166,7 +167,7 @@ async def create_api_key(
 
 @router.get("", response_model=list[APIKeyResponse], summary="API key'lerini listele")
 async def list_api_keys(
-    _: _APIKeysReadDep,
+    _: _APIKeysListDep,
     current_user: CurrentUserDep,
     service: APIKeyServiceDep,
 ) -> list[APIKeyResponse]:
@@ -195,7 +196,7 @@ async def list_api_keys(
 async def revoke_api_key(
     request: Request,
     key_id: UUID,
-    _: _APIKeysWriteDep,
+    _: _APIKeysRevokeDep,
     current_user: CurrentUserDep,
     service: APIKeyServiceDep,
 ) -> MessageResponse:

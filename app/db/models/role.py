@@ -65,11 +65,11 @@ class RolePermission(Base):
 
     Bir rolün sahip olduğu permission'ları saklar.
     Permission değerleri Permission enum'unun string değerleridir
-    (ör: "users:read", "admin:panel_access").
+    (ör: "users:view", "admin:panel_access").
 
     Attributes:
         role_id: Bağlı rol UUID'si
-        permission: Permission string değeri (ör: "users:write")
+        permission: Permission string değeri (ör: "users:update")
     """
 
     __tablename__ = "role_permissions"

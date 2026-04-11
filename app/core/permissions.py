@@ -8,78 +8,138 @@ from enum import Enum as PyEnum
 class Permission(str, PyEnum):
     """Sistemdeki tüm yetki tanımları.
 
-    Format: "kaynak:aksiyon" (ör: "users:write").
+    Format: "kaynak:aksiyon" (ör: "users:update").
     Roller bu enum değerlerinin kombinasyonlarına sahip olur.
     Yeni bir özellik eklendiğinde buraya permission eklenir,
     ardından ilgili rol(ler)e atanır — migration gerekmez.
 
     Attributes:
         ADMIN_PANEL_ACCESS: Admin paneline erişim
-        USERS_CREATE_ADMIN: Admin kullanıcı oluşturma ve davet yeniden gönderme
-        USERS_READ: Kullanıcı listesini görüntüleme
-        USERS_WRITE: Kullanıcı bilgilerini güncelleme
+        USERS_LIST: Kullanıcı listesini görüntüleme
+        USERS_VIEW: Kullanıcı detayını görüntüleme
+        USERS_VIEW_STATS: Kullanıcı istatistiklerini görüntüleme
+        USERS_LIST_DELETED: Silinmiş kullanıcıları görüntüleme
+        USERS_CREATE_ADMIN: Admin kullanıcı oluşturma
+        USERS_UPDATE: Kullanıcı bilgilerini güncelleme
+        USERS_UPLOAD_AVATAR: Diğer kullanıcıların profil fotoğrafını yükleme
+        USERS_DELETE_AVATAR: Diğer kullanıcıların profil fotoğrafını silme
         USERS_CHANGE_EMAIL: Kullanıcı e-posta adresini değiştirme
         USERS_RESEND_VERIFICATION: Kullanıcıya doğrulama e-postası yeniden gönderme
-        USERS_DELETE: Kullanıcıyı silme / geri yükleme
-        USERS_MANAGE_AVATAR: Diğer kullanıcıların profil fotoğrafını yönetme
-        ROLES_READ: Rol listesini görüntüleme
-        ROLES_WRITE: Rol oluşturma, güncelleme, silme
-        AUDIT_READ: Audit logları görüntüleme
-        API_KEYS_READ: API key listesini görüntüleme
-        API_KEYS_WRITE: API key oluşturma ve silme
-        NOTIFICATIONS_READ: Bildirimleri görüntüleme
-        PROFILE_READ: Kendi profilini görüntüleme
-        PROFILE_WRITE: Kendi profilini güncelleme
+        USERS_RESEND_ADMIN_INVITE: Admin davetini yeniden gönderme
+        USERS_ACTIVATE: Kullanıcıyı aktif etme
+        USERS_DEACTIVATE: Kullanıcıyı pasif etme
+        USERS_ASSIGN_ROLE: Kullanıcı rolünü değiştirme
+        USERS_DELETE: Kullanıcıyı silme
+        USERS_RESTORE: Kullanıcıyı geri yükleme
+        ROLES_LIST: Rol listesini görüntüleme
+        ROLES_VIEW: Rol detayını görüntüleme
+        ROLES_CREATE: Rol oluşturma
+        ROLES_UPDATE: Rol güncelleme
+        ROLES_DELETE: Rol silme
+        AUDIT_LIST: Audit log listesini görüntüleme
+        AUDIT_STREAM: Audit log akışını görüntüleme
+        AUDIT_VIEW: Audit log detayını görüntüleme
+        API_KEYS_LIST: API key listesini görüntüleme
+        API_KEYS_CREATE: API key oluşturma
+        API_KEYS_REVOKE: API key silme
+        NOTIFICATIONS_LIST: Bildirimleri görüntüleme
+        NOTIFICATIONS_VIEW_UNREAD_COUNT: Okunmamış bildirim sayısını görüntüleme
+        NOTIFICATIONS_MARK_ALL_READ: Tüm bildirimleri okundu işaretleme
+        NOTIFICATIONS_MARK_READ: Tek bildirimi okundu işaretleme
+        NOTIFICATIONS_DELETE: Bildirimi silme
+        PROFILE_VIEW: Kendi profilini görüntüleme
+        PROFILE_UPDATE: Kendi profilini güncelleme
+        PROFILE_UPLOAD_AVATAR: Kendi profil fotoğrafını yükleme
+        PROFILE_DELETE_AVATAR: Kendi profil fotoğrafını silme
     """
 
     # Admin
     ADMIN_PANEL_ACCESS = "admin:panel_access"
 
     # Users
+    USERS_LIST = "users:list"
+    USERS_VIEW = "users:view"
+    USERS_VIEW_STATS = "users:view_stats"
+    USERS_LIST_DELETED = "users:list_deleted"
     USERS_CREATE_ADMIN = "users:create_admin"
-    USERS_READ = "users:read"
-    USERS_WRITE = "users:write"
+    USERS_UPDATE = "users:update"
+    USERS_UPLOAD_AVATAR = "users:upload_avatar"
+    USERS_DELETE_AVATAR = "users:delete_avatar"
     USERS_CHANGE_EMAIL = "users:change_email"
     USERS_RESEND_VERIFICATION = "users:resend_verification"
+    USERS_RESEND_ADMIN_INVITE = "users:resend_admin_invite"
+    USERS_ACTIVATE = "users:activate"
+    USERS_DEACTIVATE = "users:deactivate"
+    USERS_ASSIGN_ROLE = "users:assign_role"
     USERS_DELETE = "users:delete"
-    USERS_MANAGE_AVATAR = "users:manage_avatar"
+    USERS_RESTORE = "users:restore"
 
     # Roles
-    ROLES_READ = "roles:read"
-    ROLES_WRITE = "roles:write"
+    ROLES_LIST = "roles:list"
+    ROLES_VIEW = "roles:view"
+    ROLES_CREATE = "roles:create"
+    ROLES_UPDATE = "roles:update"
+    ROLES_DELETE = "roles:delete"
 
     # Audit
-    AUDIT_READ = "audit:read"
+    AUDIT_LIST = "audit:list"
+    AUDIT_STREAM = "audit:stream"
+    AUDIT_VIEW = "audit:view"
 
     # API Keys
-    API_KEYS_READ = "api_keys:read"
-    API_KEYS_WRITE = "api_keys:write"
+    API_KEYS_LIST = "api_keys:list"
+    API_KEYS_CREATE = "api_keys:create"
+    API_KEYS_REVOKE = "api_keys:revoke"
 
     # Notifications
-    NOTIFICATIONS_READ = "notifications:read"
+    NOTIFICATIONS_LIST = "notifications:list"
+    NOTIFICATIONS_VIEW_UNREAD_COUNT = "notifications:view_unread_count"
+    NOTIFICATIONS_MARK_ALL_READ = "notifications:mark_all_read"
+    NOTIFICATIONS_MARK_READ = "notifications:mark_read"
+    NOTIFICATIONS_DELETE = "notifications:delete"
 
     # Self-service (tüm authenticated kullanıcılar)
-    PROFILE_READ = "profile:read"
-    PROFILE_WRITE = "profile:write"
+    PROFILE_VIEW = "profile:view"
+    PROFILE_UPDATE = "profile:update"
+    PROFILE_UPLOAD_AVATAR = "profile:upload_avatar"
+    PROFILE_DELETE_AVATAR = "profile:delete_avatar"
 
 
 # Sistem rolleri için permission setleri — seed ve test için kullanılır
 ADMIN_PERMISSIONS: list[Permission] = list(Permission)
 
 USER_PERMISSIONS: list[Permission] = [
-    Permission.PROFILE_READ,
-    Permission.PROFILE_WRITE,
-    Permission.API_KEYS_READ,
-    Permission.API_KEYS_WRITE,
-    Permission.NOTIFICATIONS_READ,
+    Permission.PROFILE_VIEW,
+    Permission.PROFILE_UPDATE,
+    Permission.PROFILE_UPLOAD_AVATAR,
+    Permission.PROFILE_DELETE_AVATAR,
+    Permission.API_KEYS_LIST,
+    Permission.API_KEYS_CREATE,
+    Permission.API_KEYS_REVOKE,
+    Permission.NOTIFICATIONS_LIST,
+    Permission.NOTIFICATIONS_VIEW_UNREAD_COUNT,
+    Permission.NOTIFICATIONS_MARK_ALL_READ,
+    Permission.NOTIFICATIONS_MARK_READ,
+    Permission.NOTIFICATIONS_DELETE,
 ]
 
 MODERATOR_PERMISSIONS: list[Permission] = [
-    Permission.PROFILE_READ,
-    Permission.PROFILE_WRITE,
-    Permission.USERS_READ,
-    Permission.AUDIT_READ,
-    Permission.NOTIFICATIONS_READ,
+    Permission.PROFILE_VIEW,
+    Permission.PROFILE_UPDATE,
+    Permission.PROFILE_UPLOAD_AVATAR,
+    Permission.PROFILE_DELETE_AVATAR,
+    Permission.USERS_LIST,
+    Permission.USERS_VIEW,
+    Permission.USERS_VIEW_STATS,
+    Permission.USERS_LIST_DELETED,
+    Permission.AUDIT_LIST,
+    Permission.AUDIT_STREAM,
+    Permission.AUDIT_VIEW,
+    Permission.NOTIFICATIONS_LIST,
+    Permission.NOTIFICATIONS_VIEW_UNREAD_COUNT,
+    Permission.NOTIFICATIONS_MARK_ALL_READ,
+    Permission.NOTIFICATIONS_MARK_READ,
+    Permission.NOTIFICATIONS_DELETE,
 ]
 
 

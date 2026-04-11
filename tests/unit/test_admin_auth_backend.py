@@ -95,7 +95,7 @@ async def test_login_rejects_missing_panel_permission() -> None:
     user_reader = AsyncMock()
     user_reader.get_active_by_email.return_value = user
     permission_provider = AsyncMock()
-    permission_provider.get_permissions.return_value = {"users:read"}
+    permission_provider.get_permissions.return_value = {"users:list"}
     use_case = AdminAuthUseCase(user_reader=user_reader, permission_provider=permission_provider)
     backend = AdminAuthBackend(secret_key="test", use_case=use_case)
 

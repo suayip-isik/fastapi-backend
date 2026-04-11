@@ -21,8 +21,11 @@ from app.services.role import RoleService
 
 router = APIRouter(prefix="/roles", tags=["Roles"])
 
-_RolesReadDep = Annotated[User, Depends(require_permissions(Permission.ROLES_READ))]
-_RolesWriteDep = Annotated[User, Depends(require_permissions(Permission.ROLES_WRITE))]
+_RolesListDep = Annotated[User, Depends(require_permissions(Permission.ROLES_LIST))]
+_RolesViewDep = Annotated[User, Depends(require_permissions(Permission.ROLES_VIEW))]
+_RolesCreateDep = Annotated[User, Depends(require_permissions(Permission.ROLES_CREATE))]
+_RolesUpdateDep = Annotated[User, Depends(require_permissions(Permission.ROLES_UPDATE))]
+_RolesDeleteDep = Annotated[User, Depends(require_permissions(Permission.ROLES_DELETE))]
 _AdminSurfaceDep = Annotated[User, Depends(require_surface_access(Surface.ADMIN))]
 
 
@@ -40,7 +43,7 @@ RoleServiceDep = Annotated[RoleService, Depends(get_role_service)]
 @router.get("", response_model=list[RoleResponse])
 async def list_roles(
     _surface: _AdminSurfaceDep,
-    _: _RolesReadDep,
+    _: _RolesListDep,
     service: RoleServiceDep,
 ) -> list[RoleResponse]:
     """Sistemdeki tüm rolleri listeler.
@@ -63,7 +66,7 @@ async def list_roles(
 async def create_role(
     data: CreateRoleRequest,
     _surface: _AdminSurfaceDep,
-    _: _RolesWriteDep,
+    _: _RolesCreateDep,
     service: RoleServiceDep,
 ) -> RoleResponse:
     """Yeni özel rol oluşturur.
@@ -92,7 +95,7 @@ async def create_role(
 async def get_role(
     role_id: UUID,
     _surface: _AdminSurfaceDep,
-    _: _RolesReadDep,
+    _: _RolesViewDep,
     service: RoleServiceDep,
 ) -> RoleResponse:
     """Belirtilen rolün detaylarını getirir.
@@ -117,7 +120,7 @@ async def update_role(
     role_id: UUID,
     data: UpdateRoleRequest,
     _surface: _AdminSurfaceDep,
-    _: _RolesWriteDep,
+    _: _RolesUpdateDep,
     service: RoleServiceDep,
 ) -> RoleResponse:
     """Rol açıklamasını ve/veya permission setini günceller.
@@ -147,7 +150,7 @@ async def update_role(
 async def delete_role(
     role_id: UUID,
     _surface: _AdminSurfaceDep,
-    _: _RolesWriteDep,
+    _: _RolesDeleteDep,
     service: RoleServiceDep,
 ) -> MessageResponse:
     """Özel rolü siler.

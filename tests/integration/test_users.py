@@ -729,7 +729,7 @@ async def test_admin_update_user_profile_fields(client: AsyncClient, db_session:
         db_session,
         email=actor_email,
         role_name="user_manager",
-        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_WRITE],
+        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_UPDATE],
     )
 
     res = await client.patch(
@@ -747,7 +747,7 @@ async def test_admin_update_user_avatar_requires_explicit_permission(
     client: AsyncClient,
     db_session: AsyncSession,
 ):
-    """users:manage_avatar yoksa admin başka kullanıcının avatarını yönetememeli."""
+    """Avatar upload yetkisi yoksa admin başka kullanıcının avatarını yönetememeli."""
     actor_email = "avatar_perm_missing@example.com"
     target_email = "avatar_perm_target@example.com"
     target_headers = await _auth_headers(client, target_email)
@@ -758,7 +758,7 @@ async def test_admin_update_user_avatar_requires_explicit_permission(
         db_session,
         email=actor_email,
         role_name="write_only_avatar_blocked",
-        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_WRITE],
+        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_UPDATE],
     )
     storage = _mock_storage(
         key=f"users/{target_id}/avatars/new.jpg",
@@ -789,7 +789,7 @@ async def test_admin_update_user_avatar(client: AsyncClient, db_session: AsyncSe
         db_session,
         email=actor_email,
         role_name="avatar_manager_role",
-        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_MANAGE_AVATAR],
+        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_UPLOAD_AVATAR],
     )
     key = f"users/{target_id}/avatars/new.jpg"
     url = f"http://minio:9000/app-uploads/{key}?sig=test"
@@ -825,7 +825,7 @@ async def test_admin_delete_user_avatar(client: AsyncClient, db_session: AsyncSe
         db_session,
         email=actor_email,
         role_name="avatar_delete_role",
-        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_MANAGE_AVATAR],
+        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_DELETE_AVATAR],
     )
     storage = _mock_storage(key=old_key, url=old_url)
 
@@ -850,7 +850,7 @@ async def test_admin_update_user_avatar_blocks_self_action(
         db_session,
         email=actor_email,
         role_name="avatar_self_blocked_role",
-        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_MANAGE_AVATAR],
+        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_UPLOAD_AVATAR],
     )
     storage = _mock_storage(
         key=f"users/{actor_id}/avatars/new.jpg",
@@ -884,7 +884,7 @@ async def test_admin_update_user_avatar_blocks_protected_admin(
         db_session,
         email=actor_email,
         role_name="avatar_admin_actor_role",
-        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_MANAGE_AVATAR],
+        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_UPLOAD_AVATAR],
     )
     await _promote_to_admin(db_session, target_email)
     storage = _mock_storage(
@@ -956,7 +956,7 @@ async def test_admin_change_user_email_requires_permission(
         db_session,
         email=actor_email,
         role_name="write_only_manager",
-        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_WRITE],
+        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_UPDATE],
     )
 
     res = await client.post(
@@ -1022,11 +1022,11 @@ async def test_admin_user_management_blocks_admin_role_target(
         role_name="full_user_manager",
         permissions=[
             Permission.ADMIN_PANEL_ACCESS,
-            Permission.USERS_WRITE,
+            Permission.USERS_UPDATE,
             Permission.USERS_CHANGE_EMAIL,
             Permission.USERS_RESEND_VERIFICATION,
             Permission.USERS_DELETE,
-            Permission.USERS_READ,
+            Permission.USERS_VIEW,
         ],
     )
 
