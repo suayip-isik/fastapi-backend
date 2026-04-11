@@ -12,10 +12,7 @@ def test_encode_email_verify_value_without_target_email_returns_user_id() -> Non
 
 def test_encode_email_verify_value_lowercases_target_email() -> None:
     """Yeni format target email'i lowercase saklamalı."""
-    assert (
-        encode_email_verify_value("user-123", "User@Example.com")
-        == "user-123|user@example.com"
-    )
+    assert encode_email_verify_value("user-123", "User@Example.com") == "user-123|user@example.com"
 
 
 def test_decode_email_verify_value_supports_legacy_format() -> None:
