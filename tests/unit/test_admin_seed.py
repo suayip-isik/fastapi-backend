@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 
 from app.admin.seed import create_default_admin, seed_system_roles
-from app.db.models.user import AccountType, User
+from app.db.models.user import SurfaceType, User
 
 
 class _DummyExecuteResult:
@@ -131,5 +131,5 @@ async def test_create_default_admin_creates_admin_user() -> None:
     assert isinstance(admin, User)
     assert admin.email == "admin@example.com"
     assert admin.hashed_password == "hashed-pass"
-    assert admin.account_type == AccountType.ADMIN.value
+    assert admin.surface == SurfaceType.ADMIN.value
     assert admin.role_id == admin_role.id

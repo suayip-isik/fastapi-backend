@@ -19,7 +19,7 @@ from app.core.i18n import language_var
 from app.core.permissions import Permission
 from app.core.security import hash_password
 from app.db.models.audit_log import AuditAction
-from app.db.models.user import AccountType
+from app.db.models.user import SurfaceType
 from app.db.repositories.role import RoleRepository
 from app.db.repositories.user import UserRepository
 from app.services._keys import (
@@ -323,7 +323,7 @@ class UserService(AuditableMixin):
             username=data.username,
             full_name=data.full_name,
             role_id=role.id,
-            account_type=AccountType.ADMIN.value,
+            surface=SurfaceType.ADMIN.value,
             is_active=True,
             is_verified=False,
             hashed_password=None,
@@ -339,7 +339,7 @@ class UserService(AuditableMixin):
     async def resend_admin_invite(self, user_id: UUID) -> User:
         """Şifresi henüz belirlenmemiş admin kullanıcıya daveti yeniden gönderir."""
         user = await self._repo.get_by_id_or_raise(user_id)
-        if user.account_type != AccountType.ADMIN.value:
+        if user.surface != SurfaceType.ADMIN.value:
             raise BusinessRuleError(
                 "Yalnızca admin tipindeki kullanıcılar için davet gönderilebilir."
             )

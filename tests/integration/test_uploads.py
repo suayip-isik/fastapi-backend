@@ -13,7 +13,7 @@ from app.api.dependencies.infrastructure import get_storage_port
 from app.core.exceptions import FileTooLargeError, InvalidFileTypeError
 from app.core.permissions import Permission
 from app.db.models.role import Role, RolePermission
-from app.db.models.user import AccountType, User
+from app.db.models.user import SurfaceType, User
 from app.main import app
 
 if TYPE_CHECKING:
@@ -53,7 +53,7 @@ async def _promote_to_admin(db_session: AsyncSession, email: str) -> None:
     await db_session.execute(
         sa_update(User)
         .where(User.email == email)
-        .values(role_id=admin_role_id, account_type=AccountType.ADMIN.value)
+        .values(role_id=admin_role_id, surface=SurfaceType.ADMIN.value)
     )
     await db_session.commit()
     db_session.expire_all()
@@ -244,7 +244,7 @@ async def test_delete_file_as_admin(client: AsyncClient, db_session: AsyncSessio
 async def test_delete_file_with_custom_admin_access_role(
     client: AsyncClient, db_session: AsyncSession
 ):
-    """Admin account_type + admin:panel_access taşıyan özel rol de başkasının dosyasını silebilmeli."""
+    """Admin surface + admin:panel_access taşıyan özel rol de başkasının dosyasını silebilmeli."""
     email = "custom_admin_access_del@example.com"
     headers = await _auth_headers(client, email)
     await _promote_to_admin(db_session, email)

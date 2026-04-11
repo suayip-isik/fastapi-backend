@@ -13,7 +13,7 @@ from app.admin.auth import AdminAuthBackend, AdminAuthUseCase
 from app.core.exceptions import InvalidTokenError
 from app.core.permissions import Permission
 from app.core.security import TokenType
-from app.db.models.user import AccountType
+from app.db.models.user import SurfaceType
 
 
 class _DummyRequest:
@@ -27,13 +27,11 @@ class _DummyRequest:
         return self._form_data
 
 
-def _user(
-    *, account_type: AccountType = AccountType.ADMIN, is_active: bool = True
-) -> SimpleNamespace:
+def _user(*, surface: SurfaceType = SurfaceType.ADMIN, is_active: bool = True) -> SimpleNamespace:
     return SimpleNamespace(
         id=uuid4(),
         hashed_password="hashed",
-        account_type=account_type.value,
+        surface=surface.value,
         is_active=is_active,
         session_revoked_after=None,
     )
@@ -72,8 +70,8 @@ async def test_login_succeeds_for_admin_account_with_panel_permission() -> None:
 
 
 @pytest.mark.asyncio
-async def test_login_rejects_client_account_type() -> None:
-    user = _user(account_type=AccountType.CLIENT)
+async def test_login_rejects_client_surface() -> None:
+    user = _user(surface=SurfaceType.CLIENT)
     request = _DummyRequest(
         session={},
         form_data={"username": "client@example.com", "password": "StrongPass1"},
@@ -149,8 +147,8 @@ async def test_authenticate_accepts_admin_account_with_panel_permission() -> Non
 
 
 @pytest.mark.asyncio
-async def test_authenticate_rejects_client_account_type() -> None:
-    user = _user(account_type=AccountType.CLIENT)
+async def test_authenticate_rejects_client_surface() -> None:
+    user = _user(surface=SurfaceType.CLIENT)
     request = _DummyRequest(session={"admin_token": "token-123"})
     payload = SimpleNamespace(
         sub=str(user.id),

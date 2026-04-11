@@ -20,7 +20,7 @@ from app.core.security import (
     is_token_revoked_after,
     verify_password,
 )
-from app.db.models.user import AccountType, User
+from app.db.models.user import SurfaceType, User
 from app.db.repositories.user import UserRepository
 from app.db.session_provider import AsyncSessionFactoryProtocol, get_default_session_factory
 from app.services._keys import BLACKLIST_KEY
@@ -93,7 +93,7 @@ class AdminAuthUseCase:
             if not verify_password(password, user.hashed_password):
                 return None
 
-            if user.account_type != AccountType.ADMIN.value:
+            if user.surface != SurfaceType.ADMIN.value:
                 return None
 
             user_perms = await self._permission_provider.get_permissions(user.id)
@@ -122,7 +122,7 @@ class AdminAuthUseCase:
             if is_token_revoked_after(payload.iat, user.session_revoked_after):
                 return False
 
-            if user.account_type != AccountType.ADMIN.value:
+            if user.surface != SurfaceType.ADMIN.value:
                 return False
 
             user_perms = await self._permission_provider.get_permissions(user.id)

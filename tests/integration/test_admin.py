@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy import update as sa_update
 
 from app.db.models.role import Role
-from app.db.models.user import AccountType, User
+from app.db.models.user import SurfaceType, User
 
 
 class TestAdminPanelAccessControl:
@@ -76,7 +76,7 @@ class TestAdminPanelAccessControl:
         self,
         client: AsyncClient,
     ) -> None:
-        """Gerçek client account_type kullanıcısı admin panel oturumu açamamalı."""
+        """Gerçek client surface kullanıcısı admin panel oturumu açamamalı."""
         await client.post(
             "/api/v1/client/auth/register",
             json={"email": "panel-client@example.com", "password": "StrongPass1"},
@@ -95,7 +95,7 @@ class TestAdminPanelAccessControl:
         client: AsyncClient,
         db_session,
     ) -> None:
-        """Admin account_type + admin role kullanıcısı panel giriş yapabilmeli."""
+        """Admin surface + admin role kullanıcısı panel giriş yapabilmeli."""
         email = "panel-admin@example.com"
         password = "StrongPass1"
         await client.post(
@@ -107,7 +107,7 @@ class TestAdminPanelAccessControl:
         await db_session.execute(
             sa_update(User)
             .where(User.email == email)
-            .values(role_id=admin_role_id, account_type=AccountType.ADMIN.value)
+            .values(role_id=admin_role_id, surface=SurfaceType.ADMIN.value)
         )
         await db_session.commit()
 

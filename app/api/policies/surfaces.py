@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from app.api.surfaces import Surface
-from app.db.models.user import AccountType
+from app.db.models.user import SurfaceType
 
 
-def can_access_surface(account_type: str, surface: Surface) -> bool:
-    """Belirli account_type verilen surface'e erişebilir mi?"""
-    if surface is Surface.SHARED:
+def can_access_surface(user_surface: str, target_surface: Surface) -> bool:
+    """Belirli user surface verilen API surface'ine erişebilir mi?"""
+    if target_surface is Surface.SHARED:
         return True
-    if surface is Surface.ADMIN:
-        return account_type == AccountType.ADMIN.value
-    return account_type == AccountType.CLIENT.value
+    if target_surface is Surface.ADMIN:
+        return user_surface == SurfaceType.ADMIN.value
+    return user_surface == SurfaceType.CLIENT.value

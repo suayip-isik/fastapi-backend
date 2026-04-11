@@ -10,7 +10,7 @@ from sqlalchemy import update as sa_update
 
 from app.core.permissions import Permission
 from app.db.models.role import Role, RolePermission
-from app.db.models.user import AccountType, User
+from app.db.models.user import SurfaceType, User
 
 if TYPE_CHECKING:
     from httpx import AsyncClient
@@ -51,7 +51,7 @@ async def _promote_to_admin(db_session: AsyncSession, email: str) -> None:
     await db_session.execute(
         sa_update(User)
         .where(User.email == email)
-        .values(role_id=admin_role_id, account_type=AccountType.ADMIN.value)
+        .values(role_id=admin_role_id, surface=SurfaceType.ADMIN.value)
     )
     await db_session.commit()
     db_session.expire_all()
@@ -271,14 +271,14 @@ async def test_create_admin_user_as_authorized_admin(
     assert res.status_code == 201
     data = res.json()
     assert data["email"] == "new_admin@example.com"
-    assert data["account_type"] == AccountType.ADMIN.value
+    assert data["surface"] == SurfaceType.ADMIN.value
     assert data["is_verified"] is False
     mock_enqueue.assert_called_once()
 
     created = await db_session.execute(select(User).where(User.email == "new_admin@example.com"))
     user = created.scalar_one()
     assert user.hashed_password is None
-    assert user.account_type == AccountType.ADMIN.value
+    assert user.surface == SurfaceType.ADMIN.value
 
 
 @pytest.mark.asyncio
@@ -305,7 +305,7 @@ async def test_create_admin_user_requires_create_permission(
     client: AsyncClient,
     db_session: AsyncSession,
 ):
-    """Create_admin yetkisi olmayan admin account_type kullanıcı admin create edememeli."""
+    """Create_admin yetkisi olmayan admin surface kullanıcı admin create edememeli."""
     email = "moderator_admin@example.com"
     headers = await _auth_headers(client, email)
 
@@ -314,7 +314,7 @@ async def test_create_admin_user_requires_create_permission(
     await db_session.execute(
         sa_update(User)
         .where(User.email == email)
-        .values(role_id=moderator_role_id, account_type=AccountType.ADMIN.value)
+        .values(role_id=moderator_role_id, surface=SurfaceType.ADMIN.value)
     )
     await db_session.commit()
     db_session.expire_all()

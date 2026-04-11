@@ -10,7 +10,7 @@ from sqlalchemy import update as sa_update
 
 from app.db.models.api_key import APIKey
 from app.db.models.role import Role
-from app.db.models.user import AccountType, User
+from app.db.models.user import SurfaceType, User
 from app.services._keys import LOGIN_PARTIAL_KEY
 from app.tasks.worker import send_admin_password_reset_email, send_password_reset_email
 
@@ -114,7 +114,7 @@ async def test_admin_user_cannot_use_client_login(
     client: AsyncClient,
     db_session: AsyncSession,
 ):
-    """Admin account_type kullanıcı client login yüzeyinden token alamamalı."""
+    """Admin surface kullanıcı client login yüzeyinden token alamamalı."""
     email = "admin_surface_block@example.com"
     password = "StrongPass1"
 
@@ -128,7 +128,7 @@ async def test_admin_user_cannot_use_client_login(
     await db_session.execute(
         sa_update(User)
         .where(User.email == email)
-        .values(role_id=admin_role_id, account_type=AccountType.ADMIN.value)
+        .values(role_id=admin_role_id, surface=SurfaceType.ADMIN.value)
     )
     await db_session.commit()
 
@@ -144,7 +144,7 @@ async def test_admin_user_can_use_admin_login(
     client: AsyncClient,
     db_session: AsyncSession,
 ):
-    """Admin account_type kullanıcı admin login yüzeyinden token alabilmeli."""
+    """Admin surface kullanıcı admin login yüzeyinden token alabilmeli."""
     email = "admin_surface_ok@example.com"
     password = "StrongPass1"
 
@@ -158,7 +158,7 @@ async def test_admin_user_can_use_admin_login(
     await db_session.execute(
         sa_update(User)
         .where(User.email == email)
-        .values(role_id=admin_role_id, account_type=AccountType.ADMIN.value)
+        .values(role_id=admin_role_id, surface=SurfaceType.ADMIN.value)
     )
     await db_session.commit()
 
@@ -334,7 +334,7 @@ async def test_forgot_password_existing_admin_uses_admin_email_task(
     await db_session.execute(
         sa_update(User)
         .where(User.email == email)
-        .values(role_id=admin_role_id, account_type=AccountType.ADMIN.value)
+        .values(role_id=admin_role_id, surface=SurfaceType.ADMIN.value)
     )
     await db_session.commit()
     mock_enqueue.reset_mock()
@@ -402,7 +402,7 @@ async def test_reset_password_marks_invited_admin_verified(
     await db_session.execute(
         sa_update(User)
         .where(User.email == creator_email)
-        .values(role_id=admin_role_id, account_type=AccountType.ADMIN.value)
+        .values(role_id=admin_role_id, surface=SurfaceType.ADMIN.value)
     )
     await db_session.commit()
     admin_headers = {"Authorization": f"Bearer {headers['access_token']}"}
@@ -443,7 +443,7 @@ async def test_shared_reset_accepts_admin_token(
     await db_session.execute(
         sa_update(User)
         .where(User.email == creator_email)
-        .values(role_id=admin_role_id, account_type=AccountType.ADMIN.value)
+        .values(role_id=admin_role_id, surface=SurfaceType.ADMIN.value)
     )
     await db_session.commit()
     admin_headers = {"Authorization": f"Bearer {headers['access_token']}"}
@@ -614,7 +614,7 @@ async def test_admin_reset_revokes_existing_sessions_and_api_keys(
     await db_session.execute(
         sa_update(User)
         .where(User.email == email)
-        .values(role_id=admin_role_id, account_type=AccountType.ADMIN.value)
+        .values(role_id=admin_role_id, surface=SurfaceType.ADMIN.value)
     )
     await db_session.commit()
 

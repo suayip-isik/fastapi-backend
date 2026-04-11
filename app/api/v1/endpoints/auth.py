@@ -24,7 +24,7 @@ from app.core.config import settings
 from app.core.cookies import clear_auth_cookies, set_auth_cookies
 from app.core.i18n import t
 from app.core.limiter import limiter
-from app.db.models.user import AccountType, User
+from app.db.models.user import SurfaceType, User
 from app.db.session import get_db
 from app.schemas.auth import (
     ForgotPasswordRequest,
@@ -158,7 +158,7 @@ async def login(
             -d '{"email": "user@example.com", "password": "Secure123!"}'
         ```
     """
-    result = await service.login(data.email, data.password, account_type=AccountType.CLIENT)
+    result = await service.login(data.email, data.password, surface=SurfaceType.CLIENT)
 
     # TOTP aktif değilse cookie set et
     if isinstance(result, TokenResponse):
@@ -177,7 +177,7 @@ async def admin_login(
     request: Request, response: Response, data: LoginRequest, service: AuthServiceDep
 ) -> TokenResponse | PartialAuthResponse:
     """Admin kullanıcı için token tabanlı giriş."""
-    result = await service.login(data.email, data.password, account_type=AccountType.ADMIN)
+    result = await service.login(data.email, data.password, surface=SurfaceType.ADMIN)
     if isinstance(result, TokenResponse):
         set_auth_cookies(response, result.access_token, result.refresh_token)
     return result

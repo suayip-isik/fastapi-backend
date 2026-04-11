@@ -30,7 +30,7 @@ from app.core.exceptions import (
 from app.core.logging import get_logger
 from app.core.permissions import Permission
 from app.core.security import TokenType, decode_token, is_token_revoked_after
-from app.db.models.user import AccountType, User
+from app.db.models.user import SurfaceType, User
 from app.db.repositories.user import UserRepository
 from app.db.session import get_db
 from app.db.session_provider import get_default_session_factory
@@ -213,15 +213,15 @@ async def get_effective_permissions(
     return user_perms
 
 
-def require_account_type(*allowed: AccountType) -> Any:
-    """Belirli account_type değerlerinden birini zorunlu kılar."""
+def require_surface(*allowed: SurfaceType) -> Any:
+    """Belirli surface değerlerinden birini zorunlu kılar."""
 
-    allowed_values = {account_type.value for account_type in allowed}
+    allowed_values = {surface.value for surface in allowed}
 
     async def check(
         auth: Annotated[AuthContext, Depends(get_current_active_auth)],
     ) -> User:
-        if auth.user.account_type not in allowed_values:
+        if auth.user.surface not in allowed_values:
             raise InsufficientPermissionsError("Bu kullanıcı türü bu kaynağa erişemez.")
         return auth.user
 
@@ -243,7 +243,7 @@ def require_surface_access(surface: Surface) -> Any:
     async def check(
         auth: Annotated[AuthContext, Depends(get_current_active_auth)],
     ) -> User:
-        ensure_surface_access(auth.user.account_type, surface)
+        ensure_surface_access(auth.user.surface, surface)
         return auth.user
 
     return check

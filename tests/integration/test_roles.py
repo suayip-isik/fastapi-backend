@@ -11,7 +11,7 @@ from sqlalchemy import update as sa_update
 from app.api.dependencies.auth import get_user_permissions
 from app.core.permissions import Permission
 from app.db.models.role import Role
-from app.db.models.user import AccountType, User
+from app.db.models.user import SurfaceType, User
 
 if TYPE_CHECKING:
     from httpx import AsyncClient
@@ -43,7 +43,7 @@ async def _promote_to_admin(db_session: AsyncSession, email: str) -> None:
     await db_session.execute(
         sa_update(User)
         .where(User.email == email)
-        .values(role_id=admin_role_id, account_type=AccountType.ADMIN.value)
+        .values(role_id=admin_role_id, surface=SurfaceType.ADMIN.value)
     )
     await db_session.commit()
     db_session.expire_all()

@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy import update as sa_update
 
 from app.db.models.role import Role
-from app.db.models.user import AccountType, User
+from app.db.models.user import SurfaceType, User
 
 if TYPE_CHECKING:
     from httpx import AsyncClient
@@ -22,7 +22,7 @@ async def _promote_to_admin(db_session: AsyncSession, email: str) -> None:
     await db_session.execute(
         sa_update(User)
         .where(User.email == email)
-        .values(role_id=admin_role_id, account_type=AccountType.ADMIN.value)
+        .values(role_id=admin_role_id, surface=SurfaceType.ADMIN.value)
     )
     await db_session.commit()
     db_session.expire_all()
@@ -132,7 +132,7 @@ async def test_admin_token_from_admin_login_can_access_admin_and_shared(
     users_res = await client.get("/api/v1/admin/users", headers=headers)
 
     assert me_res.status_code == 200
-    assert me_res.json()["account_type"] == AccountType.ADMIN.value
+    assert me_res.json()["surface"] == SurfaceType.ADMIN.value
     assert users_res.status_code == 200
 
 
@@ -154,4 +154,4 @@ async def test_client_token_cannot_access_admin_surface(client: AsyncClient) -> 
 
     assert admin_res.status_code == 403
     assert shared_res.status_code == 200
-    assert shared_res.json()["account_type"] == AccountType.CLIENT.value
+    assert shared_res.json()["surface"] == SurfaceType.CLIENT.value

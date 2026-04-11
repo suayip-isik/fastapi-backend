@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 from app.core.permissions import USER_PERMISSIONS
 from app.db.models.role import Role, RolePermission
-from app.db.models.user import AccountType, User
+from app.db.models.user import SurfaceType, User
 from app.db.repositories.base import SoftDeleteRepository
 
 
@@ -100,7 +100,7 @@ class UserRepository(SoftDeleteRepository[User]):
         self,
         email: str,
         *,
-        account_type: AccountType | None = None,
+        surface: SurfaceType | None = None,
     ) -> User | None:
         """Aktif kullanıcıyı email adresine göre getirir.
 
@@ -124,8 +124,8 @@ class UserRepository(SoftDeleteRepository[User]):
             User.is_active.is_(True),
             User.deleted_at.is_(None),
         )
-        if account_type is not None:
-            stmt = stmt.where(User.account_type == account_type.value)
+        if surface is not None:
+            stmt = stmt.where(User.surface == surface.value)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 

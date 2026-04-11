@@ -44,9 +44,9 @@ Follow the layered architecture defined in `CLAUDE.md`:
 - Test coverage must remain ≥ 80%
 - No direct SQLAlchemy calls from services or endpoints — use repositories
 - No business logic in endpoints — delegate to services
-- Policy-first authorization: inline `account_type` / permission kombinasyonları yazmak yerine ortak policy/dependency helper'ları kullan
+- Policy-first authorization: inline `surface` / permission kombinasyonları yazmak yerine ortak policy/dependency helper'ları kullan
 - Global `AsyncSessionFactory` import'u service/policy katmanına sızdırma; request dışı DB erişimini provider/gateway arkasına al
-- Admin-only erişim yalnız permission ile değil, `account_type=admin` kuralıyla da korunmalı
+- Admin-only erişim yalnız permission ile değil, `surface=admin` kuralıyla da korunmalı
 - Security-sensitive failure'larda varsayılan davranış `deny`; side-effect servislerinde `log + degrade`
 - Legacy route eklenmez; yalnız canonical `client/admin/shared` path'leri kullanılır
 

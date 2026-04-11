@@ -33,7 +33,7 @@ FastAPI tabanlı, production kullanımına hazır bir backend boilerplate. Katma
 ### 👨‍💼 Admin Panel
 
 - **SQLAdmin** entegrasyonu ile görsel veritabanı yönetimi
-- **Role-Based Access**: Yalnızca `account_type=admin` ve `admin:panel_access` taşıyan hesaplar erişebilir
+- **Role-Based Access**: Yalnızca `surface=admin` ve `admin:panel_access` taşıyan hesaplar erişebilir
 - **JWT Authentication**: Admin panel için ayrı authentication backend
 - **Admin Invite Flow**: Yetkili admin kullanıcı yeni admin hesap açar, kullanıcı şifresini e-posta linki ile belirler
 - **Model Yönetimi**: User, Role, AuditLog modelleri
@@ -584,7 +584,7 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 | DELETE | `/admin/users/{user_id}`               | Kullanıcıyı soft-delete et                          | Admin |
 | POST   | `/admin/users/{user_id}/restore`       | Soft-delete kullanıcıyı geri al                     | Admin |
 
-> `POST /admin/users` yalnızca `account_type=admin` kullanıcı üretir. Client kullanıcı oluşturma desteklenmez; client hesaplar sadece `/client/auth/register` üzerinden kendilerini kaydeder.
+> `POST /admin/users` yalnızca `surface=admin` kullanıcı üretir. Client kullanıcı oluşturma desteklenmez; client hesaplar sadece `/client/auth/register` üzerinden kendilerini kaydeder.
 
 > Admin kullanıcı oluşturma ve davet yeniden gönderme için ek permission gerekir: `users:create_admin`. Atanacak rolün ayrıca `admin:panel_access` taşıması zorunludur.
 
@@ -678,7 +678,7 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 
 **Adres:** http://localhost:8000/admin
 
-Yalnızca `account_type=admin` olan ve `admin:panel_access` yetkisine sahip kullanıcılar giriş yapabilir. Giriş bilgileri mevcut hesapla (e-posta + şifre) aynıdır; fakat client kullanıcılar admin panele giriş yapamaz.
+Yalnızca `surface=admin` olan ve `admin:panel_access` yetkisine sahip kullanıcılar giriş yapabilir. Giriş bilgileri mevcut hesapla (e-posta + şifre) aynıdır; fakat client kullanıcılar admin panele giriş yapamaz.
 
 Yeni admin kullanıcı oluşturma akışı API-first çalışır:
 
@@ -690,7 +690,7 @@ Yeni admin kullanıcı oluşturma akışı API-first çalışır:
 Authorization kararları policy-first yaklaşımıyla uygulanır:
 
 - surface erişimi (`client`, `admin`, `shared`)
-- actor type (`account_type`)
+- actor type (`surface`)
 - panel access (`admin:panel_access`)
 - resource permission seti
 

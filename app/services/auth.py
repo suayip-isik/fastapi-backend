@@ -30,7 +30,7 @@ from app.core.security import (
     verify_password,
 )
 from app.db.models.audit_log import AuditAction
-from app.db.models.user import AccountType, User
+from app.db.models.user import SurfaceType, User
 from app.db.repositories.user import UserRepository
 from app.schemas.auth import PartialAuthResponse, RegisterRequest, TokenResponse
 from app.services._keys import BLACKLIST_KEY, EMAIL_VERIFY_KEY, LOGIN_PARTIAL_KEY
@@ -176,7 +176,7 @@ class AuthService(AuditableMixin):
         email: str,
         password: str,
         *,
-        account_type: AccountType = AccountType.CLIENT,
+        surface: SurfaceType = SurfaceType.CLIENT,
     ) -> TokenResponse | PartialAuthResponse:
         """Email ve şifre ile kullanıcı girişinin birinci adımı.
 
@@ -193,7 +193,7 @@ class AuthService(AuditableMixin):
         Note:
             - Timing attack'lardan korunmak için hata mesajları generic tutulur
         """
-        user = await self._repo.get_active_by_email(email, account_type=account_type)
+        user = await self._repo.get_active_by_email(email, surface=surface)
         if not user or not user.hashed_password:
             await self._audit_log(AuditAction.LOGIN_FAILED, extra={"email": email})
             raise AuthenticationError(t("error.auth.invalid_credentials"))

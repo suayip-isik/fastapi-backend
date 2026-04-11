@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from app.db.models.role import Role
 
 
-class AccountType(StrEnum):
+class SurfaceType(StrEnum):
     """Kullanıcının erişebileceği uygulama yüzeyi."""
 
     CLIENT = "client"
@@ -61,9 +61,9 @@ class User(SoftDeleteMixin, BaseModel):
     hashed_password: Mapped[str | None] = mapped_column(Text, nullable=True)
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    account_type: Mapped[str] = mapped_column(
+    surface: Mapped[str] = mapped_column(
         String(20),
-        default=AccountType.CLIENT.value,
+        default=SurfaceType.CLIENT.value,
         nullable=False,
         index=True,
     )

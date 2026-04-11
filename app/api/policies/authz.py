@@ -13,9 +13,9 @@ if TYPE_CHECKING:
     from app.core.permissions import Permission
 
 
-def ensure_surface_access(account_type: str, surface: Surface) -> None:
+def ensure_surface_access(user_surface: str, target_surface: Surface) -> None:
     """Surface erişimi yoksa exception fırlat."""
-    if not can_access_surface(account_type, surface):
+    if not can_access_surface(user_surface, target_surface):
         raise InsufficientPermissionsError("Bu kullanıcı türü bu kaynağa erişemez.")
 
 

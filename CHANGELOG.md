@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `account_type` tabanlı actor ayrımı (`client`, `admin`)
+- `surface` tabanlı actor ayrımı (`client`, `admin`)
 - Canonical API surface modeli:
   - `/api/v1/client/*`
   - `/api/v1/admin/*`
@@ -35,13 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Web ve mobil istemciler artık tek `client` surface üzerinden çalışır
-- Admin panel ve admin API erişimi yalnız `account_type=admin` kullanıcılar için geçerlidir
+- Admin panel ve admin API erişimi yalnız `surface=admin` kullanıcılar için geçerlidir
 - SQLAdmin auth artık `admin:panel_access` gerektirir; `admin:access` compatibility fallback'i kaldırıldı
 - Client kullanıcı oluşturma artık yalnız self-register akışıyla yapılır: `/api/v1/client/auth/register`
 - Admin kullanıcı oluşturma yalnız admin surface altında yapılır ve şifre doğrudan atanmaz
 - Admin davet e-postası mevcut `reset-password` ekranını yeniden kullanır
 - Davet edilen admin kullanıcı ilk şifresini kurduğunda `is_verified=true` olur
-- Shared upload “delete any file” yetkisi artık `account_type=admin` + `admin:panel_access` gerektirir
+- Shared upload “delete any file” yetkisi artık `surface=admin` + `admin:panel_access` gerektirir
 - Admin auth, permission çözümleme ve audit servisleri daha düşük coupling ile injectable provider/gateway sınırlarına taşındı
 - Email/worker/websocket exception boundary'leri daraltıldı
 - Dokümantasyon canonical surface modeliyle eşitlendi

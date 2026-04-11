@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import update as sa_update
 
 from app.db.models.role import Role
-from app.db.models.user import AccountType, User
+from app.db.models.user import SurfaceType, User
 
 if TYPE_CHECKING:
     from httpx import AsyncClient
@@ -56,7 +56,7 @@ async def test_full_user_management_journey(client: AsyncClient, db_session: Asy
     await db_session.execute(
         sa_update(User)
         .where(User.email == admin_email)
-        .values(role_id=admin_role_id, account_type=AccountType.ADMIN.value)
+        .values(role_id=admin_role_id, surface=SurfaceType.ADMIN.value)
     )
     await db_session.commit()
     db_session.expire_all()

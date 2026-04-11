@@ -20,7 +20,7 @@ from app.core.exceptions import AuthenticationError, InvalidTokenError, NotFound
 from app.core.i18n import language_var, t
 from app.core.security import hash_password, verify_password
 from app.db.models.audit_log import AuditAction
-from app.db.models.user import AccountType
+from app.db.models.user import SurfaceType
 from app.db.repositories.user import UserRepository
 from app.services._keys import EMAIL_VERIFY_KEY, PASSWORD_RESET_KEY
 from app.services.api_key import APIKeyService
@@ -100,20 +100,20 @@ class AccountService(AuditableMixin):
         if not user or not user.hashed_password:
             return  # Şifresi olmayan ya da var olmayan e-posta — user enumeration yok
 
-        account_type = AccountType(user.account_type)
+        surface = SurfaceType(user.surface)
         token = secrets.token_urlsafe(32)
         await self._redis.setex(
             PASSWORD_RESET_KEY.format(token), settings.PASSWORD_RESET_TTL, str(user.id)
         )
         await self._task_queue.enqueue(
-            self._get_password_reset_task(account_type),
+            self._get_password_reset_task(surface),
             user.email,
             token,
             language_var.get(),
         )
 
         await self._audit_log(
-            self._get_password_reset_requested_action(account_type),
+            self._get_password_reset_requested_action(surface),
             user_id=user.id,
         )
 
@@ -133,13 +133,13 @@ class AccountService(AuditableMixin):
 
         await self._redis.delete(PASSWORD_RESET_KEY.format(token))
 
-        account_type = AccountType(user.account_type)
+        surface = SurfaceType(user.surface)
         revoked_after = datetime.now(UTC)
         update_data: dict[str, object] = {
             "hashed_password": hash_password(new_password),
             "session_revoked_after": revoked_after,
         }
-        if user.account_type == AccountType.ADMIN.value and not user.is_verified:
+        if user.surface == SurfaceType.ADMIN.value and not user.is_verified:
             update_data["is_verified"] = True
 
         await self._repo.update(user.id, **update_data)
@@ -147,20 +147,20 @@ class AccountService(AuditableMixin):
             user.id,
             reason="password_reset",
         )
-        await self._audit_log(self._get_password_reset_action(account_type), user_id=user.id)
+        await self._audit_log(self._get_password_reset_action(surface), user_id=user.id)
 
-    def _get_password_reset_task(self, account_type: AccountType):
-        if account_type is AccountType.ADMIN:
+    def _get_password_reset_task(self, surface: SurfaceType):
+        if surface is SurfaceType.ADMIN:
             return send_admin_password_reset_email
         return send_password_reset_email
 
-    def _get_password_reset_requested_action(self, account_type: AccountType) -> AuditAction:
-        if account_type is AccountType.ADMIN:
+    def _get_password_reset_requested_action(self, surface: SurfaceType) -> AuditAction:
+        if surface is SurfaceType.ADMIN:
             return AuditAction.ADMIN_PASSWORD_RESET_REQUESTED
         return AuditAction.PASSWORD_RESET_REQUESTED
 
-    def _get_password_reset_action(self, account_type: AccountType) -> AuditAction:
-        if account_type is AccountType.ADMIN:
+    def _get_password_reset_action(self, surface: SurfaceType) -> AuditAction:
+        if surface is SurfaceType.ADMIN:
             return AuditAction.ADMIN_PASSWORD_RESET
         return AuditAction.PASSWORD_RESET
 

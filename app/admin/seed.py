@@ -15,7 +15,7 @@ from app.core.permissions import (
 )
 from app.core.security import hash_password
 from app.db.models.role import Role, RolePermission
-from app.db.models.user import AccountType, User
+from app.db.models.user import SurfaceType, User
 from app.db.repositories.user import UserRepository
 from app.db.session_provider import get_default_session_factory
 
@@ -113,7 +113,7 @@ async def create_default_admin() -> None:
             email=settings.ADMIN_EMAIL.lower(),
             hashed_password=hash_password(settings.ADMIN_PASSWORD),
             full_name="Admin",
-            account_type=AccountType.ADMIN.value,
+            surface=SurfaceType.ADMIN.value,
             role_id=admin_role.id,
             is_active=True,
             is_verified=True,

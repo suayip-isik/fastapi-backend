@@ -140,7 +140,7 @@ async def delete_file(
     is_owner = key.startswith(f"users/{current_user.user.id!s}/")
     effective_perms = await get_effective_permissions(current_user)
     can_delete_any = can_delete_any_uploaded_file(
-        current_user.user.account_type,
+        current_user.user.surface,
         effective_perms,
     )
 
