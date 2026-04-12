@@ -18,6 +18,8 @@ from sqlalchemy import and_, delete, func, or_, select, update
 
 from app.db.models.base import BaseModel, SoftDeleteMixin
 
+_MAX_PAGE_SIZE: int = 200
+
 if TYPE_CHECKING:
     from uuid import UUID
 
@@ -122,7 +124,8 @@ class BaseRepository(Generic[ModelType], ABC):
             >>> users = await repo.get_all(offset=0, limit=10)
             >>> users = await repo.get_all(order_by=User.created_at.desc())
         """
-        query = select(self.model).offset(offset).limit(limit)
+        clamped_limit = min(limit, _MAX_PAGE_SIZE)
+        query = select(self.model).offset(offset).limit(clamped_limit)
         if order_by is not None:
             query = query.order_by(order_by)
         result = await self._session.execute(query)
@@ -150,8 +153,9 @@ class BaseRepository(Generic[ModelType], ABC):
             >>> items, total = await repo.get_page(offset=0, limit=10)
             >>> print(f"Gösterilen: {len(items)}, Toplam: {total}")
         """
+        clamped_limit = min(limit, _MAX_PAGE_SIZE)
         count_col = func.count().over().label("_total")
-        stmt = select(self.model, count_col).offset(offset).limit(limit)
+        stmt = select(self.model, count_col).offset(offset).limit(clamped_limit)
         rows = (await self._session.execute(stmt)).all()
         items = [row[0] for row in rows]
         total = rows[0][1] if rows else 0

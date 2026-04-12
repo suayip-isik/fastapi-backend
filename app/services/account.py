@@ -45,6 +45,22 @@ if TYPE_CHECKING:
     from app.services.audit import AuditService
 
 
+_PASSWORD_RESET_TASK_MAP: dict[SurfaceType, Callable[..., Any]] = {
+    SurfaceType.ADMIN: send_admin_password_reset_email,
+    SurfaceType.CLIENT: send_password_reset_email,
+}
+
+_PASSWORD_RESET_REQUESTED_ACTION_MAP: dict[SurfaceType, AuditAction] = {
+    SurfaceType.ADMIN: AuditAction.ADMIN_PASSWORD_RESET_REQUESTED,
+    SurfaceType.CLIENT: AuditAction.PASSWORD_RESET_REQUESTED,
+}
+
+_PASSWORD_RESET_ACTION_MAP: dict[SurfaceType, AuditAction] = {
+    SurfaceType.ADMIN: AuditAction.ADMIN_PASSWORD_RESET,
+    SurfaceType.CLIENT: AuditAction.PASSWORD_RESET,
+}
+
+
 class AccountService(AuditableMixin):
     """Hesap yonetimi (email verify, sifre reset, profil islemleri) servisidir."""
 
@@ -202,19 +218,28 @@ class AccountService(AuditableMixin):
     def _get_password_reset_task(
         self, surface: SurfaceType
     ) -> Callable[..., Awaitable[dict[str, Any]]]:
-        if surface is SurfaceType.ADMIN:
-            return send_admin_password_reset_email
-        return send_password_reset_email
+        task = _PASSWORD_RESET_TASK_MAP.get(surface)
+        if task is None:
+            from app.core.exceptions import BusinessRuleError
+
+            raise BusinessRuleError(f"Desteklenmeyen surface türü: {surface!r}")
+        return task
 
     def _get_password_reset_requested_action(self, surface: SurfaceType) -> AuditAction:
-        if surface is SurfaceType.ADMIN:
-            return AuditAction.ADMIN_PASSWORD_RESET_REQUESTED
-        return AuditAction.PASSWORD_RESET_REQUESTED
+        action = _PASSWORD_RESET_REQUESTED_ACTION_MAP.get(surface)
+        if action is None:
+            from app.core.exceptions import BusinessRuleError
+
+            raise BusinessRuleError(f"Desteklenmeyen surface türü: {surface!r}")
+        return action
 
     def _get_password_reset_action(self, surface: SurfaceType) -> AuditAction:
-        if surface is SurfaceType.ADMIN:
-            return AuditAction.ADMIN_PASSWORD_RESET
-        return AuditAction.PASSWORD_RESET
+        action = _PASSWORD_RESET_ACTION_MAP.get(surface)
+        if action is None:
+            from app.core.exceptions import BusinessRuleError
+
+            raise BusinessRuleError(f"Desteklenmeyen surface türü: {surface!r}")
+        return action
 
     # ── Profile Management ─────────────────────────────────────────────────────
 

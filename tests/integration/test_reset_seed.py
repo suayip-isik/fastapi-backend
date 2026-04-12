@@ -39,9 +39,13 @@ async def test_reset_system_state_hard_deletes_existing_users_roles_and_reseeds(
     await db_session.commit()
 
     test_database_url = settings.DATABASE_URL.replace(f"/{settings.POSTGRES_DB}", "/test_db")
-    with patch(
-        "scripts.reset_system_state.create_async_engine",
-        side_effect=lambda _: create_async_engine(test_database_url),
+    with (
+        patch(
+            "scripts.reset_system_state.create_async_engine",
+            side_effect=lambda _: create_async_engine(test_database_url),
+        ),
+        patch.object(settings, "SUPERADMIN_PASSWORD", "TestAdminPass1"),
+        patch.object(settings, "DEFAULT_APP_USER_PASSWORD", "TestUserPass1"),
     ):
         await reset_system_state()
 

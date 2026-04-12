@@ -8,7 +8,7 @@ import secrets
 from typing import TYPE_CHECKING
 from urllib.parse import unquote, urlparse
 
-from app.adapters.infrastructure import ARQTaskQueueAdapter, RedisAdapter
+from app.adapters.infrastructure import ARQTaskQueueAdapter
 from app.core.config import settings
 from app.core.exceptions import (
     AlreadyExistsError,
@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 
     from app.db.models.role import Role
     from app.db.models.user import User
-    from app.ports.infrastructure import RedisPort, StoragePort, TaskQueuePort
+    from app.ports.infrastructure import StoragePort, TaskQueuePort
     from app.schemas.user import (
         AdminChangeUserEmailRequest,
         AdminUpdateUserRequest,
@@ -100,7 +100,6 @@ class UserService(AuditableMixin):
         audit: AuditService | None = None,
         *,
         cache: CacheService | None = None,
-        redis: RedisPort | None = None,
         storage: StoragePort | None = None,
         task_queue: TaskQueuePort | None = None,
     ) -> None:
@@ -114,14 +113,13 @@ class UserService(AuditableMixin):
         self._role_repo = RoleRepository(session)
         self._audit = audit
         self._cache = cache or CacheService()
-        self._redis = redis or RedisAdapter()
         self._storage = storage
         self._task_queue = task_queue or ARQTaskQueueAdapter()
 
     async def _issue_admin_invite(self, user: User) -> None:
         token = secrets.token_urlsafe(32)
-        await self._redis.setex(
-            PASSWORD_RESET_KEY.format(token), settings.PASSWORD_RESET_TTL, str(user.id)
+        await self._cache.set_str(
+            PASSWORD_RESET_KEY.format(token), str(user.id), settings.PASSWORD_RESET_TTL
         )
         await self._task_queue.enqueue(
             send_admin_invite_email,
@@ -150,10 +148,10 @@ class UserService(AuditableMixin):
 
     async def _issue_verification_email(self, user: User, target_email: str) -> str:
         token = secrets.token_urlsafe(32)
-        await self._redis.setex(
+        await self._cache.set_str(
             EMAIL_VERIFY_KEY.format(token),
-            settings.EMAIL_VERIFY_TTL,
             encode_email_verify_value(str(user.id), target_email),
+            settings.EMAIL_VERIFY_TTL,
         )
         await self._task_queue.enqueue(
             send_verification_email,
@@ -698,7 +696,7 @@ class UserService(AuditableMixin):
         return user
 
     async def resend_admin_invite(self, user_id: UUID, *, actor_user_id: UUID) -> User:
-        """Şifresi henüz belirlenmemiş admin kullanıcıya daveti yeniden gönderir."""
+        """Şifresi henüz belirlenmemiş admin panel kullanıcısına daveti yeniden gönderir."""
         user = await self._repo.get_by_id_or_raise(user_id)
         if user.id == actor_user_id:
             await self._audit_user_management_blocked(
@@ -718,11 +716,11 @@ class UserService(AuditableMixin):
             raise InsufficientPermissionsError(t("error.user.protected_admin"))
         if user.surface != SurfaceType.ADMIN.value:
             raise BusinessRuleError(
-                "Yalnızca admin tipindeki kullanıcılar için davet gönderilebilir."
+                "Yalnızca admin_panel tipindeki admin panel kullanıcıları için davet gönderilebilir."
             )
         if user.hashed_password:
             raise BusinessRuleError(
-                "Şifresi belirlenmiş admin kullanıcıya davet yeniden gönderilemez."
+                "Şifresi belirlenmiş admin panel kullanıcısına davet yeniden gönderilemez."
             )
 
         await self._issue_admin_invite(user)

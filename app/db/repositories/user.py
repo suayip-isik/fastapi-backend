@@ -13,7 +13,7 @@ from app.core.permissions import APP_USER_PERMISSIONS
 from app.core.system_roles import APP_USER_ROLE
 from app.db.models.role import Role, RolePermission
 from app.db.models.user import SurfaceType, User
-from app.db.repositories.base import SoftDeleteRepository
+from app.db.repositories.base import _MAX_PAGE_SIZE, SoftDeleteRepository
 
 
 class UserRepository(SoftDeleteRepository[User]):
@@ -232,6 +232,7 @@ class UserRepository(SoftDeleteRepository[User]):
         offset: int = 0,
         limit: int = 20,
     ) -> tuple[list[User], int]:
+        clamped_limit = min(limit, _MAX_PAGE_SIZE)
         count_col = func.count().over().label("_total")
         stmt = (
             select(User, count_col)
@@ -241,7 +242,7 @@ class UserRepository(SoftDeleteRepository[User]):
         stmt = self._apply_filters(
             stmt, q=q, role=role, is_active=is_active, is_verified=is_verified
         )
-        stmt = stmt.offset(offset).limit(limit)
+        stmt = stmt.offset(offset).limit(clamped_limit)
         rows = (await self._session.execute(stmt)).all()
         items = [row[0] for row in rows]
         total = rows[0][1] if rows else 0
@@ -257,6 +258,7 @@ class UserRepository(SoftDeleteRepository[User]):
         offset: int = 0,
         limit: int = 20,
     ) -> tuple[list[User], int]:
+        clamped_limit = min(limit, _MAX_PAGE_SIZE)
         count_col = func.count().over().label("_total")
         stmt = (
             select(User, count_col)
@@ -266,7 +268,7 @@ class UserRepository(SoftDeleteRepository[User]):
         stmt = self._apply_filters(
             stmt, q=q, role=role, is_active=is_active, is_verified=is_verified
         )
-        stmt = stmt.offset(offset).limit(limit)
+        stmt = stmt.offset(offset).limit(clamped_limit)
         rows = (await self._session.execute(stmt)).all()
         items = [row[0] for row in rows]
         total = rows[0][1] if rows else 0

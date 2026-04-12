@@ -68,3 +68,15 @@ class CacheService:
             *keys: Silinecek cache key'leri
         """
         await self._redis.delete(*keys)
+
+    async def set_str(self, key: str, value: str, ttl: int) -> None:
+        """Cache'e ham string değer yazar (JSON encoding olmadan).
+
+        Token, user_id gibi düz string değerleri saklamak için kullanılır.
+
+        Args:
+            key: Cache key
+            value: Saklanacak ham string değer
+            ttl: Time-to-live saniye cinsinden
+        """
+        await self._redis.setex(key, ttl, value)

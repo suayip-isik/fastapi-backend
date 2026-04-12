@@ -34,13 +34,10 @@ if TYPE_CHECKING:
     from app.ports.infrastructure import RedisPort
     from app.services.audit import AuditService
 
-_BACKUP_CODE_COUNT = 8
-_BACKUP_CODE_TTL = 30 * 24 * 60 * 60  # 30 gün
-
 
 def _generate_backup_codes() -> list[str]:
-    """8 adet 8 karakterlik tek kullanımlık backup kodu üret."""
-    return [secrets.token_hex(4).upper() for _ in range(_BACKUP_CODE_COUNT)]
+    """Yapılandırılmış sayıda tek kullanımlık backup kodu üretir."""
+    return [secrets.token_hex(4).upper() for _ in range(settings.TOTP_BACKUP_CODE_COUNT)]
 
 
 class TOTPService(AuditableMixin):
@@ -293,7 +290,7 @@ class TOTPService(AuditableMixin):
         key = TOTP_BACKUP_KEY.format(str(user_id))
         await self._redis.delete(key)
         await self._redis.sadd(key, *codes)
-        await self._redis.expire(key, _BACKUP_CODE_TTL)
+        await self._redis.expire(key, settings.TOTP_BACKUP_CODE_TTL_DAYS * 24 * 60 * 60)
 
         await self._backup_repo.delete_all_for_user(user_id)
         await self._backup_repo.bulk_create(

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from app.schemas.role import AssignRoleRequest, RoleInfo
 
@@ -81,6 +81,17 @@ class UpdateUserRequest(BaseModel):
     username: str | None = Field(default=None, max_length=50)
     password: str | None = Field(default=None, min_length=8, max_length=128)
     current_password: str | None = Field(default=None, min_length=8, max_length=128)
+
+    @field_validator("password", mode="after")
+    @classmethod
+    def _validate_password_strength(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not any(c.isupper() for c in v):
+            raise ValueError("Şifre en az bir büyük harf içermelidir.")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Şifre en az bir rakam içermelidir.")
+        return v
 
     @model_validator(mode="after")
     def validate_email_change_requires_current_password(self) -> UpdateUserRequest:

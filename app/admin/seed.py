@@ -94,6 +94,10 @@ async def seed_system_roles() -> dict[str, Role]:
 
 async def create_default_superadmin() -> None:
     """Varsayılan `panel_admin` kullanıcısını yoksa oluşturur."""
+    if not settings.SUPERADMIN_PASSWORD:
+        logger.warning("superadmin_seed_skipped_no_password")
+        return
+
     from sqlalchemy import select
 
     session_factory = get_default_session_factory()
@@ -135,6 +139,10 @@ async def create_default_superadmin() -> None:
 
 async def create_default_app_user() -> None:
     """Varsayılan `app_user` client kullanıcısını yoksa oluşturur."""
+    if not settings.DEFAULT_APP_USER_PASSWORD:
+        logger.warning("default_app_user_seed_skipped_no_password")
+        return
+
     from sqlalchemy import select
 
     session_factory = get_default_session_factory()

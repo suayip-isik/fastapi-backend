@@ -17,7 +17,6 @@ from app.api.dependencies.auth import (
 )
 from app.api.dependencies.infrastructure import (
     CacheServiceDep,
-    RedisPortDep,
     StoragePortDep,
     TaskQueuePortDep,
 )
@@ -85,12 +84,11 @@ def get_user_service(
     db: Annotated[AsyncSession, Depends(get_db)],
     audit: Annotated[AuditService, Depends(get_audit_service)],
     cache: CacheServiceDep,
-    redis: RedisPortDep,
     storage: StoragePortDep,
     task_queue: TaskQueuePortDep,
 ) -> UserService:
     """UserService dependency factory'si."""
-    return UserService(db, audit, cache=cache, redis=redis, storage=storage, task_queue=task_queue)
+    return UserService(db, audit, cache=cache, storage=storage, task_queue=task_queue)
 
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]

@@ -26,7 +26,7 @@ def _base_settings_kwargs(tmp_path: Path) -> dict[str, object]:
         "APP_VERSION": "1.0.0",
         "APP_URL": "https://api.example.com",
         "FRONTEND_URL": "https://app.example.com",
-        "SECRET_KEY": "super-secret-key",
+        "SECRET_KEY": "super-secret-key-that-is-long-enough-32chars",
         "ALLOWED_HOSTS": ["api.example.com"],
         "CORS_ORIGINS": ["https://app.example.com"],
         "POSTGRES_HOST": "db",

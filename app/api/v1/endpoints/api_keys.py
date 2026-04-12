@@ -14,7 +14,13 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies.auth import CurrentUserDep, require_permissions
+from app.api.dependencies.auth import (
+    CurrentAuthDep,
+    CurrentUserDep,
+    get_effective_permissions,
+    require_permissions,
+)
+from app.api.dependencies.infrastructure import PermissionProviderDep
 from app.api.dependencies.services import AuditServiceDep
 from app.core.config import settings
 from app.core.i18n import t
@@ -137,7 +143,8 @@ async def create_api_key(
     request: Request,
     data: CreateAPIKeyRequest,
     _: _APIKeysCreateDep,
-    current_user: CurrentUserDep,
+    current_auth: CurrentAuthDep,
+    permission_provider: PermissionProviderDep,
     service: APIKeyServiceDep,
 ) -> APIKeyCreatedResponse:
     """Yeni API key oluşturur.
@@ -145,9 +152,13 @@ async def create_api_key(
     Kullanıcı için benzersiz bir API key oluşturur. Ham key değeri
     yalnızca bu yanıtta döner ve bir daha görüntülenemez.
 
+    İstenen scope'lar kullanıcının sahip olduğu izinlerle kesiştirilir;
+    kullanıcının yetkisi olmayan scope'lar sessizce filtrelenir.
+
     Args:
         data: API key oluşturma bilgileri (isim, scope'lar, son kullanma tarihi).
-        current_user: Kimliği doğrulanmış aktif kullanıcı.
+        current_auth: Kimliği doğrulanmış auth context.
+        permission_provider: Permission çözümleme servisi.
         service: API key iş mantığı servisi.
 
     Returns:
@@ -156,10 +167,14 @@ async def create_api_key(
     Raises:
         HTTPException: Kullanıcı kimliği doğrulanamamışsa (401).
     """
+    effective_perms = await get_effective_permissions(current_auth, permission_provider)
+    requested_scopes = [scope.value for scope in data.scopes]
+    allowed_scopes = [s for s in requested_scopes if s in effective_perms]
+
     raw_key, api_key = await service.create(
-        user_id=current_user.id,
+        user_id=current_auth.user.id,
         name=data.name,
-        scopes=[scope.value for scope in data.scopes],
+        scopes=allowed_scopes,
         expires_at=data.expires_at,
     )
     return APIKeyCreatedResponse.from_api_key(raw_key, api_key)

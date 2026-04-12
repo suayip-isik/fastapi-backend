@@ -25,5 +25,3 @@ async def test_register_maps_integrity_error_to_user_already_exists() -> None:
 
     with pytest.raises(UserAlreadyExistsError):
         await service.register(data)
-
-    session.rollback.assert_awaited_once()

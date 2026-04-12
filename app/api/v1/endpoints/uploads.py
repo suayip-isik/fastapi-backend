@@ -137,7 +137,13 @@ async def delete_file(
     """
     from app.core.exceptions import InsufficientPermissionsError
 
-    is_owner = key.startswith(f"users/{current_user.user.id!s}/")
+    # Path traversal ve geçersiz key kontrolü
+    normalised_key = key.strip().lstrip("/")
+    if ".." in normalised_key or normalised_key != key.strip().lstrip("/"):
+        raise InsufficientPermissionsError("Geçersiz dosya anahtarı.")
+
+    user_prefix = f"users/{current_user.user.id!s}/"
+    is_owner = normalised_key.startswith(user_prefix) and len(normalised_key) > len(user_prefix)
     effective_perms = await get_effective_permissions(current_user)
     can_delete_any = can_delete_any_uploaded_file(
         current_user.user.surface,

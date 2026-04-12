@@ -13,6 +13,7 @@ import secrets
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from app.core.config import settings
 from app.core.exceptions import AuthenticationError, NotFoundError
 from app.core.logging import get_logger
 from app.core.security import hash_password, verify_password
@@ -30,13 +31,10 @@ if TYPE_CHECKING:
     from app.db.models.api_key import APIKey
     from app.services.audit import AuditService
 
-_KEY_PREFIX = "sk_live_"
-_KEY_BYTES = 40  # raw random bytes → hex = 80 chars
-
 
 def _generate_raw_key() -> str:
     """Yeni bir ham API key degeri uretir."""
-    return f"{_KEY_PREFIX}{secrets.token_hex(_KEY_BYTES)}"
+    return f"{settings.API_KEY_PREFIX}{secrets.token_hex(settings.API_KEY_BYTES)}"
 
 
 def _split_key(raw_key: str) -> tuple[str, str]:
@@ -192,7 +190,7 @@ class APIKeyService(AuditableMixin):
             ``last_used_at`` güncellemesi başarısız olsa bile
             doğrulama başarılı sayılır (non-blocking).
         """
-        if not raw_key.startswith(_KEY_PREFIX):
+        if not raw_key.startswith(settings.API_KEY_PREFIX):
             _logger.warning(
                 "api_key_invalid_format", prefix=raw_key[:12] if len(raw_key) >= 12 else "short"
             )

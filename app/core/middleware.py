@@ -8,6 +8,7 @@ Custom middleware'ler:
 
 from __future__ import annotations
 
+import re
 import time
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -16,6 +17,11 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 
 from app.core.i18n import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, language_var
 from app.core.logging import get_logger, ip_address_var, request_id_var, user_agent_var
+
+_UUID4_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
 
 if TYPE_CHECKING:
     from starlette.requests import Request
@@ -91,7 +97,8 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         Returns:
             Response: X-Request-ID header'ı eklenmiş HTTP response
         """
-        request_id = request.headers.get("X-Request-ID", str(uuid4()))
+        raw_rid = request.headers.get("X-Request-ID", "")
+        request_id = raw_rid if _UUID4_RE.match(raw_rid) else str(uuid4())
         rid_token = request_id_var.set(request_id)
         ip_token = ip_address_var.set(request.client.host if request.client else "-")
         ua_token = user_agent_var.set(request.headers.get("user-agent", "-"))

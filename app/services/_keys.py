@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import Final
 
+from app.core.config import settings
+
 EMAIL_VERIFY_KEY = "email_verify:{}"
 PASSWORD_RESET_KEY = "password_reset:{}"
 LOGIN_PARTIAL_KEY = "login_partial:{}"  # {token} → user_id str, TTL=LOGIN_PARTIAL_TTL
@@ -16,10 +18,10 @@ TOTP_BACKUP_KEY = "totp_backup:{}"  # {user_id} → set of backup codes
 # Cache
 USER_CACHE_KEY = "user_cache:id:{}"  # {user_id} → UserResponse JSON
 USER_EMAIL_CACHE_KEY = "user_cache:email:{}"  # {email} → UserResponse JSON
-USER_CACHE_TTL = 5 * 60  # 300 saniye
+USER_CACHE_TTL = settings.USER_CACHE_TTL_SECONDS
 
 USER_PERMISSIONS_KEY = "user_permissions:{}"  # {user_id} → permission string listesi JSON
-USER_PERMISSIONS_TTL = 15 * 60  # 900 saniye
+USER_PERMISSIONS_TTL = settings.USER_PERMISSIONS_TTL_SECONDS
 
 _EMAIL_VERIFY_SEPARATOR: Final[str] = "|"
 

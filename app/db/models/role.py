@@ -47,7 +47,7 @@ class Role(SoftDeleteMixin, BaseModel):
     permissions: Mapped[list[RolePermission]] = relationship(
         "RolePermission",
         back_populates="role",
-        cascade="all, delete-orphan",
+        cascade="all",
         lazy="selectin",
     )
 
