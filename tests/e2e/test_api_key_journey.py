@@ -42,7 +42,12 @@ async def test_full_api_key_journey(client: AsyncClient) -> None:
 
     # Adım 3: İlk API key oluştur
     create1 = await client.post(
-        "/api/v1/shared/api-keys", json={"name": "Journey Key 1"}, headers=jwt_headers
+        "/api/v1/shared/api-keys",
+        json={
+            "name": "Journey Key 1",
+            "scopes": ["profile:view", "api_keys:list", "api_keys:create", "api_keys:revoke"],
+        },
+        headers=jwt_headers,
     )
     assert create1.status_code == 201
     raw_key_1 = create1.json()["key"]
@@ -63,7 +68,12 @@ async def test_full_api_key_journey(client: AsyncClient) -> None:
 
     # Adım 6: İkinci API key
     create2 = await client.post(
-        "/api/v1/shared/api-keys", json={"name": "Journey Key 2"}, headers=jwt_headers
+        "/api/v1/shared/api-keys",
+        json={
+            "name": "Journey Key 2",
+            "scopes": ["profile:view", "api_keys:list", "api_keys:create", "api_keys:revoke"],
+        },
+        headers=jwt_headers,
     )
     assert create2.status_code == 201
     raw_key_2 = create2.json()["key"]
