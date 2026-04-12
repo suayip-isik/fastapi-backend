@@ -261,6 +261,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_AUTH: str = "5/minute"  # login, reset-password
     RATE_LIMIT_AUTH_EMAIL: str = "3/hour"  # forgot-password, resend-verification
+    RATE_LIMIT_ADMIN_USER_CREATE: str = "20/minute"  # admin panel user create/invite
     RATE_LIMIT_REGISTER: str = "3/hour"  # register
     RATE_LIMIT_UPLOAD: str = "20/hour"
     RATE_LIMIT_API_KEYS: str = "20/minute"  # API key create/revoke
@@ -378,6 +379,7 @@ class Settings(BaseSettings):
         "RATE_LIMIT_DEFAULT",
         "RATE_LIMIT_AUTH",
         "RATE_LIMIT_AUTH_EMAIL",
+        "RATE_LIMIT_ADMIN_USER_CREATE",
         "RATE_LIMIT_REGISTER",
         "RATE_LIMIT_UPLOAD",
         "RATE_LIMIT_API_KEYS",

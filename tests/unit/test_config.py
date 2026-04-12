@@ -63,3 +63,9 @@ def test_production_settings_require_non_local_frontend_url(tmp_path: Path) -> N
 
     with pytest.raises(ValueError, match="FRONTEND_URL"):
         Settings(**kwargs)
+
+
+def test_default_admin_user_create_rate_limit(tmp_path: Path) -> None:
+    """Admin panel kullanıcı oluşturma limiti ayrı ve beklenen değerde olmalı."""
+    settings = Settings(**_base_settings_kwargs(tmp_path))
+    assert settings.RATE_LIMIT_ADMIN_USER_CREATE == "20/minute"

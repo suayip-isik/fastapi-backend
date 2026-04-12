@@ -815,6 +815,7 @@ async def get_data(api_key: APIKey = Depends(require_api_key(scopes=["read"]))):
 # Settings tabanlı limitler (app/core/config.py)
 RATE_LIMIT_AUTH = "5/minute"         # login, reset-password
 RATE_LIMIT_AUTH_EMAIL = "3/hour"     # forgot-password, resend-verification, admin invite
+RATE_LIMIT_ADMIN_USER_CREATE = "20/minute"  # admin panel user create/invite
 RATE_LIMIT_REGISTER = "3/hour"       # client register
 RATE_LIMIT_UPLOAD = "20/hour"        # dosya yükleme
 ```

@@ -23,7 +23,7 @@ from app.api.dependencies.infrastructure import (
 from app.api.dependencies.services import get_audit_service
 from app.core.config import settings
 from app.core.i18n import t
-from app.core.limiter import limiter
+from app.core.limiter import authenticated_user_or_ip_key, limiter
 from app.core.permissions import Permission
 from app.db.models.user import User
 from app.db.session import get_db
@@ -228,7 +228,10 @@ async def list_users(
 
 
 @admin_router.post("", response_model=UserResponse, status_code=201)
-@limiter.limit(settings.RATE_LIMIT_AUTH_EMAIL)
+@limiter.limit(
+    settings.RATE_LIMIT_ADMIN_USER_CREATE,
+    key_func=authenticated_user_or_ip_key,
+)
 async def create_admin_user(
     request: Request,
     data: CreateAdminUserRequest,
