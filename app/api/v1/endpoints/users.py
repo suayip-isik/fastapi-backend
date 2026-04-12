@@ -192,7 +192,7 @@ async def list_users(
         max_length=100,
         description="email, kullanıcı adı veya tam ad içinde arama",
     ),
-    role: str | None = Query(None, description="Rol adı filtresi (ör: admin, user)"),
+    role: str | None = Query(None, description="Rol adı filtresi (ör: panel_admin, app_user)"),
     is_active: bool | None = Query(None, description="Aktiflik durumu filtresi"),
     is_verified: bool | None = Query(None, description="Email doğrulama durumu filtresi"),
 ) -> PaginatedResponse[UserResponse]:
@@ -277,7 +277,7 @@ async def list_deleted_users(
         max_length=100,
         description="email, kullanıcı adı veya tam ad içinde arama",
     ),
-    role: str | None = Query(None, description="Rol adı filtresi (ör: admin, user)"),
+    role: str | None = Query(None, description="Rol adı filtresi (ör: panel_admin, app_user)"),
     is_active: bool | None = Query(None, description="Silinmeden önceki aktiflik durumu filtresi"),
     is_verified: bool | None = Query(None, description="Email doğrulama durumu filtresi"),
 ) -> PaginatedResponse[DeletedUserResponse]:

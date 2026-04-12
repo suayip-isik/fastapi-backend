@@ -8,10 +8,12 @@ from __future__ import annotations
 import asyncio
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
+
+from alembic import context
+from app.core.config import settings
 
 # Tüm modelleri import et — autogenerate için şart
 from app.db.models.api_key import APIKey  # noqa: F401
@@ -21,7 +23,6 @@ from app.db.models.notification import Notification  # noqa: F401
 from app.db.models.role import Role, RolePermission  # noqa: F401
 from app.db.models.totp_backup_code import TOTPBackupCode  # noqa: F401
 from app.db.models.user import User  # noqa: F401
-from app.core.config import settings
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)

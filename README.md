@@ -203,7 +203,7 @@ fastapi-backend/
 │   ├── admin/
 │   │   ├── views.py                    # SQLAdmin model view'ları
 │   │   ├── auth.py                     # Admin authentication backend
-│   │   └── seed.py                     # Varsayılan admin kullanıcı oluşturma
+│   │   └── seed.py                     # Varsayılan panel_admin + app_user seed akışı
 │   ├── websockets/
 │   │   └── manager.py                  # ConnectionManager (oda tabanlı broadcast)
 │   ├── storage/
@@ -316,13 +316,16 @@ make dev          # api, worker, db, redis, minio container'larını başlatır
 # 5. Migration uygula
 make migrate      # Veritabanı tablolarını oluşturur
 
-# 6. Admin kullanıcı oluştur
-make seed         # .env'deki SUPERADMIN_EMAIL ve SUPERADMIN_PASSWORD ile superadmin oluşturur
+# 6. Varsayılan sistem kullanıcılarını oluştur
+make seed         # .env'deki seed ayarları ile superadmin + default app user oluşturur
 
-# 7. API dokümantasyonunu aç
+# 7. Gerekirse sistemi sıfırla ve canonical seed'i yeniden kur
+make reset-seed   # tüm kullanıcı/rol verisini siler, sonra canonical seed'i yeniden kurar
+
+# 8. API dokümantasyonunu aç
 open http://localhost:8000/docs
 
-# 5. Admin Panel
+# 9. Admin Panel
 open http://localhost:8000/admin
 ```
 
@@ -345,8 +348,12 @@ docker compose exec api alembic upgrade head
 docker compose exec api python -c "
 import asyncio
 from app.admin.seed import create_default_superadmin
+from app.admin.seed import create_default_app_user
 asyncio.run(create_default_superadmin())
+asyncio.run(create_default_app_user())
 "
+
+docker compose exec api python scripts/reset_system_state.py
 ```
 
 ### Servis Adresleri
@@ -406,12 +413,13 @@ asyncio.run(create_default_superadmin())
 
 ### Kurulum
 
-| Komut          | Açıklama                                   |
-| -------------- | ------------------------------------------ |
-| `make keys`    | JWT için 4096-bit RSA key çifti üret       |
-| `make seed`    | Varsayılan admin kullanıcı oluştur         |
-| `make env`     | .env.example'ı .env olarak kopyala (yoksa) |
-| `make install` | Dev bağımlılıklarını local'a kur           |
+| Komut             | Açıklama                                                       |
+| ----------------- | -------------------------------------------------------------- |
+| `make keys`       | JWT için 4096-bit RSA key çifti üret                           |
+| `make seed`       | Varsayılan sistem kullanıcılarını oluştur                      |
+| `make reset-seed` | Tüm kullanıcı/rol verisini sil ve canonical seed'i yeniden kur |
+| `make env`        | .env.example'ı .env olarak kopyala (yoksa)                     |
+| `make install`    | Dev bağımlılıklarını local'a kur                               |
 
 ---
 
@@ -484,12 +492,16 @@ Tüm değerleri `.env.example`'dan `.env`'e kopyaladıktan sonra ihtiyacına gö
 | `MAX_UPLOAD_SIZE_MB`   | `10`                                           | Maksimum dosya boyutu (MB)             | Hayır   |
 | `ALLOWED_UPLOAD_TYPES` | `["image/jpeg","image/png","application/pdf"]` | İzin verilen MIME türleri (JSON array) | Hayır   |
 
-### Admin Seed
+### Seed Users
 
-| Değişken              | Örnek Değer         | Açıklama                                         |
-| --------------------- | ------------------- | ------------------------------------------------ |
-| `SUPERADMIN_EMAIL`    | `admin@example.com` | `make seed` ile oluşturulan superadmin e-postası |
-| `SUPERADMIN_PASSWORD` | `changeme`          | Superadmin şifresi (production'da güçlü ol)      |
+| Değişken                    | Örnek Değer              | Açıklama                                                             |
+| --------------------------- | ------------------------ | -------------------------------------------------------------------- |
+| `SUPERADMIN_USERNAME`       | `superadmin`             | `panel_admin` rolüne sahip varsayılan admin kullanıcı adı            |
+| `SUPERADMIN_EMAIL`          | `superadmin@example.com` | `panel_admin` rolüne sahip varsayılan admin e-postası                |
+| `SUPERADMIN_PASSWORD`       | `changeme`               | Varsayılan admin şifresi (production'da güçlü ol)                    |
+| `DEFAULT_APP_USER_USERNAME` | `suayip`                 | `app_user` rolüne sahip varsayılan client kullanıcı adı              |
+| `DEFAULT_APP_USER_EMAIL`    | `suayip@example.com`     | `app_user` rolüne sahip varsayılan client e-postası                  |
+| `DEFAULT_APP_USER_PASSWORD` | `changeme`               | Varsayılan app_user şifresi (production'da production için değiştir) |
 
 ### Rate Limiting
 
@@ -554,6 +566,8 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 
 > Shared forgot-password/reset-password endpoint'leri kullanıcı tipini backend'de belirler. Client şifre sıfırlama e-postası frontend'e `FRONTEND_URL/reset-password?token=...` ile yönlenir. Admin invite ve admin forgot-password akışları aynı ekranı `surface=admin` query parametresi ile kullanır: `FRONTEND_URL/reset-password?token=...&surface=admin`. E-posta doğrulama linki ise backend doğrulama endpoint'ini kullanır: `APP_URL/api/v1/client/auth/verify-email?token=...`.
 
+> `POST /client/auth/register` ile kaydolan tüm `surface=client` kullanıcılar varsayılan olarak sistem rolü `app_user` ile oluşturulur.
+
 > Legacy route desteği yoktur. Resmi yüzeyler yalnız `/api/v1/client/*`, `/api/v1/admin/*` ve `/api/v1/shared/*` altındadır.
 
 ### 2. TOTP / 2FA (`/shared/auth/totp`) — 5 endpoint
@@ -587,6 +601,8 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 > `POST /admin/users` yalnızca `surface=admin` kullanıcı üretir. Client kullanıcı oluşturma desteklenmez; client hesaplar sadece `/client/auth/register` üzerinden kendilerini kaydeder.
 
 > Admin kullanıcı oluşturma ve davet yeniden gönderme için ek permission gerekir: `users:create_admin`. Atanacak rolün ayrıca `admin:panel_access` taşıması zorunludur.
+
+> Sistem rol seti iki canonical rolden oluşur: `panel_admin` ve `app_user`. `moderator` sistem rolü artık yoktur.
 
 ### 4. Roller (`/admin/roles`) — 5 endpoint
 
@@ -696,12 +712,15 @@ Authorization kararları policy-first yaklaşımıyla uygulanır:
 
 Endpoint veya service içinde dağınık yetki kontrolü yazmak yerine ortak policy/dependency katmanı kullanılır.
 
-**Varsayılan Giriş Bilgileri** (`.env` dosyasındaki değerler):
+**Varsayılan Seed Kullanıcıları** (`.env` dosyasındaki değerler):
 
-- E-posta: `SUPERADMIN_EMAIL` (varsayılan: `admin@example.com`)
-- Şifre: `SUPERADMIN_PASSWORD` (varsayılan: `changeme`)
+- Admin surface kullanıcısı: `SUPERADMIN_USERNAME` / `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD`
+  Varsayılan rol: `panel_admin`
+- Client surface kullanıcısı: `DEFAULT_APP_USER_USERNAME` / `DEFAULT_APP_USER_EMAIL` / `DEFAULT_APP_USER_PASSWORD`
+  Varsayılan rol: `app_user`
 
-> `make seed` komutunu çalıştırmadan admin kullanıcı oluşturulmaz.
+> `make seed` komutu bu iki varsayılan kullanıcıyı idempotent şekilde oluşturur.
+> `make reset-seed` komutu ise destructive bir reset yapar: mevcut kullanıcı, rol ve bağlı verileri siler; ardından yalnız canonical seed kullanıcılarını yeniden kurar.
 
 **Mevcut View'lar:**
 
@@ -1322,6 +1341,7 @@ openssl rand -hex 32   # → SECRET_KEY değeri olarak kullan
 | `S3_ENDPOINT_URL`                 | `http://minio:9000`     | boş bırak (AWS otomatik)                |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | `minioadmin`            | AWS IAM credentials                     |
 | `SUPERADMIN_PASSWORD`             | `changeme`              | güçlü şifre (`changeme` → hata verir)   |
+| `DEFAULT_APP_USER_PASSWORD`       | `changeme`              | production'da güçlü bir değer önerilir  |
 
 ### 4. docker-compose.prod.yml Kullanımı
 
@@ -1622,6 +1642,7 @@ Canlıya almadan önce:
 
 - [ ] `SECRET_KEY` rastgele üretildi (`openssl rand -hex 32`)
 - [ ] `SUPERADMIN_PASSWORD` güçlü bir değerle değiştirildi (`changeme` production'da hata verir)
+- [ ] `DEFAULT_APP_USER_PASSWORD` production için güçlü bir değerle değiştirildi veya seed kullanıcı devre dışı bırakıldı
 - [ ] `POSTGRES_PASSWORD` ve `REDIS_PASSWORD` rastgele üretildi
 - [ ] `APP_ENV=production` ve `APP_DEBUG=false` ayarlandı
 - [ ] `FRONTEND_URL` gerçek frontend domain'i ile ayarlandı

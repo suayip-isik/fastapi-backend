@@ -253,7 +253,7 @@ class BaseRepository(Generic[ModelType], ABC):
 
         Example:
             >>> exists = await repo.exists(email="test@example.com")
-            >>> exists = await repo.exists(status="active", role="admin")
+            >>> exists = await repo.exists(status="active", role="panel_admin")
         """
         query = select(func.count()).select_from(self.model)
         for key, value in filters.items():
@@ -304,7 +304,7 @@ class BaseRepository(Generic[ModelType], ABC):
 
         Example:
             >>> user = await repo.update(user_id, name="Yeni İsim")
-            >>> user = await repo.update(user_id, status="inactive", role="user")
+            >>> user = await repo.update(user_id, status="inactive", role="app_user")
         """
         await self._session.execute(update(self.model).where(self.model.id == id).values(**data))
         # populate_existing=True: bulk UPDATE sonrası identity map cache'ini es geçip

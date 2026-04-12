@@ -106,9 +106,9 @@ class Permission(str, PyEnum):
 
 
 # Sistem rolleri için permission setleri — seed ve test için kullanılır
-ADMIN_PERMISSIONS: list[Permission] = list(Permission)
+PANEL_ADMIN_PERMISSIONS: list[Permission] = list(Permission)
 
-USER_PERMISSIONS: list[Permission] = [
+APP_USER_PERMISSIONS: list[Permission] = [
     Permission.PROFILE_VIEW,
     Permission.PROFILE_UPDATE,
     Permission.PROFILE_UPLOAD_AVATAR,
@@ -116,25 +116,6 @@ USER_PERMISSIONS: list[Permission] = [
     Permission.API_KEYS_LIST,
     Permission.API_KEYS_CREATE,
     Permission.API_KEYS_REVOKE,
-    Permission.NOTIFICATIONS_LIST,
-    Permission.NOTIFICATIONS_VIEW_UNREAD_COUNT,
-    Permission.NOTIFICATIONS_MARK_ALL_READ,
-    Permission.NOTIFICATIONS_MARK_READ,
-    Permission.NOTIFICATIONS_DELETE,
-]
-
-MODERATOR_PERMISSIONS: list[Permission] = [
-    Permission.PROFILE_VIEW,
-    Permission.PROFILE_UPDATE,
-    Permission.PROFILE_UPLOAD_AVATAR,
-    Permission.PROFILE_DELETE_AVATAR,
-    Permission.USERS_LIST,
-    Permission.USERS_VIEW,
-    Permission.USERS_VIEW_STATS,
-    Permission.USERS_LIST_DELETED,
-    Permission.AUDIT_LIST,
-    Permission.AUDIT_STREAM,
-    Permission.AUDIT_VIEW,
     Permission.NOTIFICATIONS_LIST,
     Permission.NOTIFICATIONS_VIEW_UNREAD_COUNT,
     Permission.NOTIFICATIONS_MARK_ALL_READ,

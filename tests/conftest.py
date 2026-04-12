@@ -19,7 +19,8 @@ from sqlalchemy.pool import NullPool
 import app.core.redis as redis_module
 from app.core.config import settings
 from app.core.limiter import limiter
-from app.core.permissions import ADMIN_PERMISSIONS, MODERATOR_PERMISSIONS, USER_PERMISSIONS
+from app.core.permissions import APP_USER_PERMISSIONS, PANEL_ADMIN_PERMISSIONS
+from app.core.system_roles import APP_USER_ROLE, PANEL_ADMIN_ROLE
 from app.db.models.base import Base
 from app.db.models.role import Role, RolePermission
 from app.db.session import get_db
@@ -150,9 +151,16 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         await session.commit()
 
         for role_data in [
-            {"name": "admin", "description": "Admin", "permissions": ADMIN_PERMISSIONS},
-            {"name": "user", "description": "User", "permissions": USER_PERMISSIONS},
-            {"name": "moderator", "description": "Moderator", "permissions": MODERATOR_PERMISSIONS},
+            {
+                "name": PANEL_ADMIN_ROLE,
+                "description": "Panel Admin",
+                "permissions": PANEL_ADMIN_PERMISSIONS,
+            },
+            {
+                "name": APP_USER_ROLE,
+                "description": "App User",
+                "permissions": APP_USER_PERMISSIONS,
+            },
         ]:
             role = Role(
                 name=role_data["name"], description=role_data["description"], is_system=True

@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy import update as sa_update
 
+from app.core.system_roles import PANEL_ADMIN_ROLE
 from app.db.models.api_key import APIKey
 from app.db.models.role import Role
 from app.db.models.user import SurfaceType, User
@@ -123,7 +124,7 @@ async def test_admin_user_cannot_use_client_login(
         json={"email": email, "password": password},
     )
 
-    result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
+    result = await db_session.execute(select(Role.id).where(Role.name == PANEL_ADMIN_ROLE))
     admin_role_id = result.scalar_one()
     await db_session.execute(
         sa_update(User)
@@ -153,7 +154,7 @@ async def test_admin_user_can_use_admin_login(
         json={"email": email, "password": password},
     )
 
-    result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
+    result = await db_session.execute(select(Role.id).where(Role.name == PANEL_ADMIN_ROLE))
     admin_role_id = result.scalar_one()
     await db_session.execute(
         sa_update(User)
@@ -329,7 +330,7 @@ async def test_forgot_password_existing_admin_uses_admin_email_task(
         "/api/v1/client/auth/register", json={"email": email, "password": "StrongPass1"}
     )
 
-    result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
+    result = await db_session.execute(select(Role.id).where(Role.name == PANEL_ADMIN_ROLE))
     admin_role_id = result.scalar_one()
     await db_session.execute(
         sa_update(User)
@@ -397,7 +398,7 @@ async def test_reset_password_marks_invited_admin_verified(
     creator_email = "creator@example.com"
     headers = await _register_and_login(client, creator_email)
 
-    result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
+    result = await db_session.execute(select(Role.id).where(Role.name == PANEL_ADMIN_ROLE))
     admin_role_id = result.scalar_one()
     await db_session.execute(
         sa_update(User)
@@ -410,7 +411,7 @@ async def test_reset_password_marks_invited_admin_verified(
     mock_enqueue.reset_mock()
     create_res = await client.post(
         "/api/v1/admin/users",
-        json={"email": "invited_admin@example.com", "role_name": "admin"},
+        json={"email": "invited_admin@example.com", "role_name": PANEL_ADMIN_ROLE},
         headers=admin_headers,
     )
     assert create_res.status_code == 201
@@ -438,7 +439,7 @@ async def test_shared_reset_accepts_admin_token(
     creator_email = "creator_surface@example.com"
     headers = await _register_and_login(client, creator_email)
 
-    result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
+    result = await db_session.execute(select(Role.id).where(Role.name == PANEL_ADMIN_ROLE))
     admin_role_id = result.scalar_one()
     await db_session.execute(
         sa_update(User)
@@ -451,7 +452,7 @@ async def test_shared_reset_accepts_admin_token(
     mock_enqueue.reset_mock()
     create_res = await client.post(
         "/api/v1/admin/users",
-        json={"email": "surface_admin@example.com", "role_name": "admin"},
+        json={"email": "surface_admin@example.com", "role_name": PANEL_ADMIN_ROLE},
         headers=admin_headers,
     )
     assert create_res.status_code == 201
@@ -609,7 +610,7 @@ async def test_admin_reset_revokes_existing_sessions_and_api_keys(
     password = "StrongPass1"
     await client.post("/api/v1/client/auth/register", json={"email": email, "password": password})
 
-    result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
+    result = await db_session.execute(select(Role.id).where(Role.name == PANEL_ADMIN_ROLE))
     admin_role_id = result.scalar_one()
     await db_session.execute(
         sa_update(User)

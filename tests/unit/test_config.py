@@ -40,8 +40,12 @@ def _base_settings_kwargs(tmp_path: Path) -> dict[str, object]:
         "REDIS_DB": 0,
         "JWT_PRIVATE_KEY_PATH": private_key,
         "JWT_PUBLIC_KEY_PATH": public_key,
-        "SUPERADMIN_EMAIL": "admin@example.com",
+        "SUPERADMIN_USERNAME": "superadmin",
+        "SUPERADMIN_EMAIL": "superadmin@example.com",
         "SUPERADMIN_PASSWORD": "StrongAdminPass1",
+        "DEFAULT_APP_USER_USERNAME": "suayip",
+        "DEFAULT_APP_USER_EMAIL": "suayip@example.com",
+        "DEFAULT_APP_USER_PASSWORD": "StrongAppPass1",
         "RATE_LIMIT_ENABLED": False,
     }
 

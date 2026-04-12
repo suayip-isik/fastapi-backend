@@ -21,6 +21,7 @@ from app.core.exceptions import (
 from app.core.i18n import language_var, t
 from app.core.permissions import Permission
 from app.core.security import hash_password, verify_password
+from app.core.system_roles import PANEL_ADMIN_ROLE
 from app.db.models.audit_log import AuditAction
 from app.db.models.user import SurfaceType
 from app.db.repositories.role import RoleRepository
@@ -206,7 +207,7 @@ class UserService(AuditableMixin):
             )
             raise InsufficientPermissionsError(t("error.user.self_action"))
 
-        if target_user.role and target_user.role.name == "admin":
+        if target_user.role and target_user.role.name == PANEL_ADMIN_ROLE:
             await self._audit_user_management_blocked(
                 actor_user_id=actor_user_id,
                 target_user=target_user,
@@ -707,7 +708,7 @@ class UserService(AuditableMixin):
                 reason="self_action",
             )
             raise InsufficientPermissionsError(t("error.user.self_action"))
-        if user.role and user.role.name == "admin":
+        if user.role and user.role.name == PANEL_ADMIN_ROLE:
             await self._audit_user_management_blocked(
                 actor_user_id=actor_user_id,
                 target_user=user,
@@ -802,7 +803,7 @@ class UserService(AuditableMixin):
 
         Args:
             user_id: Rolü değiştirilecek kullanıcının UUID'si.
-            role_name: Atanacak rolün adı (ör: "admin", "accountant").
+            role_name: Atanacak rolün adı (ör: "panel_admin", "accountant").
 
         Returns:
             Güncellenmiş kullanıcı nesnesi.

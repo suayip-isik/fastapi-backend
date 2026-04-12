@@ -71,7 +71,7 @@ async def create_role(
 ) -> RoleResponse:
     """Yeni özel rol oluşturur.
 
-    Sistem rolleri (admin, user, moderator) bu endpoint ile
+    Sistem rolleri (`panel_admin`, `app_user`) bu endpoint ile
     oluşturulamaz. Rol adı küçük harf, rakam ve alt çizgiden
     oluşmalıdır (ör: "accountant", "warehouse_manager").
 
@@ -155,7 +155,7 @@ async def delete_role(
 ) -> MessageResponse:
     """Özel rolü siler.
 
-    Sistem rolleri (admin, user, moderator) silinemez.
+    Sistem rolleri (`panel_admin`, `app_user`) silinemez.
 
     Args:
         role_id: Silinecek rolün UUID'si.

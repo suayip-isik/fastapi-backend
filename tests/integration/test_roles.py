@@ -10,6 +10,7 @@ from sqlalchemy import update as sa_update
 
 from app.api.dependencies.auth import get_user_permissions
 from app.core.permissions import Permission
+from app.core.system_roles import APP_USER_ROLE, PANEL_ADMIN_ROLE
 from app.db.models.role import Role
 from app.db.models.user import SurfaceType, User
 
@@ -38,7 +39,7 @@ async def _auth_headers(client: AsyncClient, email: str, password: str = "Strong
 async def _promote_to_admin(db_session: AsyncSession, email: str) -> None:
     from sqlalchemy import select
 
-    result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
+    result = await db_session.execute(select(Role.id).where(Role.name == PANEL_ADMIN_ROLE))
     admin_role_id = result.scalar_one()
     await db_session.execute(
         sa_update(User)
@@ -64,9 +65,9 @@ async def test_list_roles_as_admin(client: AsyncClient, db_session: AsyncSession
     assert res.status_code == 200
     data = res.json()
     assert isinstance(data, list)
-    assert len(data) >= 3  # admin, user, moderator seed edilmiş
+    assert len(data) >= 2
     names = {r["name"] for r in data}
-    assert {"admin", "user", "moderator"}.issubset(names)
+    assert {PANEL_ADMIN_ROLE, APP_USER_ROLE}.issubset(names)
 
 
 @pytest.mark.asyncio
@@ -219,12 +220,12 @@ async def test_get_role_by_id(client: AsyncClient, db_session: AsyncSession):
 
     # Önce listeyi al, bir rol ID'si seç
     roles = (await client.get("/api/v1/admin/roles", headers=headers)).json()
-    target = next(r for r in roles if r["name"] == "user")
+    target = next(r for r in roles if r["name"] == APP_USER_ROLE)
 
     res = await client.get(f"/api/v1/admin/roles/{target['id']}", headers=headers)
 
     assert res.status_code == 200
-    assert res.json()["name"] == "user"
+    assert res.json()["name"] == APP_USER_ROLE
     assert res.json()["is_system"] is True
 
 
@@ -302,7 +303,7 @@ async def test_update_system_role_permissions_fails(client: AsyncClient, db_sess
     await _promote_to_admin(db_session, admin_email)
 
     roles = (await client.get("/api/v1/admin/roles", headers=headers)).json()
-    user_role = next(r for r in roles if r["name"] == "user")
+    user_role = next(r for r in roles if r["name"] == APP_USER_ROLE)
 
     res = await client.patch(
         f"/api/v1/admin/roles/{user_role['id']}",
@@ -322,10 +323,10 @@ async def test_update_system_role_description_allowed(
     await _promote_to_admin(db_session, admin_email)
 
     roles = (await client.get("/api/v1/admin/roles", headers=headers)).json()
-    moderator_role = next(r for r in roles if r["name"] == "moderator")
+    system_role = next(r for r in roles if r["name"] == APP_USER_ROLE)
 
     res = await client.patch(
-        f"/api/v1/admin/roles/{moderator_role['id']}",
+        f"/api/v1/admin/roles/{system_role['id']}",
         json={"description": "Güncellenmiş açıklama"},
         headers=headers,
     )
@@ -366,7 +367,7 @@ async def test_delete_system_role_fails(client: AsyncClient, db_session: AsyncSe
     await _promote_to_admin(db_session, admin_email)
 
     roles = (await client.get("/api/v1/admin/roles", headers=headers)).json()
-    admin_role = next(r for r in roles if r["name"] == "admin")
+    admin_role = next(r for r in roles if r["name"] == PANEL_ADMIN_ROLE)
 
     res = await client.delete(f"/api/v1/admin/roles/{admin_role['id']}", headers=headers)
     assert res.status_code == 400

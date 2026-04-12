@@ -33,6 +33,7 @@ Follow the layered architecture defined in `CLAUDE.md`:
    - `client`
    - `admin`
    - `shared`
+     Sistem rol adları için canonical isimler `panel_admin` ve `app_user` kullanılmalı; eski `admin/user/moderator` rol adları yeniden tanıtılmamalı
 8. **Router** → Register in `app/api/v1/router.py`
 9. **Docs** → README/CHANGELOG ve etkilenen diğer referans dokümanlar (`LEARNING_ROADMAP.md`, `.env.example` vb.) aynı PR'da güncellenmeli
 10. **Tests** → `tests/integration/test_myfeature.py`

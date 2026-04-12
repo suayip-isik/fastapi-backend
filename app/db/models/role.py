@@ -15,11 +15,11 @@ class Role(SoftDeleteMixin, BaseModel):
     """Kullanıcı rolü modeli.
 
     Her rol bir isim, açıklama ve permission setine sahiptir.
-    Sistem rolleri (admin, user, moderator) is_system=True ile
+    Sistem rolleri (`panel_admin`, `app_user`) is_system=True ile
     işaretlenir ve silinemez.
 
     Attributes:
-        name: Benzersiz rol adı (ör: "admin", "accountant")
+        name: Benzersiz rol adı (ör: "panel_admin", "accountant")
         description: Rol açıklaması
         is_system: True ise sistem rolü — silinemez, adı değiştirilemez
         permissions: Bu role atanmış permission kaydları

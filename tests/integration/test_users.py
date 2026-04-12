@@ -12,6 +12,7 @@ from sqlalchemy import update as sa_update
 
 from app.api.dependencies.infrastructure import get_storage_port
 from app.core.permissions import Permission
+from app.core.system_roles import APP_USER_ROLE, PANEL_ADMIN_ROLE
 from app.db.models.audit_log import AuditAction
 from app.db.models.role import Role, RolePermission
 from app.db.models.user import SurfaceType, User
@@ -51,7 +52,7 @@ async def _promote_to_admin(db_session: AsyncSession, email: str) -> None:
     """
     from sqlalchemy import select
 
-    result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
+    result = await db_session.execute(select(Role.id).where(Role.name == PANEL_ADMIN_ROLE))
     admin_role_id = result.scalar_one()
     await db_session.execute(
         sa_update(User)
@@ -118,7 +119,7 @@ async def test_get_users_me(client: AsyncClient):
     assert data["email"] == "users_me@example.com"
     assert "id" in data
     assert data["is_active"] is True
-    assert data["role"]["name"] == "user"
+    assert data["role"]["name"] == APP_USER_ROLE
 
 
 @pytest.mark.asyncio
@@ -454,7 +455,7 @@ async def test_create_admin_user_as_authorized_admin(
         "/api/v1/admin/users",
         json={
             "email": "new_admin@example.com",
-            "role_name": "admin",
+            "role_name": PANEL_ADMIN_ROLE,
             "full_name": "New Admin",
             "username": "new_admin",
         },
@@ -487,7 +488,7 @@ async def test_create_admin_user_rejects_duplicate_email(
 
     res = await client.post(
         "/api/v1/admin/users",
-        json={"email": "dup_admin@example.com", "role_name": "admin"},
+        json={"email": "dup_admin@example.com", "role_name": PANEL_ADMIN_ROLE},
         headers=headers,
     )
     assert res.status_code == 409
@@ -499,22 +500,22 @@ async def test_create_admin_user_requires_create_permission(
     db_session: AsyncSession,
 ):
     """Create_admin yetkisi olmayan admin surface kullanıcı admin create edememeli."""
-    email = "moderator_admin@example.com"
+    email = "limited_admin@example.com"
     headers = await _auth_headers(client, email)
 
-    result = await db_session.execute(select(Role.id).where(Role.name == "moderator"))
-    moderator_role_id = result.scalar_one()
+    result = await db_session.execute(select(Role.id).where(Role.name == APP_USER_ROLE))
+    limited_role_id = result.scalar_one()
     await db_session.execute(
         sa_update(User)
         .where(User.email == email)
-        .values(role_id=moderator_role_id, surface=SurfaceType.ADMIN.value)
+        .values(role_id=limited_role_id, surface=SurfaceType.ADMIN.value)
     )
     await db_session.commit()
     db_session.expire_all()
 
     res = await client.post(
         "/api/v1/admin/users",
-        json={"email": "blocked_admin@example.com", "role_name": "admin"},
+        json={"email": "blocked_admin@example.com", "role_name": PANEL_ADMIN_ROLE},
         headers=headers,
     )
     assert res.status_code == 403
@@ -532,7 +533,7 @@ async def test_create_admin_user_rejects_role_without_panel_access(
 
     res = await client.post(
         "/api/v1/admin/users",
-        json={"email": "bad_role_admin@example.com", "role_name": "user"},
+        json={"email": "bad_role_admin@example.com", "role_name": APP_USER_ROLE},
         headers=headers,
     )
     assert res.status_code == 400
@@ -577,7 +578,7 @@ async def test_invited_admin_cannot_login_before_setting_password(
 
     create_res = await client.post(
         "/api/v1/admin/users",
-        json={"email": "pending_admin@example.com", "role_name": "admin"},
+        json={"email": "pending_admin@example.com", "role_name": PANEL_ADMIN_ROLE},
         headers=headers,
     )
     assert create_res.status_code == 201
@@ -1199,11 +1200,11 @@ async def test_list_users_filter_by_role(client: AsyncClient, db_session: AsyncS
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res = await client.get("/api/v1/admin/users?role=user", headers=headers)
+    res = await client.get(f"/api/v1/admin/users?role={APP_USER_ROLE}", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
-    assert all(u["role"]["name"] == "user" for u in data["items"])
+    assert all(u["role"]["name"] == APP_USER_ROLE for u in data["items"])
 
 
 @pytest.mark.asyncio
@@ -1213,12 +1214,12 @@ async def test_list_users_filter_by_admin_role(client: AsyncClient, db_session: 
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)
 
-    res = await client.get("/api/v1/admin/users?role=admin", headers=headers)
+    res = await client.get(f"/api/v1/admin/users?role={PANEL_ADMIN_ROLE}", headers=headers)
 
     assert res.status_code == 200
     data = res.json()
     assert data["total"] >= 1
-    assert all(u["role"]["name"] == "admin" for u in data["items"])
+    assert all(u["role"]["name"] == PANEL_ADMIN_ROLE for u in data["items"])
 
 
 # ── GET /users?is_active= (Aktiflik Filtresi) ────────────────────────────────
@@ -1289,13 +1290,14 @@ async def test_list_users_combined_filters(client: AsyncClient, db_session: Asyn
     await _promote_to_admin(db_session, admin_email)
 
     res = await client.get(
-        "/api/v1/admin/users?role=user&is_active=true&is_verified=false", headers=headers
+        f"/api/v1/admin/users?role={APP_USER_ROLE}&is_active=true&is_verified=false",
+        headers=headers,
     )
 
     assert res.status_code == 200
     data = res.json()
     for u in data["items"]:
-        assert u["role"]["name"] == "user"
+        assert u["role"]["name"] == APP_USER_ROLE
         assert u["is_active"] is True
         assert u["is_verified"] is False
 
@@ -1400,12 +1402,12 @@ async def test_assign_role_as_admin(client: AsyncClient, db_session: AsyncSessio
 
     res = await client.patch(
         f"/api/v1/admin/users/{target_id}/role",
-        json={"role_name": "moderator"},
+        json={"role_name": APP_USER_ROLE},
         headers=headers,
     )
 
     assert res.status_code == 200
-    assert res.json()["role"]["name"] == "moderator"
+    assert res.json()["role"]["name"] == APP_USER_ROLE
 
 
 @pytest.mark.asyncio
@@ -1440,7 +1442,7 @@ async def test_admin_cannot_change_own_role(client: AsyncClient, db_session: Asy
 
     res = await client.patch(
         f"/api/v1/admin/users/{admin_id}/role",
-        json={"role_name": "user"},
+        json={"role_name": APP_USER_ROLE},
         headers=headers,
     )
     assert res.status_code == 403

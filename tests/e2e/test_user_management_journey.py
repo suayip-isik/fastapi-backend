@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 import pytest
 from sqlalchemy import update as sa_update
 
+from app.core.system_roles import PANEL_ADMIN_ROLE
 from app.db.models.role import Role
 from app.db.models.user import SurfaceType, User
 
@@ -51,7 +52,7 @@ async def test_full_user_management_journey(client: AsyncClient, db_session: Asy
     # Adım 3: Admin rolüne yükselt
     from sqlalchemy import select
 
-    result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
+    result = await db_session.execute(select(Role.id).where(Role.name == PANEL_ADMIN_ROLE))
     admin_role_id = result.scalar_one()
     await db_session.execute(
         sa_update(User)

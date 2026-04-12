@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Web ve mobil istemciler artık tek `client` surface üzerinden çalışır
+- Sistem roller `panel_admin` ve `app_user` olarak yenilendi; `moderator` sistem rolü kaldırıldı
+- `POST /api/v1/client/auth/register` ile açılan tüm `surface=client` kullanıcılar varsayılan olarak `app_user` rolü alır
+- Varsayılan seed kullanıcıları artık `superadmin@example.com` (`panel_admin`) ve `suayip@example.com` (`app_user`) olarak oluşturulur
+- Yeni operasyonel reset komutu ile kullanıcı, rol ve bağlı veriler hard delete edilip canonical seed baştan kurulabilir
 - Admin panel ve admin API erişimi yalnız `surface=admin` kullanıcılar için geçerlidir
 - SQLAdmin auth artık `admin:panel_access` gerektirir; `admin:access` compatibility fallback'i kaldırıldı
 - Client kullanıcı oluşturma artık yalnız self-register akışıyla yapılır: `/api/v1/client/auth/register`

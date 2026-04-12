@@ -244,9 +244,14 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     EMAILS_FROM_EMAIL: str = "noreply@example.com"
 
-    # ── Superadmin Seed ───────────────────────────────────────────────────────
-    SUPERADMIN_EMAIL: str = "admin@example.com"
+    # ── Seed Users ────────────────────────────────────────────────────────────
+    SUPERADMIN_USERNAME: str = "superadmin"
+    SUPERADMIN_EMAIL: str = "superadmin@example.com"
     SUPERADMIN_PASSWORD: str = "changeme"
+    DEFAULT_APP_USER_USERNAME: str = "suayip"
+    DEFAULT_APP_USER_EMAIL: str = "suayip@example.com"
+    DEFAULT_APP_USER_PASSWORD: str = "changeme"
+    DEFAULT_APP_USER_FULL_NAME: str = "Suayip"
 
     # ── Rate Limiting ─────────────────────────────────────────────────────────
     RATE_LIMIT_DEFAULT: str = "100/minute"

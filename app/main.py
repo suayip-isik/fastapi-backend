@@ -18,7 +18,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.admin import get_all_views
 from app.admin.auth import AdminAuthBackend
-from app.admin.seed import create_default_superadmin, seed_system_roles
+from app.admin.seed import create_default_app_user, create_default_superadmin, seed_system_roles
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
@@ -93,6 +93,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await validate_database_schema(engine)
     await seed_system_roles()
     await create_default_superadmin()
+    await create_default_app_user()
     yield
     await engine.dispose()
     await close_redis()
