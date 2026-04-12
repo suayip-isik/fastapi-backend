@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
+from app.core.i18n import t
 from app.schemas.role import AssignRoleRequest, RoleInfo
 
 __all__ = [
@@ -88,16 +89,16 @@ class UpdateUserRequest(BaseModel):
         if v is None:
             return v
         if not any(c.isupper() for c in v):
-            raise ValueError("Şifre en az bir büyük harf içermelidir.")
+            raise ValueError(t("validation.password.missing_upper"))
         if not any(c.isdigit() for c in v):
-            raise ValueError("Şifre en az bir rakam içermelidir.")
+            raise ValueError(t("validation.password.missing_digit"))
         return v
 
     @model_validator(mode="after")
     def validate_email_change_requires_current_password(self) -> UpdateUserRequest:
         """Email değişikliği için mevcut şifreyi zorunlu kılar."""
         if self.email is not None and not self.current_password:
-            raise ValueError("Email değişikliği için current_password zorunludur.")
+            raise ValueError(t("validation.user.current_password_required_for_email_change"))
         return self
 
 

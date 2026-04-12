@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from app.core.i18n import t
+
 
 def validate_password_strength(v: str) -> str:
     """Şifrenin karmaşıklık kurallarını karşılayıp karşılamadığını doğrular.
@@ -35,13 +37,13 @@ def validate_password_strength(v: str) -> str:
     """
     errors = []
     if not any(c.isupper() for c in v):
-        errors.append("büyük harf")
+        errors.append(t("validation.password.requirement_upper"))
     if not any(c.islower() for c in v):
-        errors.append("küçük harf")
+        errors.append(t("validation.password.requirement_lower"))
     if not any(c.isdigit() for c in v):
-        errors.append("rakam")
+        errors.append(t("validation.password.requirement_digit"))
     if errors:
-        raise ValueError(f"Şifre şunları içermeli: {', '.join(errors)}")
+        raise ValueError(t("validation.password.requirements", requirements=", ".join(errors)))
     return v
 
 

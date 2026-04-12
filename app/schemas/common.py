@@ -11,6 +11,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.core.i18n import t
+
 T = TypeVar("T")
 
 
@@ -105,7 +107,7 @@ def decode_cursor(cursor: str) -> tuple[datetime, UUID]:
     except (binascii.Error, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         from app.core.exceptions import ValidationError as AppValidationError
 
-        raise AppValidationError("Geçersiz cursor değeri.") from exc
+        raise AppValidationError(t("error.cursor.invalid")) from exc
 
 
 class PaginatedResponse(BaseModel, Generic[T]):

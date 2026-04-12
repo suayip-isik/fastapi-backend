@@ -16,6 +16,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from app.core.config import settings
 from app.core.exceptions import FileTooLargeError, InvalidFileTypeError, StorageError
+from app.core.i18n import t
 from app.core.logging import get_logger
 
 if TYPE_CHECKING:
@@ -122,13 +123,18 @@ async def validate_upload(file: UploadFile) -> bytes:
     content = await file.read()
 
     if len(content) > settings.MAX_UPLOAD_SIZE_BYTES:
-        raise FileTooLargeError(f"Maksimum dosya boyutu {settings.MAX_UPLOAD_SIZE_MB}MB.")
+        raise FileTooLargeError(
+            t("error.storage.file_too_large_mb", size_mb=settings.MAX_UPLOAD_SIZE_MB)
+        )
 
     content_type = file.content_type or ""
     if content_type not in settings.ALLOWED_UPLOAD_TYPES:
         raise InvalidFileTypeError(
-            f"Desteklenmeyen dosya türü: {content_type}. "
-            f"İzin verilenler: {', '.join(settings.ALLOWED_UPLOAD_TYPES)}"
+            t(
+                "error.storage.invalid_file_type_detail",
+                content_type=content_type,
+                allowed=", ".join(settings.ALLOWED_UPLOAD_TYPES),
+            )
         )
 
     return content
@@ -231,7 +237,7 @@ class S3StorageBackend(StorageBackend):
                 )
         except (BotoCoreError, ClientError, OSError) as exc:
             logger.error("upload_failed", error=str(exc))
-            raise StorageError(f"Yükleme başarısız: {exc}") from exc
+            raise StorageError(t("error.storage.upload_failed", reason=str(exc))) from exc
 
         logger.info("file_uploaded", key=key, size=len(content))
         return key
@@ -256,7 +262,7 @@ class S3StorageBackend(StorageBackend):
                 await s3.delete_object(Bucket=self._bucket, Key=key)
         except (BotoCoreError, ClientError, OSError) as exc:
             logger.error("delete_failed", key=key, error=str(exc))
-            raise StorageError(f"Silme başarısız: {exc}") from exc
+            raise StorageError(t("error.storage.delete_failed", reason=str(exc))) from exc
 
         logger.info("file_deleted", key=key)
 
@@ -291,7 +297,7 @@ class S3StorageBackend(StorageBackend):
                     ExpiresIn=expires_in,
                 )
         except (BotoCoreError, ClientError, OSError) as exc:
-            raise StorageError(f"URL üretimi başarısız: {exc}") from exc
+            raise StorageError(t("error.storage.url_generation_failed", reason=str(exc))) from exc
         return str(url)
 
 
@@ -317,4 +323,4 @@ def get_storage() -> StorageBackend:
     backend = settings.STORAGE_BACKEND.lower()
     if backend in ("s3", "minio"):
         return S3StorageBackend()
-    raise ValueError(f"Bilinmeyen storage backend: {backend}")
+    raise ValueError(t("error.storage.unknown_backend", backend=backend))

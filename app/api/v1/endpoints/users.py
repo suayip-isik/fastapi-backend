@@ -41,7 +41,7 @@ from app.schemas.user import (
 from app.services.audit import AuditService
 from app.services.user import UserService
 
-admin_router = APIRouter(prefix="/admin/users", tags=["Admin Users"])
+admin_router = APIRouter(prefix="/admin/users", tags=["Admin Panel Users"])
 shared_router = APIRouter(prefix="/shared/me", tags=["Shared Profile"])
 
 # Modül yüklendiğinde bir kez oluşturulur — her request'te tek Redis GET maliyeti.

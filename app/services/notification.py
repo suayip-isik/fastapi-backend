@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from app.adapters.infrastructure import WebSocketNotifierAdapter
 from app.core.exceptions import NotFoundError
+from app.core.i18n import t
 from app.core.logging import get_logger
 from app.db.models.audit_log import AuditAction
 from app.db.models.notification import Notification, NotificationType
@@ -138,7 +139,7 @@ class NotificationService(AuditableMixin):
         """
         notification = await self._repo.get_by_id(notification_id)
         if not notification or notification.user_id != user_id:
-            raise NotFoundError("Bildirim bulunamadı.")
+            raise NotFoundError(t("error.notification.not_found"))
         result = await self._repo.update(notification_id, is_read=True)
         await self._audit_log(
             AuditAction.NOTIFICATION_READ,
@@ -170,7 +171,7 @@ class NotificationService(AuditableMixin):
         """
         notification = await self._repo.get_by_id(notification_id)
         if not notification or notification.user_id != user_id:
-            raise NotFoundError("Bildirim bulunamadı.")
+            raise NotFoundError(t("error.notification.not_found"))
         await self._repo.delete(notification_id)
         await self._audit_log(
             AuditAction.NOTIFICATION_DELETED,

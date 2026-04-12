@@ -222,7 +222,7 @@ class AccountService(AuditableMixin):
         if task is None:
             from app.core.exceptions import BusinessRuleError
 
-            raise BusinessRuleError(f"Desteklenmeyen surface türü: {surface!r}")
+            raise BusinessRuleError(t("error.auth.unsupported_surface", surface=surface))
         return task
 
     def _get_password_reset_requested_action(self, surface: SurfaceType) -> AuditAction:
@@ -230,7 +230,7 @@ class AccountService(AuditableMixin):
         if action is None:
             from app.core.exceptions import BusinessRuleError
 
-            raise BusinessRuleError(f"Desteklenmeyen surface türü: {surface!r}")
+            raise BusinessRuleError(t("error.auth.unsupported_surface", surface=surface))
         return action
 
     def _get_password_reset_action(self, surface: SurfaceType) -> AuditAction:
@@ -238,7 +238,7 @@ class AccountService(AuditableMixin):
         if action is None:
             from app.core.exceptions import BusinessRuleError
 
-            raise BusinessRuleError(f"Desteklenmeyen surface türü: {surface!r}")
+            raise BusinessRuleError(t("error.auth.unsupported_surface", surface=surface))
         return action
 
     # ── Profile Management ─────────────────────────────────────────────────────

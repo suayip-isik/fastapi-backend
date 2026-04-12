@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from app.core.config import settings
 from app.core.exceptions import AuthenticationError, NotFoundError
+from app.core.i18n import t
 from app.core.logging import get_logger
 from app.core.security import hash_password, verify_password
 from app.db.models.audit_log import AuditAction
@@ -140,7 +141,7 @@ class APIKeyService(AuditableMixin):
         """
         api_key = await self._repo.get_by_id(key_id)
         if not api_key or api_key.user_id != user_id:
-            raise NotFoundError("API key bulunamadı.")
+            raise NotFoundError(t("error.api_key.not_found"))
         await self._repo.update(key_id, is_active=False)
         await self._audit_log(
             AuditAction.API_KEY_REVOKED,
@@ -194,7 +195,7 @@ class APIKeyService(AuditableMixin):
             _logger.warning(
                 "api_key_invalid_format", prefix=raw_key[:12] if len(raw_key) >= 12 else "short"
             )
-            raise AuthenticationError("Geçersiz API key formatı.")
+            raise AuthenticationError(t("error.api_key.invalid_format"))
 
         prefix, secret_part = _split_key(raw_key)
         candidates = await self._repo.get_active_by_prefix(prefix)
@@ -215,4 +216,4 @@ class APIKeyService(AuditableMixin):
             return api_key
 
         _logger.warning("api_key_auth_failed", prefix=prefix)
-        raise AuthenticationError("Geçersiz API key.")
+        raise AuthenticationError(t("error.api_key.invalid"))

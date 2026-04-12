@@ -18,6 +18,7 @@ import qrcode
 from app.adapters.infrastructure import RedisAdapter
 from app.core.config import settings
 from app.core.exceptions import AuthenticationError, BusinessRuleError, TOTPNotConfiguredError
+from app.core.i18n import t
 from app.core.security import decrypt_secret, encrypt_secret, hash_password, verify_password
 from app.db.models.audit_log import AuditAction
 from app.db.repositories.totp_backup_code import TOTPBackupCodeRepository
@@ -127,7 +128,7 @@ class TOTPService(AuditableMixin):
         secret = decrypt_secret(user.totp_secret)
         totp = pyotp.TOTP(secret)
         if not totp.verify(code, valid_window=1):
-            raise AuthenticationError("Geçersiz doğrulama kodu.")
+            raise AuthenticationError(t("error.totp.invalid_code"))
 
         await self._repo.update(user.id, totp_enabled=True)
         await self._audit_log(AuditAction.TOTP_ENABLED, user_id=user.id)
@@ -155,10 +156,10 @@ class TOTPService(AuditableMixin):
             setup() metodunu çağırması gerekir.
         """
         if not user.totp_enabled or not user.totp_secret:
-            raise BusinessRuleError("2FA zaten devre dışı.")
+            raise BusinessRuleError(t("error.totp.already_disabled"))
 
         if not await self._check_code(user, code):
-            raise AuthenticationError("Geçersiz doğrulama kodu.")
+            raise AuthenticationError(t("error.totp.invalid_code"))
 
         await self._repo.update(user.id, totp_secret=None, totp_enabled=False)
         await self._audit_log(AuditAction.TOTP_DISABLED, user_id=user.id)
@@ -183,7 +184,7 @@ class TOTPService(AuditableMixin):
             >>> await totp_service.check_login(user, "123456")
         """
         if not await self._check_code(user, code):
-            raise AuthenticationError("Geçersiz 2FA kodu.")
+            raise AuthenticationError(t("error.totp.invalid_login_code"))
 
     async def _check_code(self, user: User, code: str) -> bool:
         """Verilen kodu TOTP veya backup kodu olarak doğrular.
@@ -323,7 +324,7 @@ class TOTPService(AuditableMixin):
         if not user.totp_enabled or not user.totp_secret:
             raise TOTPNotConfiguredError()
         if not await self._check_code(user, totp_code):
-            raise AuthenticationError("Geçersiz doğrulama kodu.")
+            raise AuthenticationError(t("error.totp.invalid_code"))
         new_codes = _generate_backup_codes()
         await self._persist_backup_codes(user.id, new_codes)
         await self._audit_log(AuditAction.TOTP_BACKUP_CODES_REGENERATED, user_id=user.id)

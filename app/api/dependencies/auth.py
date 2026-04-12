@@ -27,6 +27,7 @@ from app.core.exceptions import (
     InsufficientPermissionsError,
     InvalidTokenError,
 )
+from app.core.i18n import t
 from app.core.logging import get_logger
 from app.core.permissions import Permission
 from app.core.security import TokenType, decode_token, is_token_revoked_after
@@ -139,27 +140,27 @@ async def get_current_auth(
         api_key_obj = await svc.authenticate(x_api_key)
         user = await user_repo.get_by_id(api_key_obj.user_id)
         if not user or not user.is_active:
-            raise AuthenticationError("Kullanıcı bulunamadı veya pasif.")
+            raise AuthenticationError(t("error.auth.user_not_found_or_inactive"))
         scopes = {scope for scope in api_key_obj.scopes.split() if scope}
         return AuthContext(user=user, auth_method=AuthMethod.API_KEY, api_key_scopes=scopes)
 
     # Bearer token auth
     if not credentials:
-        raise AuthenticationError("Authorization header veya X-API-Key gerekli.")
+        raise AuthenticationError(t("error.auth.missing_credentials"))
 
     payload = decode_token(credentials.credentials)
 
     if payload.type != TokenType.ACCESS:
-        raise InvalidTokenError("Yanlış token türü.")
+        raise InvalidTokenError(t("error.auth.token_type_invalid"))
 
     if await redis.exists(BLACKLIST_KEY.format(payload.jti)):
-        raise InvalidTokenError("Token geçersiz kılınmış.")
+        raise InvalidTokenError(t("error.auth.token_revoked"))
 
     user = await user_repo.get_by_id(UUID(payload.sub))
     if not user or not user.is_active:
-        raise AuthenticationError("Kullanıcı bulunamadı veya pasif.")
+        raise AuthenticationError(t("error.auth.user_not_found_or_inactive"))
     if is_token_revoked_after(payload.iat, user.session_revoked_after):
-        raise InvalidTokenError("Token geçersiz kılınmış.")
+        raise InvalidTokenError(t("error.auth.token_revoked"))
 
     return AuthContext(user=user, auth_method=AuthMethod.BEARER)
 
@@ -230,7 +231,7 @@ def require_surface(*allowed: SurfaceType) -> Any:
         auth: Annotated[AuthContext, Depends(get_current_active_auth)],
     ) -> User:
         if auth.user.surface not in allowed_values:
-            raise InsufficientPermissionsError("Bu kullanıcı türü bu kaynağa erişemez.")
+            raise InsufficientPermissionsError(t("error.permissions.surface_forbidden"))
         return auth.user
 
     return check

@@ -64,7 +64,7 @@ class CreateAPIKeyRequest(BaseModel):
         """İsim alanındaki baştaki ve sondaki boşlukları temizler."""
         v = v.strip()
         if not v:
-            raise ValueError("İsim sadece boşluktan oluşamaz.")
+            raise ValueError(t("validation.api_key.name_blank"))
         return v
 
     @field_validator("scopes")

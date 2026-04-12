@@ -10,6 +10,7 @@ from app.api.dependencies.services import AuditServiceDep
 from app.api.policies.permissions import can_delete_any_uploaded_file
 from app.core.config import settings
 from app.core.exceptions import InvalidFileTypeError
+from app.core.i18n import t
 from app.core.limiter import limiter
 from app.db.models.audit_log import AuditAction
 from app.schemas.common import MessageResponse
@@ -75,8 +76,11 @@ async def upload_file(
     """
     if file.content_type not in settings.ALLOWED_UPLOAD_TYPES:
         raise InvalidFileTypeError(
-            f"'{file.content_type}' tipi desteklenmiyor. "
-            f"İzin verilenler: {', '.join(settings.ALLOWED_UPLOAD_TYPES)}"
+            t(
+                "error.upload.invalid_file_type",
+                content_type=file.content_type,
+                allowed=", ".join(settings.ALLOWED_UPLOAD_TYPES),
+            )
         )
     folder = f"users/{current_user.user.id}"
     key = await storage.upload(file, folder=folder)
@@ -86,7 +90,7 @@ async def upload_file(
         user_id=current_user.user.id,
         extra={"key": key, "filename": file.filename},
     )
-    return UploadResponse(message="Dosya başarıyla yüklendi.", key=key, url=url)
+    return UploadResponse(message=t("upload.upload.success"), key=key, url=url)
 
 
 @router.delete("", response_model=MessageResponse)
@@ -140,7 +144,7 @@ async def delete_file(
     # Path traversal ve geçersiz key kontrolü
     normalised_key = key.strip().lstrip("/")
     if ".." in normalised_key or normalised_key != key.strip().lstrip("/"):
-        raise InsufficientPermissionsError("Geçersiz dosya anahtarı.")
+        raise InsufficientPermissionsError(t("error.upload.invalid_key"))
 
     user_prefix = f"users/{current_user.user.id!s}/"
     is_owner = normalised_key.startswith(user_prefix) and len(normalised_key) > len(user_prefix)
@@ -151,7 +155,7 @@ async def delete_file(
     )
 
     if not can_delete_any and not is_owner:
-        raise InsufficientPermissionsError("Bu dosyayı silme yetkiniz yok.")
+        raise InsufficientPermissionsError(t("error.upload.delete_forbidden"))
 
     await storage.delete(key)
     await audit.log(
@@ -159,4 +163,4 @@ async def delete_file(
         user_id=current_user.user.id,
         extra={"key": key},
     )
-    return MessageResponse(message="Dosya silindi.")
+    return MessageResponse(message=t("upload.delete.success"))

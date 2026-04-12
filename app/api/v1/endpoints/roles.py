@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies.auth import Surface, require_permissions, require_surface_access
 from app.api.dependencies.infrastructure import CacheServiceDep
 from app.api.dependencies.services import get_audit_service
+from app.core.i18n import t
 from app.core.permissions import Permission
 from app.db.models.user import User
 from app.db.session import get_db
@@ -170,4 +171,4 @@ async def delete_role(
         BusinessRuleError: Sistem rolü silinmeye çalışılırsa.
     """
     await service.delete(role_id)
-    return MessageResponse(message="Rol silindi.")
+    return MessageResponse(message=t("role.delete.success"))
