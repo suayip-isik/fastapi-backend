@@ -138,7 +138,7 @@ async def test_update_me_full_name(client: AsyncClient):
     """test_update_me_full_name senaryosunu test eder."""
     headers = await _auth_headers(client, "update_name@example.com")
     res = await client.patch(
-        "/api/v1/shared/me", json={"full_name": "Yeni Ad Soyad"}, headers=headers
+        "/api/v1/shared/me/profile", json={"full_name": "Yeni Ad Soyad"}, headers=headers
     )
 
     assert res.status_code == 200
@@ -150,7 +150,7 @@ async def test_update_me_username(client: AsyncClient):
     """test_update_me_username senaryosunu test eder."""
     headers = await _auth_headers(client, "update_username@example.com")
     res = await client.patch(
-        "/api/v1/shared/me", json={"username": "yeni_kullanici"}, headers=headers
+        "/api/v1/shared/me/profile", json={"username": "yeni_kullanici"}, headers=headers
     )
 
     assert res.status_code == 200
@@ -162,7 +162,7 @@ async def test_update_me_email(client: AsyncClient):
     """test_update_me_email senaryosunu test eder."""
     headers = await _auth_headers(client, "old_email@example.com")
     res = await client.patch(
-        "/api/v1/shared/me",
+        "/api/v1/shared/me/email",
         json={
             "email": "new_address@example.com",
             "current_password": "StrongPass1",
@@ -183,7 +183,7 @@ async def test_update_me_email_duplicate(client: AsyncClient):
     headers = await _auth_headers(client, "wants_taken@example.com")
 
     res = await client.patch(
-        "/api/v1/shared/me",
+        "/api/v1/shared/me/email",
         json={"email": "taken@example.com", "current_password": "StrongPass1"},
         headers=headers,
     )
@@ -195,7 +195,7 @@ async def test_update_me_email_requires_current_password(client: AsyncClient):
     """Email değişikliğinde current_password zorunlu olmalı."""
     headers = await _auth_headers(client, "missing_pw@example.com")
     res = await client.patch(
-        "/api/v1/shared/me",
+        "/api/v1/shared/me/email",
         json={"email": "new_missing_pw@example.com"},
         headers=headers,
     )
@@ -213,7 +213,7 @@ async def test_update_me_email_verification_promotes_pending_email(
     mock_enqueue.reset_mock()
 
     res = await client.patch(
-        "/api/v1/shared/me",
+        "/api/v1/shared/me/email",
         json={
             "email": "verify_me_new@example.com",
             "current_password": "StrongPass1",
@@ -238,7 +238,9 @@ async def test_update_me_password(client: AsyncClient):
     email = "change_pw@example.com"
     headers = await _auth_headers(client, email)
 
-    res = await client.patch("/api/v1/shared/me", json={"password": "NewPass123"}, headers=headers)
+    res = await client.patch(
+        "/api/v1/shared/me/password", json={"password": "NewPass123"}, headers=headers
+    )
     assert res.status_code == 200
 
     # Yeni şifre çalışmalı
@@ -257,7 +259,7 @@ async def test_update_me_password(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_update_me_unauthorized(client: AsyncClient):
     """test_update_me_unauthorized senaryosunu test eder."""
-    res = await client.patch("/api/v1/shared/me", json={"full_name": "Foo"})
+    res = await client.patch("/api/v1/shared/me/profile", json={"full_name": "Foo"})
     assert res.status_code == 401
 
 
@@ -363,7 +365,7 @@ async def test_delete_my_avatar_with_unmanaged_url_skips_storage_delete(
 async def test_update_me_no_fields_returns_current_user(client: AsyncClient):
     """Hiçbir alan gönderilmezse mevcut kullanıcı döner — 200."""
     headers = await _auth_headers(client, "noop_update@example.com")
-    res = await client.patch("/api/v1/shared/me", json={}, headers=headers)
+    res = await client.patch("/api/v1/shared/me/profile", json={}, headers=headers)
 
     assert res.status_code == 200
     assert res.json()["email"] == "noop_update@example.com"
@@ -548,7 +550,7 @@ async def test_create_admin_user_accepts_custom_panel_role(
     client: AsyncClient,
     db_session: AsyncSession,
 ):
-    """admin:panel_access taşıyan özel rol ile admin kullanıcı oluşturulabilmeli."""
+    """Admin permission taşıyan özel rol ile admin kullanıcı oluşturulabilmeli."""
     creator_email = "admin_creator_custom_role@example.com"
     headers = await _auth_headers(client, creator_email)
     await _promote_to_admin(db_session, creator_email)
@@ -556,9 +558,7 @@ async def test_create_admin_user_accepts_custom_panel_role(
     custom_role = Role(name="support_admin", description="Support", is_system=False)
     db_session.add(custom_role)
     await db_session.flush()
-    db_session.add(
-        RolePermission(role_id=custom_role.id, permission=Permission.ADMIN_PANEL_ACCESS.value)
-    )
+    db_session.add(RolePermission(role_id=custom_role.id, permission=Permission.USERS_LIST.value))
     await db_session.commit()
 
     res = await client.post(
@@ -608,9 +608,7 @@ async def test_resend_admin_invite_for_pending_admin(
     support_role = Role(name="resend_support_admin", description="Support", is_system=False)
     db_session.add(support_role)
     await db_session.flush()
-    db_session.add(
-        RolePermission(role_id=support_role.id, permission=Permission.ADMIN_PANEL_ACCESS.value)
-    )
+    db_session.add(RolePermission(role_id=support_role.id, permission=Permission.USERS_LIST.value))
     await db_session.commit()
 
     create_res = await client.post(
@@ -640,9 +638,7 @@ async def test_resend_admin_invite_rejects_user_with_password(
     support_role = Role(name="resend_done_support_admin", description="Support", is_system=False)
     db_session.add(support_role)
     await db_session.flush()
-    db_session.add(
-        RolePermission(role_id=support_role.id, permission=Permission.ADMIN_PANEL_ACCESS.value)
-    )
+    db_session.add(RolePermission(role_id=support_role.id, permission=Permission.USERS_LIST.value))
     await db_session.commit()
 
     create_res = await client.post(
@@ -734,11 +730,11 @@ async def test_admin_update_user_profile_fields(client: AsyncClient, db_session:
         db_session,
         email=actor_email,
         role_name="user_manager",
-        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_UPDATE],
+        permissions=[Permission.USERS_LIST, Permission.USERS_UPDATE_PROFILE],
     )
 
     res = await client.patch(
-        f"/api/v1/admin/users/{target_id}",
+        f"/api/v1/admin/users/{target_id}/profile",
         json={"full_name": "Managed User", "username": "managed_user"},
         headers=headers,
     )
@@ -763,7 +759,7 @@ async def test_admin_update_user_avatar_requires_explicit_permission(
         db_session,
         email=actor_email,
         role_name="write_only_avatar_blocked",
-        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_UPDATE],
+        permissions=[Permission.USERS_LIST, Permission.USERS_UPDATE_PROFILE],
     )
     storage = _mock_storage(
         key=f"users/{target_id}/avatars/new.jpg",
@@ -794,7 +790,7 @@ async def test_admin_update_user_avatar(client: AsyncClient, db_session: AsyncSe
         db_session,
         email=actor_email,
         role_name="avatar_manager_role",
-        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_UPLOAD_AVATAR],
+        permissions=[Permission.USERS_LIST, Permission.USERS_UPDATE_AVATAR],
     )
     key = f"users/{target_id}/avatars/new.jpg"
     url = f"http://localhost:9000/app-uploads/{key}"
@@ -834,7 +830,7 @@ async def test_admin_delete_user_avatar(client: AsyncClient, db_session: AsyncSe
         db_session,
         email=actor_email,
         role_name="avatar_delete_role",
-        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_DELETE_AVATAR],
+        permissions=[Permission.USERS_LIST, Permission.USERS_DELETE_AVATAR],
     )
     storage = _mock_storage(key=old_key, url=old_url)
 
@@ -859,7 +855,7 @@ async def test_admin_update_user_avatar_blocks_self_action(
         db_session,
         email=actor_email,
         role_name="avatar_self_blocked_role",
-        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_UPLOAD_AVATAR],
+        permissions=[Permission.USERS_LIST, Permission.USERS_UPDATE_AVATAR],
     )
     storage = _mock_storage(
         key=f"users/{actor_id}/avatars/new.jpg",
@@ -893,7 +889,7 @@ async def test_admin_update_user_avatar_blocks_protected_admin(
         db_session,
         email=actor_email,
         role_name="avatar_admin_actor_role",
-        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_UPLOAD_AVATAR],
+        permissions=[Permission.USERS_LIST, Permission.USERS_UPDATE_AVATAR],
     )
     await _promote_to_admin(db_session, target_email)
     storage = _mock_storage(
@@ -929,7 +925,7 @@ async def test_admin_change_user_email_sends_verification(
         db_session,
         email=actor_email,
         role_name="email_manager_role",
-        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_CHANGE_EMAIL],
+        permissions=[Permission.USERS_LIST, Permission.USERS_UPDATE_EMAIL],
     )
     mock_enqueue.reset_mock()
 
@@ -954,7 +950,7 @@ async def test_admin_change_user_email_requires_permission(
     client: AsyncClient,
     db_session: AsyncSession,
 ):
-    """users:change_email yetkisi olmayan admin surface kullanıcı email değiştirememeli."""
+    """users.update.email yetkisi olmayan admin surface kullanıcı email değiştirememeli."""
     actor_email = "email_manager_blocked@example.com"
     target_email = "email_target_blocked@example.com"
     target_headers = await _auth_headers(client, target_email)
@@ -965,7 +961,7 @@ async def test_admin_change_user_email_requires_permission(
         db_session,
         email=actor_email,
         role_name="write_only_manager",
-        permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_UPDATE],
+        permissions=[Permission.USERS_LIST, Permission.USERS_UPDATE_PROFILE],
     )
 
     res = await client.post(
@@ -994,8 +990,8 @@ async def test_admin_resend_user_verification_for_pending_email(
         email=actor_email,
         role_name="verify_resend_role",
         permissions=[
-            Permission.ADMIN_PANEL_ACCESS,
-            Permission.USERS_CHANGE_EMAIL,
+            Permission.USERS_LIST,
+            Permission.USERS_UPDATE_EMAIL,
             Permission.USERS_RESEND_VERIFICATION,
         ],
     )
@@ -1030,12 +1026,12 @@ async def test_admin_user_management_blocks_admin_role_target(
         email=actor_email,
         role_name="full_user_manager",
         permissions=[
-            Permission.ADMIN_PANEL_ACCESS,
-            Permission.USERS_UPDATE,
-            Permission.USERS_CHANGE_EMAIL,
+            Permission.USERS_LIST,
+            Permission.USERS_UPDATE_PROFILE,
+            Permission.USERS_UPDATE_EMAIL,
             Permission.USERS_RESEND_VERIFICATION,
             Permission.USERS_DELETE,
-            Permission.USERS_VIEW,
+            Permission.USERS_READ_BASIC,
         ],
     )
 
@@ -1123,7 +1119,9 @@ async def test_deactivate_nonexistent_user(client: AsyncClient, db_session: Asyn
 async def test_update_me_password_too_short(client: AsyncClient):
     """8 karakterden kısa şifre ile PATCH /users/me → 422."""
     headers = await _auth_headers(client, "shortpw_update@example.com")
-    res = await client.patch("/api/v1/shared/me", json={"password": "Sh0rt"}, headers=headers)
+    res = await client.patch(
+        "/api/v1/shared/me/password", json={"password": "Sh0rt"}, headers=headers
+    )
     assert res.status_code == 422
 
 
@@ -1152,7 +1150,7 @@ async def test_list_users_search_by_username(client: AsyncClient, db_session: As
     admin_email = "admin_srch_uname@example.com"
     target_headers = await _auth_headers(client, "srch_uname_user@example.com")
     await client.patch(
-        "/api/v1/shared/me", json={"username": "findme_username"}, headers=target_headers
+        "/api/v1/shared/me/profile", json={"username": "findme_username"}, headers=target_headers
     )
     headers = await _auth_headers(client, admin_email)
     await _promote_to_admin(db_session, admin_email)

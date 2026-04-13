@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.core.i18n import t
 from app.schemas.role import AssignRoleRequest, RoleInfo
@@ -14,9 +14,10 @@ __all__ = [
     "UserResponse",
     "DeletedUserResponse",
     "CreateAdminUserRequest",
-    "UpdateUserRequest",
-    "AdminUpdateUserRequest",
-    "ChangeEmailRequest",
+    "UpdateOwnProfileRequest",
+    "UpdateOwnEmailRequest",
+    "UpdateOwnPasswordRequest",
+    "AdminUpdateUserProfileRequest",
     "AdminChangeUserEmailRequest",
     "UserStatsResponse",
     "AssignRoleRequest",
@@ -65,23 +66,24 @@ class DeletedUserResponse(UserResponse):
     deleted_at: datetime
 
 
-class UpdateUserRequest(BaseModel):
-    """Kullanıcı bilgilerini güncelleme için request schema.
+class UpdateOwnProfileRequest(BaseModel):
+    """Kullanıcının kendi temel profil alanlarını güncelleme isteği."""
 
-    Tüm alanlar opsiyoneldir, sadece gönderilen alanlar güncellenir (PATCH semantics).
-
-    Attributes:
-        email: Yeni email adresi (benzersiz olmalı)
-        full_name: Yeni tam ad (max 255 karakter)
-        username: Yeni kullanıcı adı (max 50 karakter, benzersiz olmalı)
-        password: Yeni şifre (min 8 karakter, bcrypt ile hash'lenecek)
-    """
-
-    email: EmailStr | None = None
     full_name: str | None = Field(default=None, max_length=255)
     username: str | None = Field(default=None, max_length=50)
-    password: str | None = Field(default=None, min_length=8, max_length=128)
-    current_password: str | None = Field(default=None, min_length=8, max_length=128)
+
+
+class UpdateOwnEmailRequest(BaseModel):
+    """Kullanıcının kendi e-posta değişikliği isteği."""
+
+    email: EmailStr = Field(..., max_length=255)
+    current_password: str = Field(..., min_length=8, max_length=128)
+
+
+class UpdateOwnPasswordRequest(BaseModel):
+    """Kullanıcının kendi şifre değişikliği isteği."""
+
+    password: str = Field(..., min_length=8, max_length=128)
 
     @field_validator("password", mode="after")
     @classmethod
@@ -94,27 +96,12 @@ class UpdateUserRequest(BaseModel):
             raise ValueError(t("validation.password.missing_digit"))
         return v
 
-    @model_validator(mode="after")
-    def validate_email_change_requires_current_password(self) -> UpdateUserRequest:
-        """Email değişikliği için mevcut şifreyi zorunlu kılar."""
-        if self.email is not None and not self.current_password:
-            raise ValueError(t("validation.user.current_password_required_for_email_change"))
-        return self
 
-
-class AdminUpdateUserRequest(BaseModel):
+class AdminUpdateUserProfileRequest(BaseModel):
     """Admin user-management için kullanıcı güncelleme isteği."""
 
     full_name: str | None = Field(default=None, max_length=255)
     username: str | None = Field(default=None, max_length=50)
-    avatar_url: str | None = Field(default=None, max_length=2048)
-
-
-class ChangeEmailRequest(BaseModel):
-    """Self-service e-posta değişikliği isteği."""
-
-    email: EmailStr = Field(..., max_length=255)
-    current_password: str = Field(..., min_length=8, max_length=128)
 
 
 class AdminChangeUserEmailRequest(BaseModel):

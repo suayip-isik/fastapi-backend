@@ -56,7 +56,7 @@ async def test_login_succeeds_for_admin_account_with_panel_permission() -> None:
     user_reader = AsyncMock()
     user_reader.get_active_by_email.return_value = user
     permission_provider = AsyncMock()
-    permission_provider.get_permissions.return_value = {Permission.ADMIN_PANEL_ACCESS.value}
+    permission_provider.get_permissions.return_value = {Permission.USERS_LIST.value}
     use_case = AdminAuthUseCase(user_reader=user_reader, permission_provider=permission_provider)
     backend = AdminAuthBackend(secret_key="test", use_case=use_case)
 
@@ -95,7 +95,7 @@ async def test_login_rejects_missing_panel_permission() -> None:
     user_reader = AsyncMock()
     user_reader.get_active_by_email.return_value = user
     permission_provider = AsyncMock()
-    permission_provider.get_permissions.return_value = {"users:list"}
+    permission_provider.get_permissions.return_value = {"profile.read.self"}
     use_case = AdminAuthUseCase(user_reader=user_reader, permission_provider=permission_provider)
     backend = AdminAuthBackend(secret_key="test", use_case=use_case)
 
@@ -132,7 +132,7 @@ async def test_authenticate_accepts_admin_account_with_panel_permission() -> Non
     user_reader = AsyncMock()
     user_reader.get_by_id.return_value = user
     permission_provider = AsyncMock()
-    permission_provider.get_permissions.return_value = {Permission.ADMIN_PANEL_ACCESS.value}
+    permission_provider.get_permissions.return_value = {Permission.USERS_LIST.value}
     redis = AsyncMock()
     redis.exists.return_value = False
     use_case = AdminAuthUseCase(
@@ -270,7 +270,7 @@ async def test_authenticate_rejects_token_older_than_session_cutoff() -> None:
     user_reader = AsyncMock()
     user_reader.get_by_id.return_value = user
     permission_provider = AsyncMock()
-    permission_provider.get_permissions.return_value = {Permission.ADMIN_PANEL_ACCESS.value}
+    permission_provider.get_permissions.return_value = {Permission.USERS_LIST.value}
     redis = AsyncMock()
     redis.exists.return_value = False
     use_case = AdminAuthUseCase(

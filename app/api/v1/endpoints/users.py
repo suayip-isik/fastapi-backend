@@ -31,10 +31,12 @@ from app.schemas.common import MessageResponse, PaginatedResponse, calculate_pag
 from app.schemas.role import AssignRoleRequest
 from app.schemas.user import (
     AdminChangeUserEmailRequest,
-    AdminUpdateUserRequest,
+    AdminUpdateUserProfileRequest,
     CreateAdminUserRequest,
     DeletedUserResponse,
-    UpdateUserRequest,
+    UpdateOwnEmailRequest,
+    UpdateOwnPasswordRequest,
+    UpdateOwnProfileRequest,
     UserResponse,
     UserStatsResponse,
 )
@@ -46,27 +48,37 @@ shared_router = APIRouter(prefix="/shared/me", tags=["Shared Profile"])
 
 # Modül yüklendiğinde bir kez oluşturulur — her request'te tek Redis GET maliyeti.
 _AdminSurfaceDep = Annotated[User, Depends(require_surface_access(Surface.ADMIN))]
-_ProfileViewDep = Annotated[User, Depends(require_permissions(Permission.PROFILE_VIEW))]
-_ProfileUpdateDep = Annotated[User, Depends(require_permissions(Permission.PROFILE_UPDATE))]
+_ProfileViewDep = Annotated[User, Depends(require_permissions(Permission.PROFILE_READ_SELF))]
+_ProfileUpdateBasicDep = Annotated[
+    User, Depends(require_permissions(Permission.PROFILE_UPDATE_BASIC))
+]
+_ProfileUpdateEmailDep = Annotated[
+    User, Depends(require_permissions(Permission.PROFILE_UPDATE_EMAIL))
+]
+_ProfileUpdatePasswordDep = Annotated[
+    User, Depends(require_permissions(Permission.PROFILE_UPDATE_PASSWORD))
+]
 _ProfileUploadAvatarDep = Annotated[
-    User, Depends(require_permissions(Permission.PROFILE_UPLOAD_AVATAR))
+    User, Depends(require_permissions(Permission.PROFILE_UPDATE_AVATAR))
 ]
 _ProfileDeleteAvatarDep = Annotated[
     User, Depends(require_permissions(Permission.PROFILE_DELETE_AVATAR))
 ]
 _UsersCreateAdminDep = Annotated[User, Depends(require_permissions(Permission.USERS_CREATE_ADMIN))]
 _UsersListDep = Annotated[User, Depends(require_permissions(Permission.USERS_LIST))]
-_UsersViewDep = Annotated[User, Depends(require_permissions(Permission.USERS_VIEW))]
-_UsersViewStatsDep = Annotated[User, Depends(require_permissions(Permission.USERS_VIEW_STATS))]
-_UsersListDeletedDep = Annotated[User, Depends(require_permissions(Permission.USERS_LIST_DELETED))]
-_UsersUpdateDep = Annotated[User, Depends(require_permissions(Permission.USERS_UPDATE))]
+_UsersViewDep = Annotated[User, Depends(require_permissions(Permission.USERS_READ_BASIC))]
+_UsersViewStatsDep = Annotated[User, Depends(require_permissions(Permission.USERS_READ_STATS))]
+_UsersListDeletedDep = Annotated[User, Depends(require_permissions(Permission.USERS_READ_DELETED))]
+_UsersUpdateProfileDep = Annotated[
+    User, Depends(require_permissions(Permission.USERS_UPDATE_PROFILE))
+]
 _UsersUploadAvatarDep = Annotated[
-    User, Depends(require_permissions(Permission.USERS_UPLOAD_AVATAR))
+    User, Depends(require_permissions(Permission.USERS_UPDATE_AVATAR))
 ]
 _UsersDeleteAvatarDep = Annotated[
     User, Depends(require_permissions(Permission.USERS_DELETE_AVATAR))
 ]
-_UsersChangeEmailDep = Annotated[User, Depends(require_permissions(Permission.USERS_CHANGE_EMAIL))]
+_UsersChangeEmailDep = Annotated[User, Depends(require_permissions(Permission.USERS_UPDATE_EMAIL))]
 _UsersResendVerificationDep = Annotated[
     User, Depends(require_permissions(Permission.USERS_RESEND_VERIFICATION))
 ]
@@ -75,7 +87,7 @@ _UsersResendAdminInviteDep = Annotated[
 ]
 _UsersActivateDep = Annotated[User, Depends(require_permissions(Permission.USERS_ACTIVATE))]
 _UsersDeactivateDep = Annotated[User, Depends(require_permissions(Permission.USERS_DEACTIVATE))]
-_UsersAssignRoleDep = Annotated[User, Depends(require_permissions(Permission.USERS_ASSIGN_ROLE))]
+_UsersAssignRoleDep = Annotated[User, Depends(require_permissions(Permission.USERS_UPDATE_ROLE))]
 _UsersDeleteDep = Annotated[User, Depends(require_permissions(Permission.USERS_DELETE))]
 _UsersRestoreDep = Annotated[User, Depends(require_permissions(Permission.USERS_RESTORE))]
 
@@ -118,30 +130,48 @@ async def get_me(
 
 
 @shared_router.patch(
-    "",
+    "/profile",
     response_model=UserResponse,
     openapi_extra={"x-surfaces": ["shared"]},
 )
-async def update_me(
-    data: UpdateUserRequest,
-    _: _ProfileUpdateDep,
+async def update_my_profile(
+    data: UpdateOwnProfileRequest,
+    _: _ProfileUpdateBasicDep,
     current_user: CurrentUserDep,
     service: UserServiceDep,
 ) -> User:
-    """Giriş yapmış kullanıcının profil bilgilerini günceller.
+    """Giriş yapmış kullanıcının temel profil alanlarını günceller."""
+    return await service.update_self_profile(current_user.id, data)
 
-    Kullanıcının kendi profil alanlarını günceller. Email değişikliğinde
-    mevcut şifre doğrulanır ve yeni adrese doğrulama e-postası gönderilir.
 
-    Args:
-        data: Güncellenecek profil alanlarını içeren istek verisi.
-        current_user: JWT token ile doğrulanmış mevcut kullanıcı.
-        service: Kullanıcı işlemlerini yöneten servis.
+@shared_router.patch(
+    "/email",
+    response_model=UserResponse,
+    openapi_extra={"x-surfaces": ["shared"]},
+)
+async def update_my_email(
+    data: UpdateOwnEmailRequest,
+    _: _ProfileUpdateEmailDep,
+    current_user: CurrentUserDep,
+    service: UserServiceDep,
+) -> User:
+    """Giriş yapmış kullanıcının e-posta değişikliğini başlatır."""
+    return await service.update_self_email(current_user.id, data)
 
-    Returns:
-        Güncellenmiş kullanıcı profil bilgileri.
-    """
-    return await service.update_self(current_user.id, data)
+
+@shared_router.patch(
+    "/password",
+    response_model=UserResponse,
+    openapi_extra={"x-surfaces": ["shared"]},
+)
+async def update_my_password(
+    data: UpdateOwnPasswordRequest,
+    _: _ProfileUpdatePasswordDep,
+    current_user: CurrentUserDep,
+    service: UserServiceDep,
+) -> User:
+    """Giriş yapmış kullanıcının şifresini günceller."""
+    return await service.update_self_password(current_user.id, data)
 
 
 @shared_router.put(
@@ -342,16 +372,20 @@ async def get_user(
     return await service.get_by_id_cached(user_id)
 
 
-@admin_router.patch("/{user_id}", response_model=UserResponse)
-async def update_user(
+@admin_router.patch("/{user_id}/profile", response_model=UserResponse)
+async def update_user_profile(
     user_id: UUID,
-    data: AdminUpdateUserRequest,
+    data: AdminUpdateUserProfileRequest,
     _surface: _AdminSurfaceDep,
-    current_user: _UsersUpdateDep,
+    current_user: _UsersUpdateProfileDep,
     service: UserServiceDep,
 ) -> User:
     """Admin user-management ile kullanıcı profil alanlarını günceller."""
-    return await service.admin_update(actor_user_id=current_user.id, user_id=user_id, data=data)
+    return await service.admin_update_profile(
+        actor_user_id=current_user.id,
+        user_id=user_id,
+        data=data,
+    )
 
 
 @admin_router.put("/{user_id}/avatar", response_model=UserResponse)

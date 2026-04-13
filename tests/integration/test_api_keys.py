@@ -55,7 +55,7 @@ async def test_create_api_key_success(client: AsyncClient):
 
     res = await client.post(
         "/api/v1/shared/api-keys",
-        json={"name": "Production Key", "scopes": ["api_keys:list", "api_keys:create"]},
+        json={"name": "Production Key", "scopes": ["api_keys.list", "api_keys.create"]},
         headers=headers,
     )
 
@@ -311,7 +311,7 @@ async def test_api_key_with_matching_scope_can_access_protected_endpoint(client:
         client,
         headers,
         "Scoped Key",
-        scopes=["api_keys:list"],
+        scopes=["api_keys.list"],
     )
 
     res = await client.get("/api/v1/shared/api-keys", headers={"X-API-Key": created["key"]})
@@ -321,16 +321,16 @@ async def test_api_key_with_matching_scope_can_access_protected_endpoint(client:
 
 @pytest.mark.asyncio
 async def test_api_key_scope_cannot_escalate_beyond_user_permissions(client: AsyncClient):
-    """API key scope'u kullanıcıda olmayan permission'ı tek başına verememeli."""
+    """API key scope'u kullanıcıda olmayan permission istenirken istek reddedilmeli."""
     headers = await _auth_headers(client, "apikey_scope_escalate@example.com")
-    created = await _create_key(
-        client,
-        headers,
-        "Escalation Key",
-        scopes=["users:list"],
+    res = await client.post(
+        "/api/v1/shared/api-keys",
+        json={
+            "name": "Escalation Key",
+            "scopes": ["users.list"],
+        },
+        headers=headers,
     )
-
-    res = await client.get("/api/v1/admin/users", headers={"X-API-Key": created["key"]})
 
     assert res.status_code == 403
 
@@ -342,7 +342,7 @@ async def test_api_key_scope_cannot_escalate_beyond_user_permissions(client: Asy
 async def test_api_key_authentication_works(client: AsyncClient):
     """X-API-Key header ile kimlik doğrulaması yapılabilmeli."""
     headers = await _auth_headers(client, "apikey_auth@example.com")
-    created = await _create_key(client, headers, "Auth Key", scopes=["profile:view"])
+    created = await _create_key(client, headers, "Auth Key", scopes=["profile.read.self"])
     raw_key = created["key"]
 
     # X-API-Key header ile korunan bir endpoint'e eriş

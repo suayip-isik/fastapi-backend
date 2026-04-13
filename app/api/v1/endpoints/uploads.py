@@ -9,9 +9,10 @@ from app.api.dependencies.infrastructure import StoragePortDep
 from app.api.dependencies.services import AuditServiceDep
 from app.api.policies.permissions import can_delete_any_uploaded_file
 from app.core.config import settings
-from app.core.exceptions import InvalidFileTypeError
+from app.core.exceptions import InsufficientPermissionsError, InvalidFileTypeError
 from app.core.i18n import t
 from app.core.limiter import limiter
+from app.core.permissions import Permission
 from app.db.models.audit_log import AuditAction
 from app.schemas.common import MessageResponse
 
@@ -74,6 +75,9 @@ async def upload_file(
         - Audit log: FILE_UPLOADED action ile kaydedilir
         - File key ve filename audit log'a eklenir
     """
+    effective_perms = await get_effective_permissions(current_user)
+    if Permission.UPLOADS_CREATE_OWN.value not in effective_perms:
+        raise InsufficientPermissionsError(t("error.auth.insufficient_permissions"))
     if file.content_type not in settings.ALLOWED_UPLOAD_TYPES:
         raise InvalidFileTypeError(
             t(
@@ -139,8 +143,6 @@ async def delete_file(
         - Rate limit: RATE_LIMIT_UPLOAD (settings'den)
         - Audit log: FILE_DELETED action ile kaydedilir
     """
-    from app.core.exceptions import InsufficientPermissionsError
-
     # Path traversal ve geçersiz key kontrolü
     normalised_key = key.strip().lstrip("/")
     if ".." in normalised_key or normalised_key != key.strip().lstrip("/"):
@@ -153,8 +155,9 @@ async def delete_file(
         current_user.user.surface,
         effective_perms,
     )
+    can_delete_own = Permission.UPLOADS_DELETE_OWN.value in effective_perms
 
-    if not can_delete_any and not is_owner:
+    if not can_delete_any and not (can_delete_own and is_owner):
         raise InsufficientPermissionsError(t("error.upload.delete_forbidden"))
 
     await storage.delete(key)

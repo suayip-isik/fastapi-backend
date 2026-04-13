@@ -33,13 +33,13 @@ _NotificationsListDep = Annotated[
     object, Depends(require_permissions(Permission.NOTIFICATIONS_LIST))
 ]
 _NotificationsUnreadCountDep = Annotated[
-    object, Depends(require_permissions(Permission.NOTIFICATIONS_VIEW_UNREAD_COUNT))
+    object, Depends(require_permissions(Permission.NOTIFICATIONS_READ_UNREAD_COUNT))
 ]
 _NotificationsMarkAllReadDep = Annotated[
-    object, Depends(require_permissions(Permission.NOTIFICATIONS_MARK_ALL_READ))
+    object, Depends(require_permissions(Permission.NOTIFICATIONS_UPDATE_ALL_READ))
 ]
 _NotificationsMarkReadDep = Annotated[
-    object, Depends(require_permissions(Permission.NOTIFICATIONS_MARK_READ))
+    object, Depends(require_permissions(Permission.NOTIFICATIONS_UPDATE_READ))
 ]
 _NotificationsDeleteDep = Annotated[
     object, Depends(require_permissions(Permission.NOTIFICATIONS_DELETE))

@@ -5,15 +5,55 @@ Her model için admin panelinde görünecek alanlar ve işlemler burada tanımla
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from sqladmin import ModelView
 
+from app.core.permissions import Permission
 from app.db.models.audit_log import AuditLog
 from app.db.models.role import Role
 from app.db.models.user import User
 
 
-class UserAdmin(ModelView, model=User):
+class PermissionScopedModelView(ModelView):
+    """SQLAdmin view erişimini oturumdaki permission seti ile sınırlar."""
+
+    required_permissions: tuple[str, ...] = ()
+
+    @classmethod
+    def _permission_values(cls, permissions: Iterable[Permission | str]) -> tuple[str, ...]:
+        values: list[str] = []
+        for permission in permissions:
+            values.append(permission.value if isinstance(permission, Permission) else permission)
+        return tuple(values)
+
+    def _session_permissions(self, request: object) -> set[str]:
+        session = getattr(request, "session", {})
+        values = session.get("admin_permissions", [])
+        if not isinstance(values, list):
+            return set()
+        return {str(value) for value in values}
+
+    def is_accessible(self, request: object) -> bool:
+        if not self.required_permissions:
+            return True
+        return bool(self._session_permissions(request) & set(self.required_permissions))
+
+    def is_visible(self, request: object) -> bool:
+        return self.is_accessible(request)
+
+
+class UserAdmin(PermissionScopedModelView, model=User):
     """User modeli için SQLAdmin panel view."""
+
+    required_permissions = PermissionScopedModelView._permission_values(
+        (
+            Permission.USERS_LIST,
+            Permission.USERS_READ_BASIC,
+            Permission.USERS_UPDATE_PROFILE,
+            Permission.USERS_DELETE,
+        )
+    )
 
     name = "Kullanıcı"
     name_plural = "Kullanıcılar"
@@ -65,12 +105,22 @@ class UserAdmin(ModelView, model=User):
     can_export = True
 
 
-class RoleAdmin(ModelView, model=Role):
+class RoleAdmin(PermissionScopedModelView, model=Role):
     """Role modeli için SQLAdmin panel view.
 
     Rolleri ve permission setlerini görüntüler.
     Sistem rolleri silinmemelidir (is_system=True olanlar).
     """
+
+    required_permissions = PermissionScopedModelView._permission_values(
+        (
+            Permission.ROLES_LIST,
+            Permission.ROLES_READ_DETAIL,
+            Permission.ROLES_UPDATE_DESCRIPTION,
+            Permission.ROLES_UPDATE_PERMISSIONS,
+            Permission.ROLES_DELETE,
+        )
+    )
 
     name = "Rol"
     name_plural = "Roller"
@@ -109,8 +159,16 @@ class RoleAdmin(ModelView, model=Role):
     can_export = True
 
 
-class AuditLogAdmin(ModelView, model=AuditLog):
+class AuditLogAdmin(PermissionScopedModelView, model=AuditLog):
     """AuditLog modeli için SQLAdmin panel view — salt okunur."""
+
+    required_permissions = PermissionScopedModelView._permission_values(
+        (
+            Permission.AUDIT_LOGS_LIST,
+            Permission.AUDIT_LOGS_READ_DETAIL,
+            Permission.AUDIT_LOGS_STREAM,
+        )
+    )
 
     name = "Audit Log"
     name_plural = "Audit Loglar"
