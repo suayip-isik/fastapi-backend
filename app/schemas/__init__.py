@@ -7,7 +7,7 @@ from app.schemas.auth import (
     TokenResponse,
 )
 from app.schemas.common import MessageResponse, PaginatedResponse
-from app.schemas.user import UpdateUserRequest, UserResponse
+from app.schemas.user import UpdateOwnProfileRequest, UserResponse
 
 __all__ = [
     "RegisterRequest",
@@ -15,7 +15,7 @@ __all__ = [
     "TokenResponse",
     "RefreshRequest",
     "UserResponse",
-    "UpdateUserRequest",
+    "UpdateOwnProfileRequest",
     "PaginatedResponse",
     "MessageResponse",
 ]

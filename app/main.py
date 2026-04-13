@@ -13,11 +13,11 @@ from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import HTMLResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from sqladmin import Admin
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.admin import get_all_views
 from app.admin.auth import AdminAuthBackend
+from app.admin.panel import PermissionAwareAdmin
 from app.admin.seed import create_default_app_user, create_default_superadmin, seed_system_roles
 from app.api.v1.router import api_router
 from app.core.config import settings
@@ -159,7 +159,7 @@ def create_app() -> FastAPI:
     app.include_router(api_router)
 
     # Admin Panel
-    admin = Admin(
+    admin = PermissionAwareAdmin(
         app,
         engine=engine,
         authentication_backend=AdminAuthBackend(secret_key=settings.SECRET_KEY),

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from app.core.permissions import Permission, has_admin_panel_access
+from app.core.permissions import Permission, has_admin_surface_access
 from app.db.models.user import SurfaceType
 
 if TYPE_CHECKING:
@@ -35,12 +35,19 @@ def has_permissions_any(
 
 def can_delete_any_uploaded_file(surface: str, effective_permissions: set[str]) -> bool:
     """Kullanıcı herhangi bir upload dosyasını silebilir mi?"""
-    return surface == SurfaceType.ADMIN.value and has_admin_panel_access(effective_permissions)
+    return surface == SurfaceType.ADMIN.value and has_permissions_all(
+        effective_permissions,
+        [Permission.UPLOADS_DELETE_ANY],
+    )
 
 
 def can_manage_other_users_avatar(surface: str, effective_permissions: set[str]) -> bool:
     """Kullanıcı başka kullanıcıların avatarını yönetebilir mi?"""
-    return surface == SurfaceType.ADMIN.value and has_permissions_any(
-        effective_permissions,
-        [Permission.USERS_UPLOAD_AVATAR, Permission.USERS_DELETE_AVATAR],
+    return (
+        surface == SurfaceType.ADMIN.value
+        and has_admin_surface_access(effective_permissions)
+        and has_permissions_any(
+            effective_permissions,
+            [Permission.USERS_UPDATE_AVATAR, Permission.USERS_DELETE_AVATAR],
+        )
     )

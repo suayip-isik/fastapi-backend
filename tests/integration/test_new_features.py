@@ -191,7 +191,7 @@ async def test_authenticate_with_api_key(client: AsyncClient) -> None:
     headers = await _register_and_login(client, "apikey_auth@example.com")
     create_res = await client.post(
         "/api/v1/shared/api-keys",
-        json={"name": "Auth Key", "scopes": ["profile:view"]},
+        json={"name": "Auth Key", "scopes": ["profile.read.self"]},
         headers=headers,
     )
     raw_key = create_res.json()["key"]
@@ -398,7 +398,7 @@ async def test_api_key_with_past_expiry_rejected(client: AsyncClient) -> None:
     past_date = "2020-01-01T00:00:00Z"
     create_res = await client.post(
         "/api/v1/shared/api-keys",
-        json={"name": "Expired Key", "expires_at": past_date, "scopes": ["profile:view"]},
+        json={"name": "Expired Key", "expires_at": past_date, "scopes": ["profile.read.self"]},
         headers=headers,
     )
     assert create_res.status_code == 201
@@ -417,7 +417,7 @@ async def test_api_key_with_future_expiry_accepted(client: AsyncClient) -> None:
     future_date = "2099-12-31T23:59:59Z"
     create_res = await client.post(
         "/api/v1/shared/api-keys",
-        json={"name": "Future Key", "expires_at": future_date, "scopes": ["profile:view"]},
+        json={"name": "Future Key", "expires_at": future_date, "scopes": ["profile.read.self"]},
         headers=headers,
     )
     assert create_res.status_code == 201

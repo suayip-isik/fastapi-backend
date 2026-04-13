@@ -19,7 +19,7 @@ from app.core.exceptions import (
     UserNotFoundError,
 )
 from app.core.i18n import language_var, t
-from app.core.permissions import Permission
+from app.core.permissions import has_admin_surface_access
 from app.core.security import hash_password, verify_password
 from app.core.system_roles import PANEL_ADMIN_ROLE
 from app.db.models.audit_log import AuditAction
@@ -50,9 +50,11 @@ if TYPE_CHECKING:
     from app.ports.infrastructure import StoragePort, TaskQueuePort
     from app.schemas.user import (
         AdminChangeUserEmailRequest,
-        AdminUpdateUserRequest,
+        AdminUpdateUserProfileRequest,
         CreateAdminUserRequest,
-        UpdateUserRequest,
+        UpdateOwnEmailRequest,
+        UpdateOwnPasswordRequest,
+        UpdateOwnProfileRequest,
         UserResponse,
         UserStatsResponse,
     )
@@ -144,7 +146,7 @@ class UserService(AuditableMixin):
         role = await self._role_repo.get_by_name(role_name)
         if not role:
             raise NotFoundError(t("error.role.named_not_found", name=role_name))
-        if Permission.ADMIN_PANEL_ACCESS.value not in role.permission_set:
+        if not has_admin_surface_access(role.permission_set):
             raise BusinessRuleError(t("error.user.admin_role_requires_panel_access"))
         return role
 
@@ -469,43 +471,10 @@ class UserService(AuditableMixin):
             limit=size,
         )
 
-    async def update_self(self, user_id: UUID, data: UpdateUserRequest) -> User:
-        """Kullanıcının kendi profilini günceller."""
+    async def update_self_profile(self, user_id: UUID, data: UpdateOwnProfileRequest) -> User:
+        """Kullanıcının kendi temel profil alanlarını günceller."""
         user = await self._repo.get_by_id_or_raise(user_id)
         update_data = data.model_dump(exclude_unset=True)
-        new_email = update_data.pop("email", None)
-        current_password = update_data.pop("current_password", None)
-
-        if new_email is not None and new_email.lower() != user.email:
-            if not user.hashed_password:
-                raise BusinessRuleError(t("error.auth.no_password"))
-            if not current_password or not verify_password(current_password, user.hashed_password):
-                raise AuthenticationError(t("error.auth.wrong_password"))
-            if await self._repo.email_exists(new_email, exclude_user_id=user.id):
-                raise AlreadyExistsError(t("error.user.email_already_used"))
-
-            normalized_email = new_email.lower()
-            await self._invalidate_user_cache(user_id, user.email)
-            updated = await self._repo.update(
-                user_id,
-                pending_email=normalized_email,
-                is_verified=False,
-            )
-            await self._issue_verification_email(updated, normalized_email)
-            await self._audit_log(
-                AuditAction.EMAIL_CHANGE_REQUESTED,
-                user_id=user_id,
-                extra={
-                    "actor_user_id": str(user_id),
-                    "target_user_id": str(user_id),
-                    "old_email": self._mask_email(user.email),
-                    "new_email": self._mask_email(normalized_email),
-                },
-            )
-            user = updated
-
-        if "password" in update_data:
-            update_data["hashed_password"] = hash_password(update_data.pop("password"))
 
         if update_data:
             await self._invalidate_user_cache(user_id, user.email)
@@ -517,6 +486,50 @@ class UserService(AuditableMixin):
             )
 
         return user
+
+    async def update_self_email(self, user_id: UUID, data: UpdateOwnEmailRequest) -> User:
+        """Kullanıcının kendi e-posta değişikliğini başlatır."""
+        user = await self._repo.get_by_id_or_raise(user_id)
+        normalized_email = data.email.lower()
+        if normalized_email == user.email:
+            raise BusinessRuleError(t("error.user.new_email_same"))
+        if not user.hashed_password:
+            raise BusinessRuleError(t("error.auth.no_password"))
+        if not verify_password(data.current_password, user.hashed_password):
+            raise AuthenticationError(t("error.auth.wrong_password"))
+        if await self._repo.email_exists(normalized_email, exclude_user_id=user.id):
+            raise AlreadyExistsError(t("error.user.email_already_used"))
+
+        await self._invalidate_user_cache(user_id, user.email)
+        updated = await self._repo.update(
+            user_id,
+            pending_email=normalized_email,
+            is_verified=False,
+        )
+        await self._issue_verification_email(updated, normalized_email)
+        await self._audit_log(
+            AuditAction.EMAIL_CHANGE_REQUESTED,
+            user_id=user_id,
+            extra={
+                "actor_user_id": str(user_id),
+                "target_user_id": str(user_id),
+                "old_email": self._mask_email(user.email),
+                "new_email": self._mask_email(normalized_email),
+            },
+        )
+        return updated
+
+    async def update_self_password(self, user_id: UUID, data: UpdateOwnPasswordRequest) -> User:
+        """Kullanıcının kendi şifresini günceller."""
+        user = await self._repo.get_by_id_or_raise(user_id)
+        await self._invalidate_user_cache(user_id, user.email)
+        updated = await self._repo.update(user_id, hashed_password=hash_password(data.password))
+        await self._audit_log(
+            AuditAction.PROFILE_UPDATED,
+            user_id=user_id,
+            extra={"actor_user_id": str(user_id), "target_user_id": str(user_id)},
+        )
+        return updated
 
     async def update_self_avatar(self, user_id: UUID, *, file: UploadFile) -> User:
         """Kullanıcının kendi avatarını yükler veya günceller."""
@@ -537,12 +550,12 @@ class UserService(AuditableMixin):
             operation_scope="self",
         )
 
-    async def admin_update(
+    async def admin_update_profile(
         self,
         *,
         actor_user_id: UUID,
         user_id: UUID,
-        data: AdminUpdateUserRequest,
+        data: AdminUpdateUserProfileRequest,
     ) -> User:
         """Admin user-management ile kullanıcı profil alanlarını günceller."""
         target_user = await self._get_manageable_target_or_raise(

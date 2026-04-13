@@ -74,16 +74,16 @@ class CreateRoleRequest(BaseModel):
     permissions: list[Permission] = Field(default_factory=list)
 
 
-class UpdateRoleRequest(BaseModel):
-    """Rol güncelleme isteği.
-
-    Attributes:
-        description: Yeni açıklama
-        permissions: Yeni permission seti (mevcut setin yerini alır)
-    """
+class UpdateRoleDescriptionRequest(BaseModel):
+    """Rol açıklaması güncelleme isteği."""
 
     description: str | None = Field(None, max_length=255)
-    permissions: list[Permission] | None = None
+
+
+class ReplaceRolePermissionsRequest(BaseModel):
+    """Rol permission setini topluca değiştirme isteği."""
+
+    permissions: list[Permission] = Field(default_factory=list)
 
 
 class AssignRoleRequest(BaseModel):

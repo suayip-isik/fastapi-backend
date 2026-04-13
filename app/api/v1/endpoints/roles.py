@@ -16,16 +16,26 @@ from app.core.permissions import Permission
 from app.db.models.user import User
 from app.db.session import get_db
 from app.schemas.common import MessageResponse
-from app.schemas.role import CreateRoleRequest, RoleResponse, UpdateRoleRequest
+from app.schemas.role import (
+    CreateRoleRequest,
+    ReplaceRolePermissionsRequest,
+    RoleResponse,
+    UpdateRoleDescriptionRequest,
+)
 from app.services.audit import AuditService
 from app.services.role import RoleService
 
 router = APIRouter(prefix="/roles", tags=["Roles"])
 
 _RolesListDep = Annotated[User, Depends(require_permissions(Permission.ROLES_LIST))]
-_RolesViewDep = Annotated[User, Depends(require_permissions(Permission.ROLES_VIEW))]
+_RolesViewDep = Annotated[User, Depends(require_permissions(Permission.ROLES_READ_DETAIL))]
 _RolesCreateDep = Annotated[User, Depends(require_permissions(Permission.ROLES_CREATE))]
-_RolesUpdateDep = Annotated[User, Depends(require_permissions(Permission.ROLES_UPDATE))]
+_RolesUpdateDescriptionDep = Annotated[
+    User, Depends(require_permissions(Permission.ROLES_UPDATE_DESCRIPTION))
+]
+_RolesUpdatePermissionsDep = Annotated[
+    User, Depends(require_permissions(Permission.ROLES_UPDATE_PERMISSIONS))
+]
 _RolesDeleteDep = Annotated[User, Depends(require_permissions(Permission.ROLES_DELETE))]
 _AdminSurfaceDep = Annotated[User, Depends(require_surface_access(Surface.ADMIN))]
 
@@ -116,34 +126,29 @@ async def get_role(
     return RoleResponse.from_role(role)
 
 
-@router.patch("/{role_id}", response_model=RoleResponse)
-async def update_role(
+@router.patch("/{role_id}/description", response_model=RoleResponse)
+async def update_role_description(
     role_id: UUID,
-    data: UpdateRoleRequest,
+    data: UpdateRoleDescriptionRequest,
     _surface: _AdminSurfaceDep,
-    _: _RolesUpdateDep,
+    _: _RolesUpdateDescriptionDep,
     service: RoleServiceDep,
 ) -> RoleResponse:
-    """Rol açıklamasını ve/veya permission setini günceller.
+    """Rol açıklamasını günceller."""
+    role = await service.update(role_id, data.description, None)
+    return RoleResponse.from_role(role)
 
-    Sistem rollerinin permission seti değiştirilemez, yalnızca
-    açıklaması güncellenebilir.
 
-    Args:
-        role_id: Güncellenecek rolün UUID'si.
-        data: Yeni açıklama ve/veya permission listesi.
-        _: Admin yetkisi kontrolü.
-        service: Rol işlemlerini yöneten servis.
-
-    Returns:
-        Güncellenmiş rol bilgileri.
-
-    Raises:
-        NotFoundError: Rol bulunamazsa.
-        BusinessRuleError: Sistem rolünün permission seti değiştirilmeye çalışılırsa.
-    """
-    perms = [p.value for p in data.permissions] if data.permissions is not None else None
-    role = await service.update(role_id, data.description, perms)
+@router.put("/{role_id}/permissions", response_model=RoleResponse)
+async def replace_role_permissions(
+    role_id: UUID,
+    data: ReplaceRolePermissionsRequest,
+    _surface: _AdminSurfaceDep,
+    _: _RolesUpdatePermissionsDep,
+    service: RoleServiceDep,
+) -> RoleResponse:
+    """Rol permission setini topluca değiştirir."""
+    role = await service.update(role_id, None, [p.value for p in data.permissions])
     return RoleResponse.from_role(role)
 
 

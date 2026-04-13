@@ -45,7 +45,7 @@ async def test_full_api_key_journey(client: AsyncClient) -> None:
         "/api/v1/shared/api-keys",
         json={
             "name": "Journey Key 1",
-            "scopes": ["profile:view", "api_keys:list", "api_keys:create", "api_keys:revoke"],
+            "scopes": ["profile.read.self", "api_keys.list", "api_keys.create", "api_keys.revoke"],
         },
         headers=jwt_headers,
     )
@@ -71,7 +71,7 @@ async def test_full_api_key_journey(client: AsyncClient) -> None:
         "/api/v1/shared/api-keys",
         json={
             "name": "Journey Key 2",
-            "scopes": ["profile:view", "api_keys:list", "api_keys:create", "api_keys:revoke"],
+            "scopes": ["profile.read.self", "api_keys.list", "api_keys.create", "api_keys.revoke"],
         },
         headers=jwt_headers,
     )

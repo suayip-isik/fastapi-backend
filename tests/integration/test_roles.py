@@ -139,15 +139,15 @@ async def test_create_role_with_permissions(client: AsyncClient, db_session: Asy
         json={
             "name": "reporter",
             "description": "Rapor rolü",
-            "permissions": ["audit:view", "users:view"],
+            "permissions": ["audit_logs.read.detail", "users.read.basic"],
         },
         headers=headers,
     )
 
     assert res.status_code == 201
     data = res.json()
-    assert "audit:view" in data["permissions"]
-    assert "users:view" in data["permissions"]
+    assert "audit_logs.read.detail" in data["permissions"]
+    assert "users.read.basic" in data["permissions"]
 
 
 @pytest.mark.asyncio
@@ -260,7 +260,7 @@ async def test_update_custom_role_description(client: AsyncClient, db_session: A
     role_id = create_res.json()["id"]
 
     res = await client.patch(
-        f"/api/v1/admin/roles/{role_id}",
+        f"/api/v1/admin/roles/{role_id}/description",
         json={"description": "Yeni açıklama"},
         headers=headers,
     )
@@ -278,21 +278,21 @@ async def test_update_custom_role_permissions(client: AsyncClient, db_session: A
 
     create_res = await client.post(
         "/api/v1/admin/roles",
-        json={"name": "perm_update_role", "description": None, "permissions": ["users:view"]},
+        json={"name": "perm_update_role", "description": None, "permissions": ["users.read.basic"]},
         headers=headers,
     )
     role_id = create_res.json()["id"]
 
-    res = await client.patch(
-        f"/api/v1/admin/roles/{role_id}",
-        json={"permissions": ["audit:view", "users:view"]},
+    res = await client.put(
+        f"/api/v1/admin/roles/{role_id}/permissions",
+        json={"permissions": ["audit_logs.read.detail", "users.read.basic"]},
         headers=headers,
     )
 
     assert res.status_code == 200
     perms = res.json()["permissions"]
-    assert "audit:view" in perms
-    assert "users:view" in perms
+    assert "audit_logs.read.detail" in perms
+    assert "users.read.basic" in perms
 
 
 @pytest.mark.asyncio
@@ -305,9 +305,9 @@ async def test_update_system_role_permissions_fails(client: AsyncClient, db_sess
     roles = (await client.get("/api/v1/admin/roles", headers=headers)).json()
     user_role = next(r for r in roles if r["name"] == APP_USER_ROLE)
 
-    res = await client.patch(
-        f"/api/v1/admin/roles/{user_role['id']}",
-        json={"permissions": ["admin:panel_access"]},
+    res = await client.put(
+        f"/api/v1/admin/roles/{user_role['id']}/permissions",
+        json={"permissions": ["uploads.delete.any"]},
         headers=headers,
     )
     assert res.status_code == 400
@@ -326,7 +326,7 @@ async def test_update_system_role_description_allowed(
     system_role = next(r for r in roles if r["name"] == APP_USER_ROLE)
 
     res = await client.patch(
-        f"/api/v1/admin/roles/{system_role['id']}",
+        f"/api/v1/admin/roles/{system_role['id']}/description",
         json={"description": "Güncellenmiş açıklama"},
         headers=headers,
     )
@@ -407,7 +407,7 @@ async def test_update_role_permissions_invalidates_assigned_user_cache(
         json={
             "name": "cache_role",
             "description": "Cache role",
-            "permissions": ["notifications:list"],
+            "permissions": ["notifications.list"],
         },
         headers=headers,
     )
@@ -424,9 +424,9 @@ async def test_update_role_permissions_invalidates_assigned_user_cache(
     assert Permission.NOTIFICATIONS_LIST.value in perms_before
     assert await fake_redis.keys(f"user_permissions:{target_id}") != []
 
-    update_res = await client.patch(
-        f"/api/v1/admin/roles/{role_id}",
-        json={"permissions": ["api_keys:list"]},
+    update_res = await client.put(
+        f"/api/v1/admin/roles/{role_id}/permissions",
+        json={"permissions": ["api_keys.list"]},
         headers=headers,
     )
     assert update_res.status_code == 200

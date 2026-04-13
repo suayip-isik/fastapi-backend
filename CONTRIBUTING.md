@@ -34,6 +34,7 @@ Follow the layered architecture defined in `CLAUDE.md`:
    - `admin`
    - `shared`
      Sistem rol adları için canonical isimler `panel_admin` ve `app_user` kullanılmalı; eski `admin/user/moderator` rol adları yeniden tanıtılmamalı
+     Permission isimleri `resource.action.scope` standardında olmalı; `users.create.admin`, `users.read.basic`, `uploads.delete.any` gibi dot-notation dışında alias üretmeyin
 8. **Router** → Register in `app/api/v1/router.py`
 9. **Docs** → README/CHANGELOG ve etkilenen diğer referans dokümanlar (`LEARNING_ROADMAP.md`, `.env.example` vb.) aynı PR'da güncellenmeli
 10. **Tests** → `tests/integration/test_myfeature.py`
@@ -48,6 +49,7 @@ Follow the layered architecture defined in `CLAUDE.md`:
 - Policy-first authorization: inline `surface` / permission kombinasyonları yazmak yerine ortak policy/dependency helper'ları kullan
 - Global `AsyncSessionFactory` import'u service/policy katmanına sızdırma; request dışı DB erişimini provider/gateway arkasına al
 - Admin-only erişim yalnız permission ile değil, `surface=admin` kuralıyla da korunmalı
+- Admin panel veya admin-only akışlarda özel string kontrolü yerine `has_admin_surface_access(...)` ve ilgili dependency/policy helper'larını baz al
 - Security-sensitive failure'larda varsayılan davranış `deny`; side-effect servislerinde `log + degrade`
 - Legacy route eklenmez; yalnız canonical `client/admin/shared` path'leri kullanılır
 

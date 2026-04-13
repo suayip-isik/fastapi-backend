@@ -5,11 +5,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import structlog
+from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.permissions import (
     APP_USER_PERMISSIONS,
     PANEL_ADMIN_PERMISSIONS,
+    normalize_permission_value,
 )
 from app.core.security import hash_password
 from app.core.system_roles import APP_USER_ROLE, PANEL_ADMIN_ROLE
@@ -17,9 +19,12 @@ from app.db.models.role import Role, RolePermission
 from app.db.models.user import SurfaceType, User
 from app.db.repositories.user import UserRepository
 from app.db.session_provider import get_default_session_factory
+from app.services._keys import USER_PERMISSIONS_KEY
+from app.services.cache import CacheService
 
 if TYPE_CHECKING:
-    from collections.abc import Set
+    from collections.abc import Iterable, Set
+    from uuid import UUID
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,10 +45,41 @@ _SYSTEM_ROLES = [
 
 
 async def _username_exists(session: AsyncSession, username: str) -> bool:
-    from sqlalchemy import select
-
     result = await session.execute(select(User.id).where(User.username == username))
     return result.scalar_one_or_none() is not None
+
+
+async def _invalidate_permission_cache_for_role_users(
+    session: AsyncSession,
+    role_id: UUID,
+) -> None:
+    result = await session.execute(
+        select(User.id).where(User.role_id == role_id, User.deleted_at.is_(None))
+    )
+    user_ids = list(result.scalars().all())
+    if not user_ids:
+        return
+
+    cache = CacheService()
+    await cache.delete(*(USER_PERMISSIONS_KEY.format(str(user_id)) for user_id in user_ids))
+
+
+async def _sync_role_permissions(
+    session: AsyncSession,
+    role: Role,
+    permissions: Iterable[str],
+) -> list[str]:
+    existing_permissions: Set[str] = getattr(role, "permission_set", set())
+    canonical_permissions = {normalize_permission_value(permission) for permission in permissions}
+    missing_permissions = sorted(canonical_permissions - existing_permissions)
+    if not missing_permissions:
+        return []
+
+    for permission in missing_permissions:
+        session.add(RolePermission(role_id=role.id, permission=permission))
+    await session.flush()
+    await _invalidate_permission_cache_for_role_users(session, role.id)
+    return missing_permissions
 
 
 async def seed_system_roles() -> dict[str, Role]:
@@ -52,8 +88,6 @@ async def seed_system_roles() -> dict[str, Role]:
     Returns:
         Dict[str, Role]: role_name → Role nesnesi (tüm sistem rolleri).
     """
-    from sqlalchemy import select
-
     roles: dict[str, Role] = {}
 
     session_factory = get_default_session_factory()
@@ -78,12 +112,16 @@ async def seed_system_roles() -> dict[str, Role]:
                 await session.flush()
                 logger.info("system_role_created", role=role_data["name"])
             else:
+                synced_permissions: list[str] = []
                 if hasattr(role, "id"):
-                    existing_permissions: Set[str] = getattr(role, "permission_set", set())
-                    for perm in role_data["permissions"]:
-                        if perm not in existing_permissions:
-                            session.add(RolePermission(role_id=role.id, permission=perm))
-                logger.info("system_role_exists", role=role_data["name"])
+                    synced_permissions = await _sync_role_permissions(
+                        session, role, role_data["permissions"]
+                    )
+                logger.info(
+                    "system_role_exists",
+                    role=role_data["name"],
+                    synced_permissions=synced_permissions,
+                )
 
             roles[role.name] = role
 

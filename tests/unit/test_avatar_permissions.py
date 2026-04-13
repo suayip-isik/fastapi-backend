@@ -6,21 +6,21 @@ from app.db.models.user import SurfaceType
 
 
 def test_can_manage_other_users_avatar_requires_admin_surface() -> None:
-    perms = {Permission.USERS_UPLOAD_AVATAR.value}
+    perms = {Permission.USERS_UPDATE_AVATAR.value}
 
     assert can_manage_other_users_avatar(SurfaceType.CLIENT.value, perms) is False
 
 
 def test_can_manage_other_users_avatar_requires_explicit_permission() -> None:
-    perms = {Permission.ADMIN_PANEL_ACCESS.value}
+    perms = {Permission.USERS_LIST.value}
 
     assert can_manage_other_users_avatar(SurfaceType.ADMIN.value, perms) is False
 
 
 def test_can_manage_other_users_avatar_allows_admin_surface_with_permission() -> None:
     perms = {
-        Permission.ADMIN_PANEL_ACCESS.value,
-        Permission.USERS_UPLOAD_AVATAR.value,
+        Permission.USERS_LIST.value,
+        Permission.USERS_UPDATE_AVATAR.value,
     }
 
     assert can_manage_other_users_avatar(SurfaceType.ADMIN.value, perms) is True

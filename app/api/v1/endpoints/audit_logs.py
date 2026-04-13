@@ -25,9 +25,9 @@ from app.services.audit_log import AuditLogService
 
 router = APIRouter(prefix="/audit-logs", tags=["Audit Logs"])
 
-_AuditListDep = Annotated[User, Depends(require_permissions(Permission.AUDIT_LIST))]
-_AuditStreamDep = Annotated[User, Depends(require_permissions(Permission.AUDIT_STREAM))]
-_AuditViewDep = Annotated[User, Depends(require_permissions(Permission.AUDIT_VIEW))]
+_AuditListDep = Annotated[User, Depends(require_permissions(Permission.AUDIT_LOGS_LIST))]
+_AuditStreamDep = Annotated[User, Depends(require_permissions(Permission.AUDIT_LOGS_STREAM))]
+_AuditViewDep = Annotated[User, Depends(require_permissions(Permission.AUDIT_LOGS_READ_DETAIL))]
 _AdminSurfaceDep = Annotated[User, Depends(require_surface_access(Surface.ADMIN))]
 
 

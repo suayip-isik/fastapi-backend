@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
 
@@ -12,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.adapters.infrastructure import RedisAdapter
 from app.core.exceptions import AppError
 from app.core.logging import get_logger
-from app.core.permissions import has_admin_panel_access
+from app.core.permissions import has_admin_surface_access
 from app.core.security import (
     TokenType,
     create_access_token,
@@ -32,6 +33,12 @@ if TYPE_CHECKING:
     from app.ports.infrastructure import RedisPort
 
 logger = get_logger(__name__)
+
+
+@dataclass(slots=True)
+class AdminLoginResult:
+    token: str
+    permissions: set[str]
 
 
 class AdminUserReaderProtocol(Protocol):
@@ -76,7 +83,7 @@ class AdminAuthUseCase:
             cache=PermissionCache(RedisAdapter()),
         )
 
-    async def login_with_password(self, email: str, password: str) -> str | None:
+    async def login_with_password(self, email: str, password: str) -> AdminLoginResult | None:
         if not email or not password:
             return None
 
@@ -97,10 +104,13 @@ class AdminAuthUseCase:
                 return None
 
             user_perms = await self._permission_provider.get_permissions(user.id)
-            if not has_admin_panel_access(user_perms):
+            if not has_admin_surface_access(user_perms):
                 return None
 
-            return create_access_token(str(user.id))
+            return AdminLoginResult(
+                token=create_access_token(str(user.id)),
+                permissions=user_perms,
+            )
         except (RedisError, SQLAlchemyError, OSError, ValueError, TypeError, AppError):
             logger.warning("admin_login_authorization_failed", exc_info=True)
             return None
@@ -126,7 +136,7 @@ class AdminAuthUseCase:
                 return False
 
             user_perms = await self._permission_provider.get_permissions(user.id)
-            return has_admin_panel_access(user_perms)
+            return has_admin_surface_access(user_perms)
         except (AppError, RedisError, SQLAlchemyError, OSError, ValueError, TypeError):
             return False
 
@@ -150,14 +160,15 @@ class AdminAuthBackend(AuthenticationBackend):
 
     async def login(self, request: Request) -> bool:
         form = await request.form()
-        token = await self._get_use_case().login_with_password(
+        login_result = await self._get_use_case().login_with_password(
             str(form.get("username", "")),
             str(form.get("password", "")),
         )
-        if not token:
+        if not login_result:
             return False
 
-        request.session["admin_token"] = token
+        request.session["admin_token"] = login_result.token
+        request.session["admin_permissions"] = sorted(login_result.permissions)
         return True
 
     async def logout(self, request: Request) -> bool:

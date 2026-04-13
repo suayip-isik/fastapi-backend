@@ -26,14 +26,14 @@ FastAPI tabanlı, production kullanımına hazır bir backend boilerplate. Katma
 
 - **pyotp** kütüphanesi ile TOTP implementasyonu
 - **QR Code Generation**: `otpauth://` URI formatı, Google Authenticator / Authy uyumlu
-- **Backup Codes**: 10 adet tek kullanımlık yedek kod (bcrypt hash'li)
+- **Backup Codes**: Varsayılan 8 adet tek kullanımlık yedek kod (bcrypt hash'li)
 - **Fernet Encryption**: TOTP secret'ları veritabanında şifrelenmiş saklanır
 - **Time Drift Tolerance**: ±1 zaman penceresi (30 saniyelik drift toleransı)
 
 ### 👨‍💼 Admin Panel
 
 - **SQLAdmin** entegrasyonu ile görsel veritabanı yönetimi
-- **Role-Based Access**: Yalnızca `surface=admin` ve `admin:panel_access` taşıyan hesaplar erişebilir
+- **Permission-Aware Access**: Yalnızca `surface=admin` olan ve admin-surface permission seti taşıyan hesaplar erişebilir
 - **JWT Authentication**: Admin panel için ayrı authentication backend
 - **Admin Invite Flow**: Yetkili admin kullanıcı yeni admin hesap açar, kullanıcı şifresini e-posta linki ile belirler
 - **Model Yönetimi**: User, Role, AuditLog modelleri
@@ -547,7 +547,7 @@ Tüm değerleri `.env.example`'dan `.env`'e kopyaladıktan sonra ihtiyacına gö
 
 Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt şemaları ve deneme için: **http://localhost:8000/docs**
 
-> **Toplam:** ~50 endpoint (Auth: 10, TOTP: 5, Users: 13, Roles: 5, API Keys: 3, Notifications: 5, Uploads: 2, Audit Logs: 3, WebSocket: 1, Health: 3)
+> **Toplam:** ~58 endpoint (Auth: 10, TOTP: 5, Users: 21, Roles: 6, API Keys: 3, Notifications: 5, Uploads: 2, Audit Logs: 3, WebSocket: 1, Health: 2)
 
 ### 1. Auth (`/client/auth` + `/admin/auth` + `/shared/auth`) — 10 endpoint
 
@@ -580,39 +580,49 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 | GET    | `/shared/auth/totp/backup-codes/count`      | Kalan yedek kod sayısını getir               | Evet |
 | POST   | `/shared/auth/totp/backup-codes/regenerate` | Yeni yedek kodlar üret                       | Evet |
 
-### 3. Kullanıcılar (`/shared/me` + `/admin/users`) — 13 endpoint
+### 3. Kullanıcılar (`/shared/me` + `/admin/users`) — 21 endpoint
 
-| Method | Path                                   | Açıklama                                            | Auth  |
-| ------ | -------------------------------------- | --------------------------------------------------- | ----- |
-| GET    | `/shared/me`                           | Mevcut kullanıcı profili                            | Evet  |
-| PATCH  | `/shared/me`                           | Profili güncelle                                    | Evet  |
-| GET    | `/admin/users`                         | Tüm kullanıcıları listele (filtreli)                | Admin |
-| POST   | `/admin/users`                         | Yeni admin kullanıcı oluştur + davet gönder         | Admin |
-| GET    | `/admin/users/stats`                   | Aktif/pasif/toplam kullanıcı istatistikleri         | Admin |
-| GET    | `/admin/users/deleted`                 | Soft-delete kullanıcıları listele                   | Admin |
-| GET    | `/admin/users/{user_id}`               | Belirli kullanıcıyı getir                           | Admin |
-| POST   | `/admin/users/{user_id}/resend-invite` | Şifresi kurulmamış admin için daveti yeniden gönder | Admin |
-| POST   | `/admin/users/{user_id}/activate`      | Kullanıcıyı aktif et                                | Admin |
-| POST   | `/admin/users/{user_id}/deactivate`    | Kullanıcıyı deaktif et                              | Admin |
-| PATCH  | `/admin/users/{user_id}/role`          | Kullanıcı rolünü değiştir                           | Admin |
-| DELETE | `/admin/users/{user_id}`               | Kullanıcıyı soft-delete et                          | Admin |
-| POST   | `/admin/users/{user_id}/restore`       | Soft-delete kullanıcıyı geri al                     | Admin |
+| Method | Path                                         | Açıklama                                            | Auth  |
+| ------ | -------------------------------------------- | --------------------------------------------------- | ----- |
+| GET    | `/shared/me`                                 | Mevcut kullanıcı profili                            | Evet  |
+| PATCH  | `/shared/me/profile`                         | Kendi temel profil alanlarını güncelle              | Evet  |
+| PATCH  | `/shared/me/email`                           | Kendi e-posta değişikliğini başlat                  | Evet  |
+| PATCH  | `/shared/me/password`                        | Kendi şifresini güncelle                            | Evet  |
+| PUT    | `/shared/me/avatar`                          | Kendi avatarını yükle veya güncelle                 | Evet  |
+| DELETE | `/shared/me/avatar`                          | Kendi avatarını sil                                 | Evet  |
+| GET    | `/admin/users`                               | Aktif kullanıcıları filtreli listele                | Admin |
+| POST   | `/admin/users`                               | Yeni admin kullanıcı oluştur ve davet gönder        | Admin |
+| GET    | `/admin/users/stats`                         | Kullanıcı istatistiklerini getir                    | Admin |
+| GET    | `/admin/users/deleted`                       | Soft-delete kullanıcıları listele                   | Admin |
+| GET    | `/admin/users/{user_id}`                     | Belirli kullanıcı detayını getir                    | Admin |
+| PATCH  | `/admin/users/{user_id}/profile`             | Hedef kullanıcının profil alanlarını güncelle       | Admin |
+| PUT    | `/admin/users/{user_id}/avatar`              | Hedef kullanıcının avatarını yükle veya güncelle    | Admin |
+| DELETE | `/admin/users/{user_id}/avatar`              | Hedef kullanıcının avatarını sil                    | Admin |
+| POST   | `/admin/users/{user_id}/change-email`        | Hedef kullanıcının e-posta değişikliğini başlat     | Admin |
+| POST   | `/admin/users/{user_id}/resend-verification` | Doğrulama e-postasını yeniden gönder                | Admin |
+| POST   | `/admin/users/{user_id}/resend-invite`       | Şifresi kurulmamış admin için daveti yeniden gönder | Admin |
+| POST   | `/admin/users/{user_id}/activate`            | Kullanıcıyı aktif et                                | Admin |
+| PATCH  | `/admin/users/{user_id}/role`                | Kullanıcı rolünü değiştir                           | Admin |
+| POST   | `/admin/users/{user_id}/deactivate`          | Kullanıcıyı deaktif et                              | Admin |
+| DELETE | `/admin/users/{user_id}`                     | Kullanıcıyı soft-delete et                          | Admin |
+| POST   | `/admin/users/{user_id}/restore`             | Soft-delete kullanıcıyı geri al                     | Admin |
 
 > `POST /admin/users` yalnızca `surface=admin` kullanıcı üretir. Client kullanıcı oluşturma desteklenmez; client hesaplar sadece `/client/auth/register` üzerinden kendilerini kaydeder.
 
-> Admin kullanıcı oluşturma ve davet yeniden gönderme için ek permission gerekir: `users:create_admin`. Atanacak rolün ayrıca `admin:panel_access` taşıması zorunludur.
+> Admin kullanıcı oluşturma için `users.create.admin` gerekir. Atanacak rol ayrıca admin surface erişimi verecek canonical permission setini taşımalıdır; bu kontrol backend'de `has_admin_surface_access(...)` ile uygulanır.
 
 > Sistem rol seti iki canonical rolden oluşur: `panel_admin` ve `app_user`. `moderator` sistem rolü artık yoktur.
 
-### 4. Roller (`/admin/roles`) — 5 endpoint
+### 4. Roller (`/admin/roles`) — 6 endpoint
 
-| Method | Path                     | Açıklama                                  | Auth  |
-| ------ | ------------------------ | ----------------------------------------- | ----- |
-| GET    | `/admin/roles`           | Tüm rolleri listele (izinlerle birlikte)  | Admin |
-| POST   | `/admin/roles`           | Yeni özel rol oluştur                     | Admin |
-| GET    | `/admin/roles/{role_id}` | Rol detayını getir                        | Admin |
-| PATCH  | `/admin/roles/{role_id}` | Rol açıklamasını veya izinlerini güncelle | Admin |
-| DELETE | `/admin/roles/{role_id}` | Özel rolü sil                             | Admin |
+| Method | Path                                 | Açıklama                                 | Auth  |
+| ------ | ------------------------------------ | ---------------------------------------- | ----- |
+| GET    | `/admin/roles`                       | Tüm rolleri listele (izinlerle birlikte) | Admin |
+| POST   | `/admin/roles`                       | Yeni özel rol oluştur                    | Admin |
+| GET    | `/admin/roles/{role_id}`             | Rol detayını getir                       | Admin |
+| PATCH  | `/admin/roles/{role_id}/description` | Rol açıklamasını güncelle                | Admin |
+| PUT    | `/admin/roles/{role_id}/permissions` | Rol izin setini topluca değiştir         | Admin |
+| DELETE | `/admin/roles/{role_id}`             | Özel rolü sil                            | Admin |
 
 ### 5. API Keys (`/shared/api-keys`) — 3 endpoint
 
@@ -694,7 +704,7 @@ Tüm API endpoint'leri `/api/v1` prefix'i ile başlar. Tam detay, istek/yanıt �
 
 **Adres:** http://localhost:8000/admin
 
-Yalnızca `surface=admin` olan ve `admin:panel_access` yetkisine sahip kullanıcılar giriş yapabilir. Giriş bilgileri mevcut hesapla (e-posta + şifre) aynıdır; fakat client kullanıcılar admin panele giriş yapamaz.
+Yalnızca `surface=admin` olan ve admin surface üzerinde en az bir geçerli permission taşıyan kullanıcılar giriş yapabilir. Bu kontrol `app/admin/auth.py` içinde permission provider üzerinden çözülür; client kullanıcılar admin panele giriş yapamaz.
 
 Yeni admin kullanıcı oluşturma akışı API-first çalışır:
 
@@ -707,7 +717,8 @@ Authorization kararları policy-first yaklaşımıyla uygulanır:
 
 - surface erişimi (`client`, `admin`, `shared`)
 - actor type (`surface`)
-- panel access (`admin:panel_access`)
+- admin surface doğrulaması (`surface=admin`)
+- admin surface permission kümesi (`has_admin_surface_access(...)`)
 - resource permission seti
 
 Endpoint veya service içinde dağınık yetki kontrolü yazmak yerine ortak policy/dependency katmanı kullanılır.
@@ -776,7 +787,7 @@ POST /api/v1/shared/auth/totp-challenge
 | Özellik        | Detay                                                 |
 | -------------- | ----------------------------------------------------- |
 | Secret Saklama | Fernet symmetric encryption ile DB'de şifrelenmiş     |
-| Yedek Kodlar   | 10 adet tek kullanımlık, bcrypt hash'li               |
+| Yedek Kodlar   | Varsayılan 8 adet tek kullanımlık, bcrypt hash'li     |
 | QR Code        | `otpauth://` URI formatı, Google Authenticator uyumlu |
 | Tolerans       | ±1 zaman penceresi (30 saniyelik drift)               |
 

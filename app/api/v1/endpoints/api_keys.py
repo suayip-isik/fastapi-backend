@@ -23,6 +23,7 @@ from app.api.dependencies.auth import (
 from app.api.dependencies.infrastructure import PermissionProviderDep
 from app.api.dependencies.services import AuditServiceDep
 from app.core.config import settings
+from app.core.exceptions import InsufficientPermissionsError
 from app.core.i18n import t
 from app.core.limiter import limiter
 from app.core.permissions import Permission
@@ -152,8 +153,7 @@ async def create_api_key(
     Kullanıcı için benzersiz bir API key oluşturur. Ham key değeri
     yalnızca bu yanıtta döner ve bir daha görüntülenemez.
 
-    İstenen scope'lar kullanıcının sahip olduğu izinlerle kesiştirilir;
-    kullanıcının yetkisi olmayan scope'lar sessizce filtrelenir.
+    İstenen scope'ların tamamı kullanıcının sahip olduğu izinler içinde olmalıdır.
 
     Args:
         data: API key oluşturma bilgileri (isim, scope'lar, son kullanma tarihi).
@@ -169,12 +169,18 @@ async def create_api_key(
     """
     effective_perms = await get_effective_permissions(current_auth, permission_provider)
     requested_scopes = [scope.value for scope in data.scopes]
-    allowed_scopes = [s for s in requested_scopes if s in effective_perms]
+    unauthorized_scopes = sorted(
+        scope for scope in requested_scopes if scope not in effective_perms
+    )
+    if unauthorized_scopes:
+        raise InsufficientPermissionsError(
+            t("error.permissions.required_all", permissions=", ".join(unauthorized_scopes))
+        )
 
     raw_key, api_key = await service.create(
         user_id=current_auth.user.id,
         name=data.name,
-        scopes=allowed_scopes,
+        scopes=requested_scopes,
         expires_at=data.expires_at,
     )
     return APIKeyCreatedResponse.from_api_key(raw_key, api_key)

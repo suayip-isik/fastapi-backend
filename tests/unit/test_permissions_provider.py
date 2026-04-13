@@ -15,13 +15,13 @@ from app.services.permissions import PermissionCache, PermissionProvider, Permis
 async def test_permission_provider_returns_cached_permissions() -> None:
     user_id = uuid4()
     cache = AsyncMock(spec=PermissionCache)
-    cache.get.return_value = {"users:list"}
+    cache.get.return_value = {"users.list"}
     query_service = AsyncMock(spec=PermissionQueryService)
     provider = PermissionProvider(query_service=query_service, cache=cache)
 
     result = await provider.get_permissions(user_id)
 
-    assert result == {"users:list"}
+    assert result == {"users.list"}
     query_service.get_permissions.assert_not_awaited()
     cache.set.assert_not_awaited()
 
@@ -32,14 +32,14 @@ async def test_permission_provider_populates_cache_on_miss() -> None:
     cache = AsyncMock(spec=PermissionCache)
     cache.get.return_value = None
     query_service = AsyncMock(spec=PermissionQueryService)
-    query_service.get_permissions.return_value = {"users:list", "users:update"}
+    query_service.get_permissions.return_value = {"users.list", "users.update.profile"}
     provider = PermissionProvider(query_service=query_service, cache=cache)
 
     result = await provider.get_permissions(user_id)
 
-    assert result == {"users:list", "users:update"}
+    assert result == {"users.list", "users.update.profile"}
     query_service.get_permissions.assert_awaited_once_with(user_id)
-    cache.set.assert_awaited_once_with(user_id, {"users:list", "users:update"})
+    cache.set.assert_awaited_once_with(user_id, {"users.list", "users.update.profile"})
 
 
 @pytest.mark.asyncio

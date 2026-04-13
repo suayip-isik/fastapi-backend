@@ -72,11 +72,11 @@ async def _assign_role_by_name(db_session: AsyncSession, email: str, role_name: 
 
 
 async def _create_custom_role_with_panel_access(db_session: AsyncSession, role_name: str) -> None:
-    """Sadece admin:panel_access permission'ı taşıyan özel rol oluşturur."""
+    """Sadece uploads.delete.any permission'ı taşıyan özel rol oluşturur."""
     role = Role(name=role_name, description="Custom admin access role", is_system=False)
     db_session.add(role)
     await db_session.flush()
-    db_session.add(RolePermission(role_id=role.id, permission=Permission.ADMIN_PANEL_ACCESS))
+    db_session.add(RolePermission(role_id=role.id, permission=Permission.UPLOADS_DELETE_ANY))
     await db_session.commit()
     db_session.expire_all()
 
@@ -245,7 +245,7 @@ async def test_delete_file_as_admin(client: AsyncClient, db_session: AsyncSessio
 async def test_delete_file_with_custom_admin_access_role(
     client: AsyncClient, db_session: AsyncSession
 ):
-    """Admin surface + admin:panel_access taşıyan özel rol de başkasının dosyasını silebilmeli."""
+    """Admin surface + uploads.delete.any taşıyan özel rol de başkasının dosyasını silebilmeli."""
     email = "custom_admin_access_del@example.com"
     headers = await _auth_headers(client, email)
     await _promote_to_admin(db_session, email)
