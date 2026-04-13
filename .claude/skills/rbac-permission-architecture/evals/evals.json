@@ -1,0 +1,41 @@
+{
+  "skill_name": "rbac-permission-architecture",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Design the permissions and UI/backend authorization model for a new admin users module. We need list, detail, sensitive data, create user, update profile, change status, assign role, reset password, archive, and delete.",
+      "expected_output": "A permission-first RBAC design with explicit names, separated route and action access, backend endpoint mapping, and field-level authorization guidance.",
+      "files": [],
+      "expectations": [
+        "Uses explicit permission names like users.list, users.read.basic, and users.update.status",
+        "Separates route access from in-page action access",
+        "Keeps backend authorization as the final authority",
+        "Mentions field-level authorization for partial updates"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Our support agents can see the user list and change account status, but they must not open the full user detail page. Propose the correct UI and permission model.",
+      "expected_output": "A minimum-action UI design that keeps the list page, blocks the detail page, and exposes only a narrow status-edit interaction backed by a dedicated permission and endpoint.",
+      "files": [],
+      "expectations": [
+        "Avoids rendering a full detail page for update-without-read access",
+        "Uses a narrow UI such as a modal, drawer, or inline editor",
+        "Models the update as users.update.status or an equivalent explicit permission",
+        "Preserves separate route and action permission checks"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Review this authorization design: we have users.read, users.update, and one PATCH /users/:id endpoint that updates any field. Rewrite it into a safer permission model.",
+      "expected_output": "A critique of the broad permission model plus a replacement design with split read permissions, split update permissions, dedicated endpoints, and payload-level authorization rules.",
+      "files": [],
+      "expectations": [
+        "Flags broad permissions such as users.read or users.update as insufficient",
+        "Recommends dedicated endpoints like PATCH /users/:id/status",
+        "Introduces split read or update permissions",
+        "States that unauthorized payload fields should be rejected or blocked"
+      ]
+    }
+  ]
+}

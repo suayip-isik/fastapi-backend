@@ -1,0 +1,4 @@
+interface:
+  display_name: "RBAC Permission Architecture"
+  short_description: "Design permission-driven RBAC and auth UI safely"
+  default_prompt: "Use $rbac-permission-architecture to design or review a permission-driven RBAC flow with aligned frontend and backend authorization."
