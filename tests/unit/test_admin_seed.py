@@ -9,6 +9,7 @@ from uuid import uuid4
 import pytest
 
 from app.admin.seed import create_default_app_user, create_default_superadmin, seed_system_roles
+from app.core.permissions import APP_USER_PERMISSIONS, PANEL_ADMIN_PERMISSIONS
 from app.core.system_roles import APP_USER_ROLE, PANEL_ADMIN_ROLE
 from app.db.models.user import SurfaceType, User
 
@@ -67,11 +68,22 @@ async def test_seed_system_roles_creates_missing_roles() -> None:
 
 @pytest.mark.asyncio
 async def test_seed_system_roles_skips_existing_roles() -> None:
-    existing_admin = SimpleNamespace(name=PANEL_ADMIN_ROLE)
-    existing_user = SimpleNamespace(name=APP_USER_ROLE)
+    existing_admin = SimpleNamespace(
+        id=uuid4(),
+        name=PANEL_ADMIN_ROLE,
+        permission_set={permission.value for permission in PANEL_ADMIN_PERMISSIONS},
+    )
+    existing_user = SimpleNamespace(
+        id=uuid4(),
+        name=APP_USER_ROLE,
+        permission_set={permission.value for permission in APP_USER_PERMISSIONS},
+    )
     session = _DummySession([existing_admin, existing_user])
 
-    with patch("app.admin.seed.get_default_session_factory", return_value=lambda: session):
+    with (
+        patch("app.admin.seed.get_default_session_factory", return_value=lambda: session),
+        patch("app.admin.seed._invalidate_permission_cache_for_role_users", new=AsyncMock()),
+    ):
         roles = await seed_system_roles()
 
     assert roles == {
@@ -80,6 +92,37 @@ async def test_seed_system_roles_skips_existing_roles() -> None:
     }
     assert session.commit_count == 1
     assert session.added == []
+
+
+@pytest.mark.asyncio
+async def test_seed_system_roles_backfills_missing_panel_admin_permissions() -> None:
+    missing_permission = PANEL_ADMIN_PERMISSIONS[-1].value
+    existing_admin = SimpleNamespace(
+        id=uuid4(),
+        name=PANEL_ADMIN_ROLE,
+        permission_set={permission.value for permission in PANEL_ADMIN_PERMISSIONS[:-1]},
+    )
+    existing_user = SimpleNamespace(
+        id=uuid4(),
+        name=APP_USER_ROLE,
+        permission_set={permission.value for permission in APP_USER_PERMISSIONS},
+    )
+    session = _DummySession([existing_admin, existing_user])
+    invalidate_cache = AsyncMock()
+
+    with (
+        patch("app.admin.seed.get_default_session_factory", return_value=lambda: session),
+        patch("app.admin.seed._invalidate_permission_cache_for_role_users", new=invalidate_cache),
+    ):
+        await seed_system_roles()
+
+    created_permissions = [
+        item for item in session.added if item.__class__.__name__ == "RolePermission"
+    ]
+    assert len(created_permissions) == 1
+    assert created_permissions[0].role_id == existing_admin.id
+    assert created_permissions[0].permission.value == missing_permission
+    invalidate_cache.assert_awaited_once_with(session, existing_admin.id)
 
 
 @pytest.mark.asyncio

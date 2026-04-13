@@ -21,7 +21,19 @@ if TYPE_CHECKING:
 class PermissionScopedModelView(ModelView):
     """SQLAdmin view erişimini oturumdaki permission seti ile sınırlar."""
 
-    required_permissions: tuple[str, ...] = ()
+    list_permissions: tuple[str, ...] = ()
+    detail_permissions: tuple[str, ...] = ()
+    create_permissions: tuple[str, ...] = ()
+    edit_permissions: tuple[str, ...] = ()
+    delete_permissions: tuple[str, ...] = ()
+    export_permissions: tuple[str, ...] = ()
+
+    list_permission_mode = "any"
+    detail_permission_mode = "any"
+    create_permission_mode = "any"
+    edit_permission_mode = "all"
+    delete_permission_mode = "any"
+    export_permission_mode = "any"
 
     @classmethod
     def _permission_values(cls, permissions: Iterable[Permission | str]) -> tuple[str, ...]:
@@ -37,26 +49,85 @@ class PermissionScopedModelView(ModelView):
             return set()
         return {str(value) for value in values}
 
-    def is_accessible(self, request: object) -> bool:
-        if not self.required_permissions:
+    def _matches_permission_set(
+        self, request: object, permissions: tuple[str, ...], mode: str
+    ) -> bool:
+        if not permissions:
             return True
-        return bool(self._session_permissions(request) & set(self.required_permissions))
+        session_permissions = self._session_permissions(request)
+        permission_set = set(permissions)
+        if mode == "all":
+            return permission_set.issubset(session_permissions)
+        return bool(session_permissions & permission_set)
+
+    def is_action_accessible(self, request: object, action: str) -> bool:
+        if action == "list":
+            return self._matches_permission_set(
+                request, self.list_permissions, self.list_permission_mode
+            )
+        if action == "details":
+            return self.can_view_details and self._matches_permission_set(
+                request, self.detail_permissions, self.detail_permission_mode
+            )
+        if action == "create":
+            return self.can_create and self._matches_permission_set(
+                request, self.create_permissions, self.create_permission_mode
+            )
+        if action == "edit":
+            return self.can_edit and self._matches_permission_set(
+                request, self.edit_permissions, self.edit_permission_mode
+            )
+        if action == "delete":
+            return self.can_delete and self._matches_permission_set(
+                request, self.delete_permissions, self.delete_permission_mode
+            )
+        if action == "export":
+            return self.can_export and self._matches_permission_set(
+                request, self.export_permissions, self.export_permission_mode
+            )
+        return False
+
+    def is_accessible(self, request: object) -> bool:
+        return self.is_action_accessible(request, "list")
 
     def is_visible(self, request: object) -> bool:
         return self.is_accessible(request)
+
+    def can_create_for_request(self, request: object) -> bool:
+        return self.is_action_accessible(request, "create")
+
+    def can_edit_for_request(self, request: object) -> bool:
+        return self.is_action_accessible(request, "edit")
+
+    def can_delete_for_request(self, request: object) -> bool:
+        return self.is_action_accessible(request, "delete")
+
+    def can_view_details_for_request(self, request: object) -> bool:
+        return self.is_action_accessible(request, "details")
+
+    def can_export_for_request(self, request: object) -> bool:
+        return self.is_action_accessible(request, "export")
 
 
 class UserAdmin(PermissionScopedModelView, model=User):
     """User modeli için SQLAdmin panel view."""
 
-    required_permissions = PermissionScopedModelView._permission_values(
+    list_permissions = PermissionScopedModelView._permission_values((Permission.USERS_LIST,))
+    detail_permissions = PermissionScopedModelView._permission_values(
+        (Permission.USERS_READ_BASIC,)
+    )
+    create_permissions = PermissionScopedModelView._permission_values(
+        (Permission.USERS_CREATE_ADMIN,)
+    )
+    edit_permissions = PermissionScopedModelView._permission_values(
         (
-            Permission.USERS_LIST,
-            Permission.USERS_READ_BASIC,
             Permission.USERS_UPDATE_PROFILE,
-            Permission.USERS_DELETE,
+            Permission.USERS_UPDATE_EMAIL,
+            Permission.USERS_UPDATE_ROLE,
         )
     )
+    delete_permissions = PermissionScopedModelView._permission_values((Permission.USERS_DELETE,))
+    export_permissions = PermissionScopedModelView._permission_values((Permission.USERS_LIST,))
 
     name = "Kullanıcı"
     name_plural = "Kullanıcılar"
@@ -94,8 +165,6 @@ class UserAdmin(PermissionScopedModelView, model=User):
         User.username,
         User.full_name,
         User.role,
-        User.is_active,
-        User.is_verified,
     ]
 
     page_size = 25
@@ -115,15 +184,16 @@ class RoleAdmin(PermissionScopedModelView, model=Role):
     Sistem rolleri silinmemelidir (is_system=True olanlar).
     """
 
-    required_permissions = PermissionScopedModelView._permission_values(
-        (
-            Permission.ROLES_LIST,
-            Permission.ROLES_READ_DETAIL,
-            Permission.ROLES_UPDATE_DESCRIPTION,
-            Permission.ROLES_UPDATE_PERMISSIONS,
-            Permission.ROLES_DELETE,
-        )
+    list_permissions = PermissionScopedModelView._permission_values((Permission.ROLES_LIST,))
+    detail_permissions = PermissionScopedModelView._permission_values(
+        (Permission.ROLES_READ_DETAIL,)
     )
+    create_permissions = PermissionScopedModelView._permission_values((Permission.ROLES_CREATE,))
+    edit_permissions = PermissionScopedModelView._permission_values(
+        (Permission.ROLES_UPDATE_DESCRIPTION,)
+    )
+    delete_permissions = PermissionScopedModelView._permission_values((Permission.ROLES_DELETE,))
+    export_permissions = PermissionScopedModelView._permission_values((Permission.ROLES_LIST,))
 
     name = "Rol"
     name_plural = "Roller"
@@ -150,7 +220,7 @@ class RoleAdmin(PermissionScopedModelView, model=Role):
         Role.updated_at,
     ]
 
-    form_columns = [Role.name, Role.description]
+    form_columns = [Role.description]
 
     page_size = 25
     page_size_options = [25, 50]
@@ -165,12 +235,12 @@ class RoleAdmin(PermissionScopedModelView, model=Role):
 class AuditLogAdmin(PermissionScopedModelView, model=AuditLog):
     """AuditLog modeli için SQLAdmin panel view — salt okunur."""
 
-    required_permissions = PermissionScopedModelView._permission_values(
-        (
-            Permission.AUDIT_LOGS_LIST,
-            Permission.AUDIT_LOGS_READ_DETAIL,
-            Permission.AUDIT_LOGS_STREAM,
-        )
+    list_permissions = PermissionScopedModelView._permission_values((Permission.AUDIT_LOGS_LIST,))
+    detail_permissions = PermissionScopedModelView._permission_values(
+        (Permission.AUDIT_LOGS_READ_DETAIL,)
+    )
+    export_permissions = PermissionScopedModelView._permission_values(
+        (Permission.AUDIT_LOGS_STREAM,)
     )
 
     name = "Audit Log"
