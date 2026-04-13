@@ -42,6 +42,7 @@ class _FakeSession:
 def test_build_public_object_url_uses_public_base(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "S3_PUBLIC_URL", "http://localhost:9000")
     monkeypatch.setattr(settings, "S3_ENDPOINT_URL", "http://minio:9000")
+    monkeypatch.setattr(settings, "S3_BUCKET_NAME", "app-uploads")
 
     assert _build_public_object_url("app-uploads", "users/1/avatar.jpg") == (
         "http://localhost:9000/app-uploads/users/1/avatar.jpg"
@@ -51,6 +52,7 @@ def test_build_public_object_url_uses_public_base(monkeypatch: pytest.MonkeyPatc
 def test_build_public_object_url_falls_back_to_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "S3_PUBLIC_URL", "")
     monkeypatch.setattr(settings, "S3_ENDPOINT_URL", "http://minio:9000")
+    monkeypatch.setattr(settings, "S3_BUCKET_NAME", "app-uploads")
 
     assert _build_public_object_url("app-uploads", "users/1/avatar.jpg") == (
         "http://minio:9000/app-uploads/users/1/avatar.jpg"
@@ -62,6 +64,7 @@ async def test_s3_storage_backend_get_url_returns_presigned_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "S3_PUBLIC_URL", "http://localhost:9000")
+    monkeypatch.setattr(settings, "S3_BUCKET_NAME", "app-uploads")
     backend = S3StorageBackend()
     backend._session = _FakeSession(
         "http://minio:9000/app-uploads/users/1/avatar.jpg?X-Amz-Signature=test"
@@ -77,6 +80,7 @@ async def test_s3_storage_backend_get_public_url_uses_public_base(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "S3_PUBLIC_URL", "http://localhost:9000")
+    monkeypatch.setattr(settings, "S3_BUCKET_NAME", "app-uploads")
     backend = S3StorageBackend()
 
     url = await backend.get_public_url("users/1/avatar.jpg")
@@ -90,6 +94,7 @@ async def test_s3_storage_backend_get_public_url_raises_i18n_error_when_base_mis
 ) -> None:
     monkeypatch.setattr(settings, "S3_PUBLIC_URL", "")
     monkeypatch.setattr(settings, "S3_ENDPOINT_URL", "")
+    monkeypatch.setattr(settings, "S3_BUCKET_NAME", "app-uploads")
     backend = S3StorageBackend()
     token = language_var.set("tr")
 

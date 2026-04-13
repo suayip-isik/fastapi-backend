@@ -81,9 +81,13 @@ def _extract_managed_storage_key(avatar_url: str | None, *, user_id: UUID) -> st
         elif path == base_path:
             path = ""
 
-    bucket_prefix = f"{settings.S3_BUCKET_NAME}/"
-    if path.startswith(bucket_prefix):
-        path = path[len(bucket_prefix) :]
+    managed_index = path.find(managed_prefix)
+    if managed_index > 0:
+        path = path[managed_index:]
+    elif managed_index < 0:
+        bucket_prefix = f"{settings.S3_BUCKET_NAME}/"
+        if path.startswith(bucket_prefix):
+            path = path[len(bucket_prefix) :]
 
     if path.startswith(managed_prefix):
         return path
