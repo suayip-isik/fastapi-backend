@@ -73,6 +73,14 @@ def _extract_managed_storage_key(avatar_url: str | None, *, user_id: UUID) -> st
         return None
 
     path = unquote(parsed.path).lstrip("/")
+    public_base = settings.S3_PUBLIC_URL.strip() or settings.S3_ENDPOINT_URL.strip()
+    if public_base:
+        base_path = urlparse(public_base).path.strip("/")
+        if base_path and path.startswith(f"{base_path}/"):
+            path = path[len(base_path) + 1 :]
+        elif path == base_path:
+            path = ""
+
     bucket_prefix = f"{settings.S3_BUCKET_NAME}/"
     if path.startswith(bucket_prefix):
         path = path[len(bucket_prefix) :]

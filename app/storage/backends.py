@@ -171,6 +171,7 @@ def _build_public_object_url(bucket: str, key: str) -> str:
         raise ValueError(t("error.storage.public_url_not_configured"))
 
     base_path = parsed.path.rstrip("/")
+    bucket = quote(bucket.strip("/"), safe="/")
     encoded_key = quote(key.lstrip("/"), safe="/")
     object_path = f"{base_path}/{bucket}/{encoded_key}" if base_path else f"/{bucket}/{encoded_key}"
     return urlunsplit((parsed.scheme, parsed.netloc, object_path, "", ""))
