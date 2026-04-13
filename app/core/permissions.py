@@ -22,7 +22,7 @@ class Permission(str, PyEnum):
     PROFILE_READ_SELF = "profile.read.self"
     PROFILE_UPDATE_BASIC = "profile.update.basic"
     PROFILE_UPDATE_EMAIL = "profile.update.email"
-    PROFILE_UPDATE_PASSWORD = "profile.update.password"
+    PROFILE_UPDATE_PASSWORD = "profile.update.password"  # noqa: S105
     PROFILE_UPDATE_AVATAR = "profile.update.avatar"
     PROFILE_DELETE_AVATAR = "profile.delete.avatar"
 

@@ -5,7 +5,7 @@ Her model için admin panelinde görünecek alanlar ve işlemler burada tanımla
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 from sqladmin import ModelView
 
@@ -13,6 +13,9 @@ from app.core.permissions import Permission
 from app.db.models.audit_log import AuditLog
 from app.db.models.role import Role
 from app.db.models.user import User
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 class PermissionScopedModelView(ModelView):
@@ -22,10 +25,10 @@ class PermissionScopedModelView(ModelView):
 
     @classmethod
     def _permission_values(cls, permissions: Iterable[Permission | str]) -> tuple[str, ...]:
-        values: list[str] = []
-        for permission in permissions:
-            values.append(permission.value if isinstance(permission, Permission) else permission)
-        return tuple(values)
+        return tuple(
+            permission.value if isinstance(permission, Permission) else permission
+            for permission in permissions
+        )
 
     def _session_permissions(self, request: object) -> set[str]:
         session = getattr(request, "session", {})
