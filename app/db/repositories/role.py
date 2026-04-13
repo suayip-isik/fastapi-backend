@@ -9,6 +9,9 @@ from sqlalchemy import delete, exists, insert, select
 if TYPE_CHECKING:
     from uuid import UUID
 
+from app.core.exceptions import BusinessRuleError
+from app.core.i18n import t
+from app.core.permissions import find_invalid_permissions, normalize_permission_value
 from app.db.models.role import Role, RolePermission
 from app.db.models.user import User
 from app.db.repositories.base import SoftDeleteRepository
@@ -21,6 +24,14 @@ class RoleRepository(SoftDeleteRepository[Role]):
     """
 
     model = Role
+
+    def _validate_permissions(self, permissions: list[str]) -> list[str]:
+        invalid_permissions = find_invalid_permissions(permissions)
+        if invalid_permissions:
+            raise BusinessRuleError(
+                t("error.permissions.invalid", permissions=", ".join(sorted(invalid_permissions)))
+            )
+        return [normalize_permission_value(permission) for permission in permissions]
 
     async def get_by_name(self, name: str) -> Role | None:
         result = await self._session.execute(
@@ -36,17 +47,19 @@ class RoleRepository(SoftDeleteRepository[Role]):
 
     async def set_permissions(self, role_id: UUID, permissions: list[str]) -> None:
         """Rolün permission setini toptan günceller (sil + toplu ekle)."""
+        normalized_permissions = self._validate_permissions(permissions)
         await self._session.execute(delete(RolePermission).where(RolePermission.role_id == role_id))
-        if permissions:
+        if normalized_permissions:
             await self._session.execute(
                 insert(RolePermission),
-                [{"role_id": role_id, "permission": p} for p in permissions],
+                [{"role_id": role_id, "permission": p} for p in normalized_permissions],
             )
         await self._session.flush()
 
     async def add_permission(self, role_id: UUID, permission: str) -> None:
         """Mevcut permission setine tek bir permission ekler."""
-        self._session.add(RolePermission(role_id=role_id, permission=permission))
+        normalized_permission = self._validate_permissions([permission])[0]
+        self._session.add(RolePermission(role_id=role_id, permission=normalized_permission))
         await self._session.flush()
 
     async def has_users(self, role_id: UUID) -> bool:
@@ -65,10 +78,11 @@ class RoleRepository(SoftDeleteRepository[Role]):
 
     async def remove_permission(self, role_id: UUID, permission: str) -> None:
         """Mevcut permission setinden tek bir permission çıkarır."""
+        normalized_permission = normalize_permission_value(permission)
         await self._session.execute(
             delete(RolePermission).where(
                 RolePermission.role_id == role_id,
-                RolePermission.permission == permission,
+                RolePermission.permission == normalized_permission,
             )
         )
         await self._session.flush()

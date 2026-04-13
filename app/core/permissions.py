@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from enum import Enum as PyEnum
 
 
@@ -122,6 +123,24 @@ APP_USER_PERMISSIONS: list[Permission] = [
     Permission.NOTIFICATIONS_MARK_READ,
     Permission.NOTIFICATIONS_DELETE,
 ]
+
+
+VALID_PERMISSION_VALUES: frozenset[str] = frozenset(permission.value for permission in Permission)
+
+
+def normalize_permission_value(permission: Permission | str) -> str:
+    """Permission enum/string girdisini canonical string değere çevirir."""
+    return permission.value if isinstance(permission, Permission) else permission
+
+
+def find_invalid_permissions(permissions: Iterable[Permission | str]) -> list[str]:
+    """Canonical sözlükte olmayan permission değerlerini döndürür."""
+    invalid: list[str] = []
+    for permission in permissions:
+        value = normalize_permission_value(permission)
+        if value not in VALID_PERMISSION_VALUES and value not in invalid:
+            invalid.append(value)
+    return invalid
 
 
 def has_admin_panel_access(permission_values: set[str]) -> bool:

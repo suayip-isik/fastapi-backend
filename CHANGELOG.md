@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `role_permissions.permission` artık canonical RBAC sözlüğünü PostgreSQL enum + app guard ile zorunlu kılar
 - Web ve mobil istemciler artık tek `client` surface üzerinden çalışır
 - Sistem roller `panel_admin` ve `app_user` olarak yenilendi; `moderator` sistem rolü kaldırıldı
 - `POST /api/v1/client/auth/register` ile açılan tüm `surface=client` kullanıcılar varsayılan olarak `app_user` rolü alır

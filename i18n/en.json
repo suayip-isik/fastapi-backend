@@ -52,6 +52,7 @@
   "error.permissions.surface_forbidden": "This user type cannot access this resource.",
   "error.permissions.required_all": "Required permission for this action: {permissions}",
   "error.permissions.required_any": "Required permission for this action: {permissions}",
+  "error.permissions.invalid": "Unknown permission value(s): {permissions}",
   "error.role.not_found": "Role not found.",
   "error.role.named_not_found": "Role named '{name}' was not found.",
   "error.role.named_exists": "A role named '{name}' already exists.",

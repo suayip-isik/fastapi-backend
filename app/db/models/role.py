@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, Index, String, text
+from sqlalchemy import Boolean, Enum, ForeignKey, Index, String, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
+from app.core.permissions import Permission, normalize_permission_value
 from app.db.models.base import Base, BaseModel, SoftDeleteMixin
 
 
@@ -54,7 +55,7 @@ class Role(SoftDeleteMixin, BaseModel):
     @property
     def permission_set(self) -> set[str]:
         """Bu role atanmış permission string'lerini set olarak döner."""
-        return {rp.permission for rp in self.permissions}
+        return {normalize_permission_value(rp.permission) for rp in self.permissions}
 
     def __repr__(self) -> str:
         return f"<Role {self.name}>"
@@ -79,6 +80,19 @@ class RolePermission(Base):
         ForeignKey("roles.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    permission: Mapped[str] = mapped_column(String(100), primary_key=True)
+    permission: Mapped[Permission] = mapped_column(
+        Enum(
+            Permission,
+            name="permissionenum",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+            validate_strings=True,
+        ),
+        primary_key=True,
+    )
 
     role: Mapped[Role] = relationship("Role", back_populates="permissions")
+
+    @validates("permission")
+    def _validate_permission(self, _: str, value: Permission | str) -> Permission:
+        normalized = normalize_permission_value(value)
+        return Permission(normalized)

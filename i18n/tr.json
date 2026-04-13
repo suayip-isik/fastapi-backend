@@ -52,6 +52,7 @@
   "error.permissions.surface_forbidden": "Bu kullanıcı türü bu kaynağa erişemez.",
   "error.permissions.required_all": "Bu işlem için gerekli yetki: {permissions}",
   "error.permissions.required_any": "Bu işlem için gerekli yetki: {permissions}",
+  "error.permissions.invalid": "Geçersiz yetki değeri(leri): {permissions}",
   "error.role.not_found": "Rol bulunamadı.",
   "error.role.named_not_found": "'{name}' adında bir rol bulunamadı.",
   "error.role.named_exists": "'{name}' adında bir rol zaten mevcut.",
