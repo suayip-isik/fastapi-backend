@@ -26,7 +26,7 @@ def _base_settings_kwargs(tmp_path: Path) -> dict[str, object]:
         "APP_VERSION": "1.0.0",
         "APP_URL": "https://api.example.com",
         "FRONTEND_URL": "https://app.example.com",
-        "SECRET_KEY": "super-secret-key",
+        "SECRET_KEY": "super-secret-key-that-is-long-enough-32chars",
         "ALLOWED_HOSTS": ["api.example.com"],
         "CORS_ORIGINS": ["https://app.example.com"],
         "POSTGRES_HOST": "db",
@@ -40,8 +40,12 @@ def _base_settings_kwargs(tmp_path: Path) -> dict[str, object]:
         "REDIS_DB": 0,
         "JWT_PRIVATE_KEY_PATH": private_key,
         "JWT_PUBLIC_KEY_PATH": public_key,
-        "SUPERADMIN_EMAIL": "admin@example.com",
+        "SUPERADMIN_USERNAME": "superadmin",
+        "SUPERADMIN_EMAIL": "superadmin@example.com",
         "SUPERADMIN_PASSWORD": "StrongAdminPass1",
+        "DEFAULT_APP_USER_USERNAME": "suayip",
+        "DEFAULT_APP_USER_EMAIL": "suayip@example.com",
+        "DEFAULT_APP_USER_PASSWORD": "StrongAppPass1",
         "RATE_LIMIT_ENABLED": False,
     }
 
@@ -59,3 +63,9 @@ def test_production_settings_require_non_local_frontend_url(tmp_path: Path) -> N
 
     with pytest.raises(ValueError, match="FRONTEND_URL"):
         Settings(**kwargs)
+
+
+def test_default_admin_user_create_rate_limit(tmp_path: Path) -> None:
+    """Admin panel kullanıcı oluşturma limiti ayrı ve beklenen değerde olmalı."""
+    settings = Settings(**_base_settings_kwargs(tmp_path))
+    assert settings.RATE_LIMIT_ADMIN_USER_CREATE == "20/minute"

@@ -6,12 +6,15 @@ Pydantic Settings ile .env dosyasından otomatik yüklenir.
 from __future__ import annotations
 
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from pydantic import AnyHttpUrl, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_RATE_LIMIT_RE = re.compile(r"^\d+/(second|minute|hour|day)$")
 
 
 class Settings(BaseSettings):
@@ -213,6 +216,7 @@ class Settings(BaseSettings):
     # ── Storage ───────────────────────────────────────────────────────────────
     STORAGE_BACKEND: str = "minio"  # minio | s3 | local
     S3_ENDPOINT_URL: str = ""
+    S3_PUBLIC_URL: str = ""
     S3_ACCESS_KEY: str = ""
     S3_SECRET_KEY: str = ""
     S3_BUCKET_NAME: str = "app-uploads"
@@ -244,15 +248,21 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     EMAILS_FROM_EMAIL: str = "noreply@example.com"
 
-    # ── Superadmin Seed ───────────────────────────────────────────────────────
-    SUPERADMIN_EMAIL: str = "admin@example.com"
-    SUPERADMIN_PASSWORD: str = "changeme"
+    # ── Seed Users ────────────────────────────────────────────────────────────
+    SUPERADMIN_USERNAME: str = "superadmin"
+    SUPERADMIN_EMAIL: str = "superadmin@example.com"
+    SUPERADMIN_PASSWORD: str | None = None
+    DEFAULT_APP_USER_USERNAME: str = "suayip"
+    DEFAULT_APP_USER_EMAIL: str = "suayip@example.com"
+    DEFAULT_APP_USER_PASSWORD: str | None = None
+    DEFAULT_APP_USER_FULL_NAME: str = "Suayip"
 
     # ── Rate Limiting ─────────────────────────────────────────────────────────
     RATE_LIMIT_DEFAULT: str = "100/minute"
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_AUTH: str = "5/minute"  # login, reset-password
     RATE_LIMIT_AUTH_EMAIL: str = "3/hour"  # forgot-password, resend-verification
+    RATE_LIMIT_ADMIN_USER_CREATE: str = "20/minute"  # admin panel user create/invite
     RATE_LIMIT_REGISTER: str = "3/hour"  # register
     RATE_LIMIT_UPLOAD: str = "20/hour"
     RATE_LIMIT_API_KEYS: str = "20/minute"  # API key create/revoke
@@ -261,6 +271,18 @@ class Settings(BaseSettings):
     EMAIL_VERIFY_TTL: int = 86400  # 24 hours in seconds
     PASSWORD_RESET_TTL: int = 900  # 15 minutes in seconds
     LOGIN_PARTIAL_TTL: int = 300  # 5 minutes in seconds
+
+    # ── Cache TTLs ────────────────────────────────────────────────────────────
+    USER_CACHE_TTL_SECONDS: int = 300  # 5 minutes
+    USER_PERMISSIONS_TTL_SECONDS: int = 900  # 15 minutes
+
+    # ── TOTP ─────────────────────────────────────────────────────────────────
+    TOTP_BACKUP_CODE_COUNT: int = 8
+    TOTP_BACKUP_CODE_TTL_DAYS: int = 30
+
+    # ── API Keys ──────────────────────────────────────────────────────────────
+    API_KEY_PREFIX: str = "sk_live_"
+    API_KEY_BYTES: int = 40
 
     # ── Startup Guards ────────────────────────────────────────────────────────
     ENFORCE_DB_SCHEMA_CHECK: bool = True
@@ -305,6 +327,71 @@ class Settings(BaseSettings):
     LOG_FORMAT: str = "json"  # json | text
 
     # ── Validators ────────────────────────────────────────────────────────────
+    @field_validator("SECRET_KEY", mode="after")
+    @classmethod
+    def _validate_secret_key_strength(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("SECRET_KEY en az 32 karakter olmalıdır.")
+        return v
+
+    @field_validator("ACCESS_TOKEN_EXPIRE_MINUTES", mode="after")
+    @classmethod
+    def _validate_access_token_expiry(cls, v: int) -> int:
+        if not (1 <= v <= 1440):
+            raise ValueError("ACCESS_TOKEN_EXPIRE_MINUTES 1-1440 aralığında olmalı.")
+        return v
+
+    @field_validator("REFRESH_TOKEN_EXPIRE_DAYS", mode="after")
+    @classmethod
+    def _validate_refresh_token_expiry(cls, v: int) -> int:
+        if not (1 <= v <= 365):
+            raise ValueError("REFRESH_TOKEN_EXPIRE_DAYS 1-365 aralığında olmalı.")
+        return v
+
+    @field_validator("EMAIL_VERIFY_TTL", "PASSWORD_RESET_TTL", "LOGIN_PARTIAL_TTL", mode="after")
+    @classmethod
+    def _validate_ttl_values(cls, v: int) -> int:
+        if not (60 <= v <= 604800):
+            raise ValueError("TTL değerleri 60 saniye ile 7 gün (604800 s) arasında olmalı.")
+        return v
+
+    @field_validator("TOTP_BACKUP_CODE_COUNT", mode="after")
+    @classmethod
+    def _validate_totp_backup_code_count(cls, v: int) -> int:
+        if not (4 <= v <= 20):
+            raise ValueError("TOTP_BACKUP_CODE_COUNT 4-20 arasında olmalı.")
+        return v
+
+    @field_validator("TOTP_BACKUP_CODE_TTL_DAYS", mode="after")
+    @classmethod
+    def _validate_totp_backup_code_ttl(cls, v: int) -> int:
+        if not (1 <= v <= 365):
+            raise ValueError("TOTP_BACKUP_CODE_TTL_DAYS 1-365 arasında olmalı.")
+        return v
+
+    @field_validator("API_KEY_BYTES", mode="after")
+    @classmethod
+    def _validate_api_key_bytes(cls, v: int) -> int:
+        if not (16 <= v <= 128):
+            raise ValueError("API_KEY_BYTES 16-128 arasında olmalı.")
+        return v
+
+    @field_validator(
+        "RATE_LIMIT_DEFAULT",
+        "RATE_LIMIT_AUTH",
+        "RATE_LIMIT_AUTH_EMAIL",
+        "RATE_LIMIT_ADMIN_USER_CREATE",
+        "RATE_LIMIT_REGISTER",
+        "RATE_LIMIT_UPLOAD",
+        "RATE_LIMIT_API_KEYS",
+        mode="after",
+    )
+    @classmethod
+    def _validate_rate_limit_format(cls, v: str) -> str:
+        if not _RATE_LIMIT_RE.match(v):
+            raise ValueError(f"Rate limit '{v}' '100/minute' formatında olmalı.")
+        return v
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def parse_cors(cls, v: Any) -> list[Any]:
@@ -372,8 +459,15 @@ class Settings(BaseSettings):
             Development ve staging ortamları etkilenmez.
         """
         if self.APP_ENV == "production":
-            if self.SECRET_KEY == "change-this-to-a-random-secret-key-in-production":  # noqa: S105
-                raise ValueError("Production'da SECRET_KEY değiştirilmeli!")
+            _weak_keys = {
+                "change-this-to-a-random-secret-key-in-production",
+                "secret",
+                "changeme",
+            }
+            if self.SECRET_KEY.lower() in _weak_keys or len(self.SECRET_KEY) < 32:
+                raise ValueError(
+                    "Production'da SECRET_KEY güçlü bir değere ayarlanmalı (min 32 karakter)!"
+                )
             if self.APP_DEBUG:
                 raise ValueError("Production'da DEBUG kapalı olmalı!")
             frontend_url = (self.FRONTEND_URL or "").strip().lower()
@@ -381,8 +475,17 @@ class Settings(BaseSettings):
                 raise ValueError("Production'da FRONTEND_URL ayarlanmalı!")
             if "localhost" in frontend_url or "127.0.0.1" in frontend_url:
                 raise ValueError("Production'da FRONTEND_URL gerçek frontend domain'i olmalı!")
+            if not frontend_url.startswith("https://"):
+                raise ValueError("Production'da FRONTEND_URL HTTPS olmalıdır!")
+            if not self.CORS_ORIGINS:
+                raise ValueError("Production'da CORS_ORIGINS boş bırakılamaz!")
+            if self.SUPERADMIN_PASSWORD is None:
+                raise ValueError(
+                    "Production'da SUPERADMIN_PASSWORD ayarlanmalıdır! "
+                    "Seed'i devre dışı bırakmak için kullanıcıyı elle oluşturun."
+                )
             insecure_passwords = {"changeme", "admin", "password", "123456", ""}
-            if (self.SUPERADMIN_PASSWORD or "").strip().lower() in insecure_passwords:
+            if self.SUPERADMIN_PASSWORD.strip().lower() in insecure_passwords:
                 raise ValueError(
                     "Production'da SUPERADMIN_PASSWORD güvenli bir değere ayarlanmalı!"
                 )

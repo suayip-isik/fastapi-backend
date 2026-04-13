@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
+import contextlib
+
 import pytest
 from pydantic import ValidationError as PydanticValidationError
 
+from app.core.i18n import language_var
 from app.schemas.auth import RegisterRequest, ResetPasswordRequest, validate_password_strength
 
 # ── validate_password_strength ────────────────────────────────────────────────
+
+
+@contextlib.contextmanager
+def _language(lang: str):
+    token = language_var.set(lang)
+    try:
+        yield
+    finally:
+        language_var.reset(token)
 
 
 def test_validate_password_strength_valid_returns_unchanged() -> None:
@@ -22,25 +34,25 @@ def test_validate_password_strength_with_special_chars() -> None:
 
 def test_validate_password_strength_missing_uppercase_raises() -> None:
     """test_validate_password_strength_missing_uppercase_raises senaryosunu test eder."""
-    with pytest.raises(ValueError, match="büyük harf"):
+    with _language("tr"), pytest.raises(ValueError, match="büyük harf"):
         validate_password_strength("weakpass1")
 
 
 def test_validate_password_strength_missing_lowercase_raises() -> None:
     """test_validate_password_strength_missing_lowercase_raises senaryosunu test eder."""
-    with pytest.raises(ValueError, match="küçük harf"):
+    with _language("tr"), pytest.raises(ValueError, match="küçük harf"):
         validate_password_strength("WEAKPASS1")
 
 
 def test_validate_password_strength_missing_digit_raises() -> None:
     """test_validate_password_strength_missing_digit_raises senaryosunu test eder."""
-    with pytest.raises(ValueError, match="rakam"):
+    with _language("tr"), pytest.raises(ValueError, match="rakam"):
         validate_password_strength("WeakPassword")
 
 
 def test_validate_password_strength_missing_uppercase_and_digit() -> None:
     """Birden fazla eksiklik hata mesajında listelenmeli."""
-    with pytest.raises(ValueError) as exc_info:
+    with _language("tr"), pytest.raises(ValueError) as exc_info:
         validate_password_strength("alllowercase")
     msg = str(exc_info.value)
     assert "büyük harf" in msg
@@ -49,7 +61,7 @@ def test_validate_password_strength_missing_uppercase_and_digit() -> None:
 
 def test_validate_password_strength_all_missing() -> None:
     """Hiçbir kural karşılanmazsa tüm eksiklikler listelenmeli."""
-    with pytest.raises(ValueError) as exc_info:
+    with _language("tr"), pytest.raises(ValueError) as exc_info:
         validate_password_strength("ALLCAPS")
     msg = str(exc_info.value)
     assert "küçük harf" in msg

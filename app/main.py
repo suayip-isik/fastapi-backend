@@ -18,7 +18,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.admin import get_all_views
 from app.admin.auth import AdminAuthBackend
-from app.admin.seed import create_default_superadmin, seed_system_roles
+from app.admin.seed import create_default_app_user, create_default_superadmin, seed_system_roles
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
@@ -93,6 +93,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await validate_database_schema(engine)
     await seed_system_roles()
     await create_default_superadmin()
+    await create_default_app_user()
     yield
     await engine.dispose()
     await close_redis()
@@ -129,8 +130,14 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=[str(o) for o in settings.CORS_ORIGINS],
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "X-API-Key",
+            "X-Request-ID",
+            "Accept-Language",
+        ],
         expose_headers=["X-Request-ID", "X-Process-Time-Ms"],
     )
 

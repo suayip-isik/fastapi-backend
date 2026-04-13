@@ -10,6 +10,7 @@ from sqlalchemy import update as sa_update
 
 from app.api.dependencies.auth import get_user_permissions
 from app.core.permissions import Permission
+from app.core.system_roles import APP_USER_ROLE, PANEL_ADMIN_ROLE
 from app.db.models.role import Role
 from app.db.models.user import SurfaceType, User
 
@@ -38,7 +39,7 @@ async def _auth_headers(client: AsyncClient, email: str, password: str = "Strong
 async def _promote_to_admin(db_session: AsyncSession, email: str) -> None:
     from sqlalchemy import select
 
-    result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
+    result = await db_session.execute(select(Role.id).where(Role.name == PANEL_ADMIN_ROLE))
     admin_role_id = result.scalar_one()
     await db_session.execute(
         sa_update(User)
@@ -64,9 +65,9 @@ async def test_list_roles_as_admin(client: AsyncClient, db_session: AsyncSession
     assert res.status_code == 200
     data = res.json()
     assert isinstance(data, list)
-    assert len(data) >= 3  # admin, user, moderator seed edilmiş
+    assert len(data) >= 2
     names = {r["name"] for r in data}
-    assert {"admin", "user", "moderator"}.issubset(names)
+    assert {PANEL_ADMIN_ROLE, APP_USER_ROLE}.issubset(names)
 
 
 @pytest.mark.asyncio
@@ -138,15 +139,15 @@ async def test_create_role_with_permissions(client: AsyncClient, db_session: Asy
         json={
             "name": "reporter",
             "description": "Rapor rolü",
-            "permissions": ["audit:read", "users:read"],
+            "permissions": ["audit:view", "users:view"],
         },
         headers=headers,
     )
 
     assert res.status_code == 201
     data = res.json()
-    assert "audit:read" in data["permissions"]
-    assert "users:read" in data["permissions"]
+    assert "audit:view" in data["permissions"]
+    assert "users:view" in data["permissions"]
 
 
 @pytest.mark.asyncio
@@ -179,6 +180,23 @@ async def test_create_role_invalid_name_format(client: AsyncClient, db_session: 
 
 
 @pytest.mark.asyncio
+async def test_create_role_with_legacy_permission_fails(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Legacy birleşik permission string'i artık kabul edilmemeli."""
+    admin_email = "admin_legacy_role_perm@example.com"
+    headers = await _auth_headers(client, admin_email)
+    await _promote_to_admin(db_session, admin_email)
+
+    res = await client.post(
+        "/api/v1/admin/roles",
+        json={"name": "legacy_perm_role", "description": None, "permissions": ["users:read"]},
+        headers=headers,
+    )
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_create_role_as_non_admin(client: AsyncClient):
     """Non-admin rol oluşturamamalı."""
     headers = await _auth_headers(client, "non_admin_create_role@example.com")
@@ -202,12 +220,12 @@ async def test_get_role_by_id(client: AsyncClient, db_session: AsyncSession):
 
     # Önce listeyi al, bir rol ID'si seç
     roles = (await client.get("/api/v1/admin/roles", headers=headers)).json()
-    target = next(r for r in roles if r["name"] == "user")
+    target = next(r for r in roles if r["name"] == APP_USER_ROLE)
 
     res = await client.get(f"/api/v1/admin/roles/{target['id']}", headers=headers)
 
     assert res.status_code == 200
-    assert res.json()["name"] == "user"
+    assert res.json()["name"] == APP_USER_ROLE
     assert res.json()["is_system"] is True
 
 
@@ -260,21 +278,21 @@ async def test_update_custom_role_permissions(client: AsyncClient, db_session: A
 
     create_res = await client.post(
         "/api/v1/admin/roles",
-        json={"name": "perm_update_role", "description": None, "permissions": ["users:read"]},
+        json={"name": "perm_update_role", "description": None, "permissions": ["users:view"]},
         headers=headers,
     )
     role_id = create_res.json()["id"]
 
     res = await client.patch(
         f"/api/v1/admin/roles/{role_id}",
-        json={"permissions": ["audit:read", "users:read"]},
+        json={"permissions": ["audit:view", "users:view"]},
         headers=headers,
     )
 
     assert res.status_code == 200
     perms = res.json()["permissions"]
-    assert "audit:read" in perms
-    assert "users:read" in perms
+    assert "audit:view" in perms
+    assert "users:view" in perms
 
 
 @pytest.mark.asyncio
@@ -285,7 +303,7 @@ async def test_update_system_role_permissions_fails(client: AsyncClient, db_sess
     await _promote_to_admin(db_session, admin_email)
 
     roles = (await client.get("/api/v1/admin/roles", headers=headers)).json()
-    user_role = next(r for r in roles if r["name"] == "user")
+    user_role = next(r for r in roles if r["name"] == APP_USER_ROLE)
 
     res = await client.patch(
         f"/api/v1/admin/roles/{user_role['id']}",
@@ -305,10 +323,10 @@ async def test_update_system_role_description_allowed(
     await _promote_to_admin(db_session, admin_email)
 
     roles = (await client.get("/api/v1/admin/roles", headers=headers)).json()
-    moderator_role = next(r for r in roles if r["name"] == "moderator")
+    system_role = next(r for r in roles if r["name"] == APP_USER_ROLE)
 
     res = await client.patch(
-        f"/api/v1/admin/roles/{moderator_role['id']}",
+        f"/api/v1/admin/roles/{system_role['id']}",
         json={"description": "Güncellenmiş açıklama"},
         headers=headers,
     )
@@ -349,7 +367,7 @@ async def test_delete_system_role_fails(client: AsyncClient, db_session: AsyncSe
     await _promote_to_admin(db_session, admin_email)
 
     roles = (await client.get("/api/v1/admin/roles", headers=headers)).json()
-    admin_role = next(r for r in roles if r["name"] == "admin")
+    admin_role = next(r for r in roles if r["name"] == PANEL_ADMIN_ROLE)
 
     res = await client.delete(f"/api/v1/admin/roles/{admin_role['id']}", headers=headers)
     assert res.status_code == 400
@@ -389,7 +407,7 @@ async def test_update_role_permissions_invalidates_assigned_user_cache(
         json={
             "name": "cache_role",
             "description": "Cache role",
-            "permissions": ["notifications:read"],
+            "permissions": ["notifications:list"],
         },
         headers=headers,
     )
@@ -403,19 +421,19 @@ async def test_update_role_permissions_invalidates_assigned_user_cache(
     assert assign_res.status_code == 200
 
     perms_before = await get_user_permissions(target_id)
-    assert Permission.NOTIFICATIONS_READ.value in perms_before
+    assert Permission.NOTIFICATIONS_LIST.value in perms_before
     assert await fake_redis.keys(f"user_permissions:{target_id}") != []
 
     update_res = await client.patch(
         f"/api/v1/admin/roles/{role_id}",
-        json={"permissions": ["api_keys:read"]},
+        json={"permissions": ["api_keys:list"]},
         headers=headers,
     )
     assert update_res.status_code == 200
 
     perms_after = await get_user_permissions(target_id)
-    assert Permission.NOTIFICATIONS_READ.value not in perms_after
-    assert Permission.API_KEYS_READ.value in perms_after
+    assert Permission.NOTIFICATIONS_LIST.value not in perms_after
+    assert Permission.API_KEYS_LIST.value in perms_after
 
 
 @pytest.mark.asyncio

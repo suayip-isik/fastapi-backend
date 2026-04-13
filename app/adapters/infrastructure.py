@@ -98,3 +98,6 @@ class StorageAdapter(StoragePort):
 
     async def get_url(self, key: str, expires_in: int = 3600) -> str:
         return await self._backend.get_url(key, expires_in=expires_in)
+
+    async def get_public_url(self, key: str) -> str:
+        return await self._backend.get_public_url(key)

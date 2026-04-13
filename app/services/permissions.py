@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 from app.core.logging import get_logger
+from app.core.permissions import normalize_permission_value
 from app.db.models.role import RolePermission
 from app.db.models.user import User as UserModel
 from app.db.session_provider import AsyncSessionFactoryProtocol, session_scope
@@ -59,7 +60,7 @@ class PermissionQueryService:
                 .join(UserModel, UserModel.role_id == RolePermission.role_id)
                 .where(UserModel.id == user_id)
             )
-            return set(result.scalars().all())
+            return {normalize_permission_value(permission) for permission in result.scalars().all()}
 
 
 class PermissionProvider:

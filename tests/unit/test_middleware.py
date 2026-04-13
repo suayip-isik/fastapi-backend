@@ -19,11 +19,23 @@ class TestRequestIDMiddleware:
             res.headers["x-request-id"],
         )
 
-    async def test_uses_existing_request_id_header(self, client: AsyncClient) -> None:
-        """Gelen X-Request-ID header'ı değiştirilmeden response'a yansımalı."""
-        custom_id = "my-custom-request-id-123"
-        res = await client.get("/health/live", headers={"x-request-id": custom_id})
-        assert res.headers["x-request-id"] == custom_id
+    async def test_uses_existing_request_id_header_when_valid_uuid4(
+        self, client: AsyncClient
+    ) -> None:
+        """Geçerli UUID4 formatındaki X-Request-ID header'ı değiştirilmeden yansımalı."""
+        valid_uuid4 = "550e8400-e29b-41d4-a716-446655440000"
+        res = await client.get("/health/live", headers={"x-request-id": valid_uuid4})
+        assert res.headers["x-request-id"] == valid_uuid4
+
+    async def test_ignores_non_uuid4_request_id_header(self, client: AsyncClient) -> None:
+        """Geçersiz formattaki X-Request-ID header'ı yok sayılarak yeni UUID üretilmeli."""
+        invalid_id = "my-custom-request-id-123"
+        res = await client.get("/health/live", headers={"x-request-id": invalid_id})
+        assert res.headers["x-request-id"] != invalid_id
+        assert re.match(
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            res.headers["x-request-id"],
+        )
 
     async def test_each_request_gets_unique_id(self, client: AsyncClient) -> None:
         """Her isteğin farklı bir request ID alması gerekir."""

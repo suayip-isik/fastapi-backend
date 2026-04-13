@@ -642,8 +642,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             method=request.method,
             path=request.url.path,
             exc_type=type(exc).__name__,
-            exc=str(exc),
-            exc_info=exc,
+            exc_info=True,
         )
         return _error_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,

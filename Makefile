@@ -36,7 +36,8 @@ help:
 	@echo ""
 	@echo "  Setup"
 	@echo "    keys       Generate RSA key pair for JWT"
-	@echo "    seed       Create default admin user"
+	@echo "    reset-seed Hard-delete users/roles and rebuild canonical seed data"
+	@echo "    seed       Create default system users"
 	@echo "    env        Copy .env.example to .env (if not exists)"
 	@echo "    install    Install dev dependencies locally"
 
@@ -132,7 +133,11 @@ keys:
 
 .PHONY: seed
 seed:
-	$(API) python -c "import asyncio; from app.admin.seed import create_default_superadmin; asyncio.run(create_default_superadmin())"
+	$(API) python -c "import asyncio; from app.admin.seed import create_default_app_user, create_default_superadmin; asyncio.run(create_default_superadmin()); asyncio.run(create_default_app_user())"
+
+.PHONY: reset-seed
+reset-seed:
+	$(API) python scripts/reset_system_state.py
 
 .PHONY: env
 env:

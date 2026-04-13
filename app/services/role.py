@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.core.exceptions import AlreadyExistsError, BusinessRuleError, NotFoundError
+from app.core.i18n import t
 from app.db.models.audit_log import AuditAction
 from app.db.repositories.role import RoleRepository
 from app.services._keys import USER_PERMISSIONS_KEY
@@ -50,7 +51,7 @@ class RoleService(AuditableMixin):
         """
         role = await self._repo.get_by_id(role_id)
         if not role:
-            raise NotFoundError("Rol bulunamadı.")
+            raise NotFoundError(t("error.role.not_found"))
         return role
 
     async def get_by_name(self, name: str) -> Role:
@@ -61,7 +62,7 @@ class RoleService(AuditableMixin):
         """
         role = await self._repo.get_by_name(name)
         if not role:
-            raise NotFoundError(f"'{name}' adında bir rol bulunamadı.")
+            raise NotFoundError(t("error.role.named_not_found", name=name))
         return role
 
     async def create(
@@ -78,7 +79,7 @@ class RoleService(AuditableMixin):
             AlreadyExistsError: Aynı isimde rol mevcutsa.
         """
         if await self._repo.exists(name=name):
-            raise AlreadyExistsError(f"'{name}' adında bir rol zaten mevcut.")
+            raise AlreadyExistsError(t("error.role.named_exists", name=name))
         role = await self._repo.create(name=name, description=description, is_system=False)
         if permissions:
             await self._repo.set_permissions(role.id, permissions)
@@ -108,7 +109,7 @@ class RoleService(AuditableMixin):
         role = await self.get_by_id(role_id)
         affected_user_ids: list[UUID] = []
         if permissions is not None and role.is_system:
-            raise BusinessRuleError("Sistem rollerinin yetki seti değiştirilemez.")
+            raise BusinessRuleError(t("error.role.system_permissions_immutable"))
         if description is not None:
             await self._repo.update(role_id, description=description)
         if permissions is not None:
@@ -146,11 +147,9 @@ class RoleService(AuditableMixin):
         """
         role = await self.get_by_id(role_id)
         if role.is_system:
-            raise BusinessRuleError("Sistem rolleri silinemez.")
+            raise BusinessRuleError(t("error.role.system_delete_forbidden"))
         if await self._repo.has_users(role_id):
-            raise BusinessRuleError(
-                "Bu role atanmış kullanıcılar var. Önce kullanıcıların rolünü değiştirin."
-            )
+            raise BusinessRuleError(t("error.role.delete_assigned_users"))
         await self._audit_log(
             AuditAction.ROLE_DELETED,
             extra={"role_id": str(role_id), "role_name": role.name},

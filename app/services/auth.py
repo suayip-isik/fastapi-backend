@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
+
 from app.adapters.infrastructure import ARQTaskQueueAdapter, RedisAdapter
 from app.core.config import settings
 from app.core.exceptions import (
@@ -79,7 +81,14 @@ class AuthService(AuditableMixin):
         ...     tokens = await auth_service.login("user@example.com", "password123")
     """
 
-    def __init__(self, session: AsyncSession, audit: AuditService | None = None) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        audit: AuditService | None = None,
+        *,
+        redis: RedisPort | None = None,
+        task_queue: TaskQueuePort | None = None,
+    ) -> None:
         """AuthService örneği oluşturur.
 
         Veritabanı oturumu ve opsiyonel audit servisi ile servis başlatılır.
@@ -89,6 +98,8 @@ class AuthService(AuditableMixin):
             session: SQLAlchemy async veritabanı oturumu. Tüm DB işlemleri
                 bu oturum üzerinden gerçekleştirilir.
             audit: Audit log servisi. None ise audit logları atlanır.
+            redis: Redis port implementasyonu. None ise varsayılan adapter kullanılır.
+            task_queue: Task queue port implementasyonu. None ise varsayılan adapter kullanılır.
 
         Note:
             Audit servisi sağlanmazsa, kimlik doğrulama işlemleri loglanmaz.
@@ -97,20 +108,8 @@ class AuthService(AuditableMixin):
         self._session = session
         self._repo = UserRepository(session)
         self._audit = audit
-        self._redis: RedisPort = RedisAdapter()
-        self._task_queue: TaskQueuePort = ARQTaskQueueAdapter()
-
-    def with_infrastructure(
-        self,
-        *,
-        redis: RedisPort | None = None,
-        task_queue: TaskQueuePort | None = None,
-    ) -> AuthService:
-        if redis is not None:
-            self._redis = redis
-        if task_queue is not None:
-            self._task_queue = task_queue
-        return self
+        self._redis: RedisPort = redis or RedisAdapter()
+        self._task_queue: TaskQueuePort = task_queue or ARQTaskQueueAdapter()
 
     async def register(self, data: RegisterRequest) -> User:
         """Yeni kullanıcı kaydı oluşturur.
@@ -159,11 +158,14 @@ class AuthService(AuditableMixin):
         if await self._repo.email_exists(data.email):
             raise UserAlreadyExistsError()
 
-        user = await self._repo.create(
-            email=data.email.lower(),
-            hashed_password=hash_password(data.password),
-            full_name=data.full_name,
-        )
+        try:
+            user = await self._repo.create(
+                email=data.email.lower(),
+                hashed_password=hash_password(data.password),
+                full_name=data.full_name,
+            )
+        except IntegrityError as exc:
+            raise UserAlreadyExistsError() from exc
 
         token = secrets.token_urlsafe(32)
         await self._redis.setex(

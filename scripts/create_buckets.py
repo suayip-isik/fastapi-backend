@@ -9,6 +9,7 @@ Kullanım:
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 
 sys.path.insert(0, "/app")
@@ -34,6 +35,24 @@ async def create_bucket(s3_client, bucket_name: str) -> None:
             raise
 
 
+async def ensure_avatar_policy(s3_client, bucket_name: str) -> None:
+    """Avatar objeleri için public-read policy uygular."""
+    policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Sid": "PublicReadUserAvatars",
+                "Effect": "Allow",
+                "Principal": "*",
+                "Action": ["s3:GetObject"],
+                "Resource": [f"arn:aws:s3:::{bucket_name}/users/*/avatars/*"],
+            }
+        ],
+    }
+    await s3_client.put_bucket_policy(Bucket=bucket_name, Policy=json.dumps(policy))
+    print(f"✅ Avatar policy uygulandı: {bucket_name}")
+
+
 async def setup_buckets() -> None:
     """MinIO/S3 bağlantısı kurar ve gerekli bucket'ları oluşturur."""
     print(f"🔌 MinIO bağlantısı kuruluyor: {settings.S3_ENDPOINT_URL}")
@@ -47,6 +66,7 @@ async def setup_buckets() -> None:
     async with session.client("s3", endpoint_url=settings.S3_ENDPOINT_URL) as s3:
         # Ana uygulama bucket'ı
         await create_bucket(s3, settings.S3_BUCKET_NAME)
+        await ensure_avatar_policy(s3, settings.S3_BUCKET_NAME)
 
         # Ek bucket'lar buraya eklenebilir
         # await create_bucket(s3, "app-backups")

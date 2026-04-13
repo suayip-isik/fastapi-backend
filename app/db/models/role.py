@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, Index, String, text
+from sqlalchemy import Boolean, Enum, ForeignKey, Index, String, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
+from app.core.permissions import Permission, normalize_permission_value
 from app.db.models.base import Base, BaseModel, SoftDeleteMixin
 
 
@@ -15,11 +16,11 @@ class Role(SoftDeleteMixin, BaseModel):
     """Kullanıcı rolü modeli.
 
     Her rol bir isim, açıklama ve permission setine sahiptir.
-    Sistem rolleri (admin, user, moderator) is_system=True ile
+    Sistem rolleri (`panel_admin`, `app_user`) is_system=True ile
     işaretlenir ve silinemez.
 
     Attributes:
-        name: Benzersiz rol adı (ör: "admin", "accountant")
+        name: Benzersiz rol adı (ör: "panel_admin", "accountant")
         description: Rol açıklaması
         is_system: True ise sistem rolü — silinemez, adı değiştirilemez
         permissions: Bu role atanmış permission kaydları
@@ -47,14 +48,14 @@ class Role(SoftDeleteMixin, BaseModel):
     permissions: Mapped[list[RolePermission]] = relationship(
         "RolePermission",
         back_populates="role",
-        cascade="all, delete-orphan",
+        cascade="all",
         lazy="selectin",
     )
 
     @property
     def permission_set(self) -> set[str]:
         """Bu role atanmış permission string'lerini set olarak döner."""
-        return {rp.permission for rp in self.permissions}
+        return {normalize_permission_value(rp.permission) for rp in self.permissions}
 
     def __repr__(self) -> str:
         return f"<Role {self.name}>"
@@ -65,11 +66,11 @@ class RolePermission(Base):
 
     Bir rolün sahip olduğu permission'ları saklar.
     Permission değerleri Permission enum'unun string değerleridir
-    (ör: "users:read", "admin:panel_access").
+    (ör: "users:view", "admin:panel_access").
 
     Attributes:
         role_id: Bağlı rol UUID'si
-        permission: Permission string değeri (ör: "users:write")
+        permission: Permission string değeri (ör: "users:update")
     """
 
     __tablename__ = "role_permissions"
@@ -79,6 +80,19 @@ class RolePermission(Base):
         ForeignKey("roles.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    permission: Mapped[str] = mapped_column(String(100), primary_key=True)
+    permission: Mapped[Permission] = mapped_column(
+        Enum(
+            Permission,
+            name="permissionenum",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+            validate_strings=True,
+        ),
+        primary_key=True,
+    )
 
     role: Mapped[Role] = relationship("Role", back_populates="permissions")
+
+    @validates("permission")
+    def _validate_permission(self, _: str, value: Permission | str) -> Permission:
+        normalized = normalize_permission_value(value)
+        return Permission(normalized)

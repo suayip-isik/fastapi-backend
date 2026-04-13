@@ -18,15 +18,32 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies.auth import CurrentUserDep
+from app.api.dependencies.auth import CurrentUserDep, require_permissions
 from app.api.dependencies.infrastructure import WebSocketNotifierDep
 from app.api.dependencies.services import AuditServiceDep
 from app.core.i18n import t
+from app.core.permissions import Permission
 from app.db.session import get_db
 from app.schemas.common import MessageResponse, PaginatedResponse, calculate_pages
 from app.services.notification import NotificationService
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
+
+_NotificationsListDep = Annotated[
+    object, Depends(require_permissions(Permission.NOTIFICATIONS_LIST))
+]
+_NotificationsUnreadCountDep = Annotated[
+    object, Depends(require_permissions(Permission.NOTIFICATIONS_VIEW_UNREAD_COUNT))
+]
+_NotificationsMarkAllReadDep = Annotated[
+    object, Depends(require_permissions(Permission.NOTIFICATIONS_MARK_ALL_READ))
+]
+_NotificationsMarkReadDep = Annotated[
+    object, Depends(require_permissions(Permission.NOTIFICATIONS_MARK_READ))
+]
+_NotificationsDeleteDep = Annotated[
+    object, Depends(require_permissions(Permission.NOTIFICATIONS_DELETE))
+]
 
 
 def get_notification_service(
@@ -69,6 +86,7 @@ class UnreadCountResponse(BaseModel):
 
 @router.get("", response_model=PaginatedResponse[NotificationResponse])
 async def list_notifications(
+    _: _NotificationsListDep,
     current_user: CurrentUserDep,
     service: NotificationServiceDep,
     page: int = Query(default=1, ge=1),
@@ -104,6 +122,7 @@ async def list_notifications(
 
 @router.get("/unread-count", response_model=UnreadCountResponse)
 async def unread_count(
+    _: _NotificationsUnreadCountDep,
     current_user: CurrentUserDep,
     service: NotificationServiceDep,
 ) -> UnreadCountResponse:
@@ -124,6 +143,7 @@ async def unread_count(
 
 @router.patch("/read-all", response_model=MessageResponse)
 async def mark_all_read(
+    _: _NotificationsMarkAllReadDep,
     current_user: CurrentUserDep,
     service: NotificationServiceDep,
 ) -> MessageResponse:
@@ -145,6 +165,7 @@ async def mark_all_read(
 @router.patch("/{notification_id}", response_model=NotificationResponse)
 async def mark_read(
     notification_id: UUID,
+    _: _NotificationsMarkReadDep,
     current_user: CurrentUserDep,
     service: NotificationServiceDep,
 ) -> NotificationResponse:
@@ -170,6 +191,7 @@ async def mark_read(
 @router.delete("/{notification_id}", response_model=MessageResponse)
 async def delete_notification(
     notification_id: UUID,
+    _: _NotificationsDeleteDep,
     current_user: CurrentUserDep,
     service: NotificationServiceDep,
 ) -> MessageResponse:

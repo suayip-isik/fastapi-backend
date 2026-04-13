@@ -10,12 +10,14 @@ import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import quote, urlsplit, urlunsplit
 
 import aioboto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 from app.core.config import settings
 from app.core.exceptions import FileTooLargeError, InvalidFileTypeError, StorageError
+from app.core.i18n import t
 from app.core.logging import get_logger
 
 if TYPE_CHECKING:
@@ -100,6 +102,11 @@ class StorageBackend(ABC):
         """
         ...
 
+    @abstractmethod
+    async def get_public_url(self, key: str) -> str:
+        """Dosya için doğrudan erişilebilir public URL üretir."""
+        ...
+
 
 # ── Validators ────────────────────────────────────────────────────────────────
 
@@ -122,13 +129,18 @@ async def validate_upload(file: UploadFile) -> bytes:
     content = await file.read()
 
     if len(content) > settings.MAX_UPLOAD_SIZE_BYTES:
-        raise FileTooLargeError(f"Maksimum dosya boyutu {settings.MAX_UPLOAD_SIZE_MB}MB.")
+        raise FileTooLargeError(
+            t("error.storage.file_too_large_mb", size_mb=settings.MAX_UPLOAD_SIZE_MB)
+        )
 
     content_type = file.content_type or ""
     if content_type not in settings.ALLOWED_UPLOAD_TYPES:
         raise InvalidFileTypeError(
-            f"Desteklenmeyen dosya türü: {content_type}. "
-            f"İzin verilenler: {', '.join(settings.ALLOWED_UPLOAD_TYPES)}"
+            t(
+                "error.storage.invalid_file_type_detail",
+                content_type=content_type,
+                allowed=", ".join(settings.ALLOWED_UPLOAD_TYPES),
+            )
         )
 
     return content
@@ -149,6 +161,20 @@ def _generate_key(folder: str, filename: str) -> str:
     ext = Path(filename).suffix.lower()
     unique_name = f"{uuid.uuid4().hex}{ext}"
     return f"{folder.strip('/')}/{unique_name}" if folder else unique_name
+
+
+def _build_public_object_url(bucket: str, key: str) -> str:
+    """Bucket/key için dış erişilebilir object URL üretir."""
+    public_base = settings.S3_PUBLIC_URL.strip() or settings.S3_ENDPOINT_URL.strip()
+    parsed = urlsplit(public_base)
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError(t("error.storage.public_url_not_configured"))
+
+    base_path = parsed.path.rstrip("/")
+    bucket = quote(bucket.strip("/"), safe="/")
+    encoded_key = quote(key.lstrip("/"), safe="/")
+    object_path = f"{base_path}/{bucket}/{encoded_key}" if base_path else f"/{bucket}/{encoded_key}"
+    return urlunsplit((parsed.scheme, parsed.netloc, object_path, "", ""))
 
 
 # ── S3 / MinIO Backend ────────────────────────────────────────────────────────
@@ -231,7 +257,7 @@ class S3StorageBackend(StorageBackend):
                 )
         except (BotoCoreError, ClientError, OSError) as exc:
             logger.error("upload_failed", error=str(exc))
-            raise StorageError(f"Yükleme başarısız: {exc}") from exc
+            raise StorageError(t("error.storage.upload_failed", reason=str(exc))) from exc
 
         logger.info("file_uploaded", key=key, size=len(content))
         return key
@@ -256,7 +282,7 @@ class S3StorageBackend(StorageBackend):
                 await s3.delete_object(Bucket=self._bucket, Key=key)
         except (BotoCoreError, ClientError, OSError) as exc:
             logger.error("delete_failed", key=key, error=str(exc))
-            raise StorageError(f"Silme başarısız: {exc}") from exc
+            raise StorageError(t("error.storage.delete_failed", reason=str(exc))) from exc
 
         logger.info("file_deleted", key=key)
 
@@ -291,8 +317,15 @@ class S3StorageBackend(StorageBackend):
                     ExpiresIn=expires_in,
                 )
         except (BotoCoreError, ClientError, OSError) as exc:
-            raise StorageError(f"URL üretimi başarısız: {exc}") from exc
+            raise StorageError(t("error.storage.url_generation_failed", reason=str(exc))) from exc
         return str(url)
+
+    async def get_public_url(self, key: str) -> str:
+        """Dosya için public object URL üretir."""
+        try:
+            return _build_public_object_url(self._bucket, key)
+        except ValueError as exc:
+            raise StorageError(t("error.storage.url_generation_failed", reason=str(exc))) from exc
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────
@@ -317,4 +350,4 @@ def get_storage() -> StorageBackend:
     backend = settings.STORAGE_BACKEND.lower()
     if backend in ("s3", "minio"):
         return S3StorageBackend()
-    raise ValueError(f"Bilinmeyen storage backend: {backend}")
+    raise ValueError(t("error.storage.unknown_backend", backend=backend))

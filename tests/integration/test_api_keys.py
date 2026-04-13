@@ -55,7 +55,7 @@ async def test_create_api_key_success(client: AsyncClient):
 
     res = await client.post(
         "/api/v1/shared/api-keys",
-        json={"name": "Production Key", "scopes": ["api_keys:read", "api_keys:write"]},
+        json={"name": "Production Key", "scopes": ["api_keys:list", "api_keys:create"]},
         headers=headers,
     )
 
@@ -64,8 +64,8 @@ async def test_create_api_key_success(client: AsyncClient):
     assert "key" in data
     assert data["key"].startswith("sk_live_")
     assert data["name"] == "Production Key"
-    assert Permission.API_KEYS_READ.value in data["scopes"]
-    assert Permission.API_KEYS_WRITE.value in data["scopes"]
+    assert Permission.API_KEYS_LIST.value in data["scopes"]
+    assert Permission.API_KEYS_CREATE.value in data["scopes"]
     assert "key_prefix" in data
     assert "message" in data
 
@@ -144,6 +144,20 @@ async def test_create_api_key_with_invalid_scope_fails(client: AsyncClient):
     res = await client.post(
         "/api/v1/shared/api-keys",
         json={"name": "Invalid Scope Key", "scopes": ["read"]},
+        headers=headers,
+    )
+
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_api_key_with_legacy_scope_fails(client: AsyncClient):
+    """Legacy birleşik scope değeri artık kabul edilmemeli."""
+    headers = await _auth_headers(client, "apikey_legacy_scope@example.com")
+
+    res = await client.post(
+        "/api/v1/shared/api-keys",
+        json={"name": "Legacy Scope Key", "scopes": ["api_keys:write"]},
         headers=headers,
     )
 
@@ -297,7 +311,7 @@ async def test_api_key_with_matching_scope_can_access_protected_endpoint(client:
         client,
         headers,
         "Scoped Key",
-        scopes=["api_keys:read"],
+        scopes=["api_keys:list"],
     )
 
     res = await client.get("/api/v1/shared/api-keys", headers={"X-API-Key": created["key"]})
@@ -313,7 +327,7 @@ async def test_api_key_scope_cannot_escalate_beyond_user_permissions(client: Asy
         client,
         headers,
         "Escalation Key",
-        scopes=["users:read"],
+        scopes=["users:list"],
     )
 
     res = await client.get("/api/v1/admin/users", headers={"X-API-Key": created["key"]})
@@ -328,7 +342,7 @@ async def test_api_key_scope_cannot_escalate_beyond_user_permissions(client: Asy
 async def test_api_key_authentication_works(client: AsyncClient):
     """X-API-Key header ile kimlik doğrulaması yapılabilmeli."""
     headers = await _auth_headers(client, "apikey_auth@example.com")
-    created = await _create_key(client, headers, "Auth Key")
+    created = await _create_key(client, headers, "Auth Key", scopes=["profile:view"])
     raw_key = created["key"]
 
     # X-API-Key header ile korunan bir endpoint'e eriş

@@ -20,6 +20,7 @@ from pydantic import BaseModel
 
 from app.core.config import settings
 from app.core.exceptions import AuthenticationError, InvalidTokenError, TokenExpiredError
+from app.core.i18n import t
 
 
 class TokenType(str, Enum):
@@ -73,7 +74,7 @@ def decrypt_secret(ciphertext: str) -> str:
     try:
         return _get_fernet().decrypt(ciphertext.encode()).decode()
     except InvalidToken as exc:
-        raise AuthenticationError("Şifrelenmiş değer çözümlenemedi.") from exc
+        raise AuthenticationError(t("error.auth.encrypted_value_invalid")) from exc
 
 
 # ── Password Hashing ──────────────────────────────────────────────────────────

@@ -56,7 +56,7 @@ def get_auth_service(
     task_queue: TaskQueuePortDep,
 ) -> AuthService:
     """get_auth_service işlemini gerçekleştirir."""
-    return AuthService(db, audit).with_infrastructure(redis=redis, task_queue=task_queue)
+    return AuthService(db, audit, redis=redis, task_queue=task_queue)
 
 
 def get_account_service(

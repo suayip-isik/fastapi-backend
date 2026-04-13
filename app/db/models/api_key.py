@@ -56,6 +56,7 @@ class APIKey(BaseModel):
     __tablename__ = "api_keys"
     __table_args__ = (
         Index("ix_api_keys_user_active", "user_id", "is_active"),
+        Index("ix_api_keys_expires_at", "expires_at"),
         UniqueConstraint("user_id", "key_prefix", name="uq_api_key_user_prefix"),
     )
 

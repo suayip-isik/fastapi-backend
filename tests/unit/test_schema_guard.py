@@ -51,6 +51,7 @@ async def test_lifespan_runs_schema_guard_before_seeding() -> None:
     validate_schema = AsyncMock()
     seed_roles = AsyncMock()
     create_superadmin = AsyncMock()
+    create_app_user = AsyncMock()
     close_redis = AsyncMock()
     mock_engine = SimpleNamespace(dispose=AsyncMock())
 
@@ -58,6 +59,7 @@ async def test_lifespan_runs_schema_guard_before_seeding() -> None:
         patch("app.main.validate_database_schema", validate_schema),
         patch("app.main.seed_system_roles", seed_roles),
         patch("app.main.create_default_superadmin", create_superadmin),
+        patch("app.main.create_default_app_user", create_app_user),
         patch("app.main.close_redis", close_redis),
         patch("app.main.engine", mock_engine),
         patch("app.main.settings.ENFORCE_DB_SCHEMA_CHECK", True),
@@ -68,3 +70,4 @@ async def test_lifespan_runs_schema_guard_before_seeding() -> None:
     validate_schema.assert_awaited_once_with(mock_engine)
     seed_roles.assert_awaited_once()
     create_superadmin.assert_awaited_once()
+    create_app_user.assert_awaited_once()

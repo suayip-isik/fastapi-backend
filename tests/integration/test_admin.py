@@ -14,6 +14,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy import update as sa_update
 
+from app.core.system_roles import PANEL_ADMIN_ROLE
 from app.db.models.role import Role
 from app.db.models.user import SurfaceType, User
 
@@ -102,7 +103,7 @@ class TestAdminPanelAccessControl:
             "/api/v1/client/auth/register",
             json={"email": email, "password": password},
         )
-        result = await db_session.execute(select(Role.id).where(Role.name == "admin"))
+        result = await db_session.execute(select(Role.id).where(Role.name == PANEL_ADMIN_ROLE))
         admin_role_id = result.scalar_one()
         await db_session.execute(
             sa_update(User)

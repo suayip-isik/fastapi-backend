@@ -6,8 +6,9 @@ from __future__ import annotations
 
 import secrets
 from typing import TYPE_CHECKING
+from urllib.parse import unquote, urlparse
 
-from app.adapters.infrastructure import ARQTaskQueueAdapter, RedisAdapter
+from app.adapters.infrastructure import ARQTaskQueueAdapter
 from app.core.config import settings
 from app.core.exceptions import (
     AlreadyExistsError,
@@ -20,6 +21,7 @@ from app.core.exceptions import (
 from app.core.i18n import language_var, t
 from app.core.permissions import Permission
 from app.core.security import hash_password, verify_password
+from app.core.system_roles import PANEL_ADMIN_ROLE
 from app.db.models.audit_log import AuditAction
 from app.db.models.user import SurfaceType
 from app.db.repositories.role import RoleRepository
@@ -40,11 +42,12 @@ from app.tasks.worker import send_admin_invite_email, send_verification_email
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from fastapi import UploadFile
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.db.models.role import Role
     from app.db.models.user import User
-    from app.ports.infrastructure import RedisPort, TaskQueuePort
+    from app.ports.infrastructure import StoragePort, TaskQueuePort
     from app.schemas.user import (
         AdminChangeUserEmailRequest,
         AdminUpdateUserRequest,
@@ -54,6 +57,41 @@ if TYPE_CHECKING:
         UserStatsResponse,
     )
     from app.services.audit import AuditService
+
+
+def _extract_managed_storage_key(avatar_url: str | None, *, user_id: UUID) -> str | None:
+    """Yönetilen avatar URL'inden storage key'ini güvenli şekilde çözer."""
+    if not avatar_url:
+        return None
+
+    managed_prefix = f"users/{user_id}/"
+    if avatar_url.startswith(managed_prefix):
+        return avatar_url
+
+    parsed = urlparse(avatar_url)
+    if not parsed.path:
+        return None
+
+    path = unquote(parsed.path).lstrip("/")
+    public_base = settings.S3_PUBLIC_URL.strip() or settings.S3_ENDPOINT_URL.strip()
+    if public_base:
+        base_path = urlparse(public_base).path.strip("/")
+        if base_path and path.startswith(f"{base_path}/"):
+            path = path[len(base_path) + 1 :]
+        elif path == base_path:
+            path = ""
+
+    managed_index = path.find(managed_prefix)
+    if managed_index > 0:
+        path = path[managed_index:]
+    elif managed_index < 0:
+        bucket_prefix = f"{settings.S3_BUCKET_NAME}/"
+        if path.startswith(bucket_prefix):
+            path = path[len(bucket_prefix) :]
+
+    if path.startswith(managed_prefix):
+        return path
+    return None
 
 
 class UserService(AuditableMixin):
@@ -74,7 +112,7 @@ class UserService(AuditableMixin):
         audit: AuditService | None = None,
         *,
         cache: CacheService | None = None,
-        redis: RedisPort | None = None,
+        storage: StoragePort | None = None,
         task_queue: TaskQueuePort | None = None,
     ) -> None:
         """UserService'i başlatır.
@@ -87,13 +125,13 @@ class UserService(AuditableMixin):
         self._role_repo = RoleRepository(session)
         self._audit = audit
         self._cache = cache or CacheService()
-        self._redis = redis or RedisAdapter()
+        self._storage = storage
         self._task_queue = task_queue or ARQTaskQueueAdapter()
 
     async def _issue_admin_invite(self, user: User) -> None:
         token = secrets.token_urlsafe(32)
-        await self._redis.setex(
-            PASSWORD_RESET_KEY.format(token), settings.PASSWORD_RESET_TTL, str(user.id)
+        await self._cache.set_str(
+            PASSWORD_RESET_KEY.format(token), str(user.id), settings.PASSWORD_RESET_TTL
         )
         await self._task_queue.enqueue(
             send_admin_invite_email,
@@ -105,9 +143,9 @@ class UserService(AuditableMixin):
     async def _get_admin_role_or_raise(self, role_name: str) -> Role:
         role = await self._role_repo.get_by_name(role_name)
         if not role:
-            raise NotFoundError(f"'{role_name}' adında bir rol bulunamadı.")
+            raise NotFoundError(t("error.role.named_not_found", name=role_name))
         if Permission.ADMIN_PANEL_ACCESS.value not in role.permission_set:
-            raise BusinessRuleError("Admin kullanıcıya yalnızca panel erişimi olan rol atanabilir.")
+            raise BusinessRuleError(t("error.user.admin_role_requires_panel_access"))
         return role
 
     def _mask_email(self, email: str | None) -> str | None:
@@ -122,10 +160,10 @@ class UserService(AuditableMixin):
 
     async def _issue_verification_email(self, user: User, target_email: str) -> str:
         token = secrets.token_urlsafe(32)
-        await self._redis.setex(
+        await self._cache.set_str(
             EMAIL_VERIFY_KEY.format(token),
-            settings.EMAIL_VERIFY_TTL,
             encode_email_verify_value(str(user.id), target_email),
+            settings.EMAIL_VERIFY_TTL,
         )
         await self._task_queue.enqueue(
             send_verification_email,
@@ -179,7 +217,7 @@ class UserService(AuditableMixin):
             )
             raise InsufficientPermissionsError(t("error.user.self_action"))
 
-        if target_user.role and target_user.role.name == "admin":
+        if target_user.role and target_user.role.name == PANEL_ADMIN_ROLE:
             await self._audit_user_management_blocked(
                 actor_user_id=actor_user_id,
                 target_user=target_user,
@@ -255,6 +293,81 @@ class UserService(AuditableMixin):
         if invalidate_permissions:
             keys.append(USER_PERMISSIONS_KEY.format(str(user_id)))
         await self._cache.delete(*keys)
+
+    def _avatar_folder(self, user_id: UUID) -> str:
+        return f"users/{user_id}/avatars"
+
+    async def _replace_avatar(
+        self,
+        *,
+        actor_user_id: UUID,
+        target_user: User,
+        file: UploadFile,
+        operation_scope: str,
+    ) -> User:
+        if self._storage is None:
+            raise RuntimeError(t("error.user.avatar.storage_required"))
+
+        previous_avatar_url = target_user.avatar_url
+        previous_key = _extract_managed_storage_key(previous_avatar_url, user_id=target_user.id)
+        new_key = await self._storage.upload(file, folder=self._avatar_folder(target_user.id))
+        new_url = await self._storage.get_public_url(new_key)
+
+        try:
+            if previous_key and previous_key != new_key:
+                await self._storage.delete(previous_key)
+            await self._invalidate_user_cache(target_user.id, target_user.email)
+            updated = await self._repo.update(target_user.id, avatar_url=new_url)
+        except Exception:
+            await self._storage.delete(new_key)
+            raise
+
+        action = (
+            AuditAction.PROFILE_AVATAR_UPDATED
+            if previous_avatar_url
+            else AuditAction.PROFILE_AVATAR_UPLOADED
+        )
+        await self._audit_log(
+            action,
+            user_id=actor_user_id,
+            extra={
+                "actor_user_id": str(actor_user_id),
+                "target_user_id": str(target_user.id),
+                "old_key": previous_key,
+                "new_key": new_key,
+                "operation_scope": operation_scope,
+            },
+        )
+        return updated
+
+    async def _clear_avatar(
+        self,
+        *,
+        actor_user_id: UUID,
+        target_user: User,
+        operation_scope: str,
+    ) -> User:
+        if not target_user.avatar_url:
+            raise BusinessRuleError(t("error.user.avatar.not_found"))
+
+        previous_key = _extract_managed_storage_key(target_user.avatar_url, user_id=target_user.id)
+        if previous_key and self._storage is not None:
+            await self._storage.delete(previous_key)
+
+        await self._invalidate_user_cache(target_user.id, target_user.email)
+        updated = await self._repo.update(target_user.id, avatar_url=None)
+        await self._audit_log(
+            AuditAction.PROFILE_AVATAR_DELETED,
+            user_id=actor_user_id,
+            extra={
+                "actor_user_id": str(actor_user_id),
+                "target_user_id": str(target_user.id),
+                "old_key": previous_key,
+                "new_key": None,
+                "operation_scope": operation_scope,
+            },
+        )
+        return updated
 
     async def get_stats(self) -> UserStatsResponse:
         """Sistemdeki kullanıcı istatistiklerini döndürür.
@@ -369,7 +482,7 @@ class UserService(AuditableMixin):
             if not current_password or not verify_password(current_password, user.hashed_password):
                 raise AuthenticationError(t("error.auth.wrong_password"))
             if await self._repo.email_exists(new_email, exclude_user_id=user.id):
-                raise AlreadyExistsError("Bu e-posta adresi zaten kullanılıyor.")
+                raise AlreadyExistsError(t("error.user.email_already_used"))
 
             normalized_email = new_email.lower()
             await self._invalidate_user_cache(user_id, user.email)
@@ -405,6 +518,25 @@ class UserService(AuditableMixin):
 
         return user
 
+    async def update_self_avatar(self, user_id: UUID, *, file: UploadFile) -> User:
+        """Kullanıcının kendi avatarını yükler veya günceller."""
+        user = await self._repo.get_by_id_or_raise(user_id)
+        return await self._replace_avatar(
+            actor_user_id=user_id,
+            target_user=user,
+            file=file,
+            operation_scope="self",
+        )
+
+    async def delete_self_avatar(self, user_id: UUID) -> User:
+        """Kullanıcının kendi avatarını siler."""
+        user = await self._repo.get_by_id_or_raise(user_id)
+        return await self._clear_avatar(
+            actor_user_id=user_id,
+            target_user=user,
+            operation_scope="self",
+        )
+
     async def admin_update(
         self,
         *,
@@ -422,7 +554,7 @@ class UserService(AuditableMixin):
         if update_data.get("username"):
             existing = await self._repo.get_by_username(update_data["username"])
             if existing and existing.id != target_user.id:
-                raise AlreadyExistsError("Bu kullanıcı adı zaten kullanılıyor.")
+                raise AlreadyExistsError(t("error.user.username_already_used"))
 
         await self._invalidate_user_cache(target_user.id, target_user.email)
         updated = await self._repo.update(target_user.id, **update_data)
@@ -436,6 +568,44 @@ class UserService(AuditableMixin):
             },
         )
         return updated
+
+    async def admin_update_avatar(
+        self,
+        *,
+        actor_user_id: UUID,
+        user_id: UUID,
+        file: UploadFile,
+    ) -> User:
+        """Admin user-management ile hedef kullanıcının avatarını günceller."""
+        target_user = await self._get_manageable_target_or_raise(
+            actor_user_id=actor_user_id,
+            target_user_id=user_id,
+            operation="update_avatar",
+        )
+        return await self._replace_avatar(
+            actor_user_id=actor_user_id,
+            target_user=target_user,
+            file=file,
+            operation_scope="admin",
+        )
+
+    async def admin_delete_avatar(
+        self,
+        *,
+        actor_user_id: UUID,
+        user_id: UUID,
+    ) -> User:
+        """Admin user-management ile hedef kullanıcının avatarını siler."""
+        target_user = await self._get_manageable_target_or_raise(
+            actor_user_id=actor_user_id,
+            target_user_id=user_id,
+            operation="delete_avatar",
+        )
+        return await self._clear_avatar(
+            actor_user_id=actor_user_id,
+            target_user=target_user,
+            operation_scope="admin",
+        )
 
     async def admin_change_email(
         self,
@@ -452,9 +622,9 @@ class UserService(AuditableMixin):
         )
         normalized_email = data.email.lower()
         if normalized_email == target_user.email:
-            raise BusinessRuleError("Yeni e-posta adresi mevcut adresle aynı olamaz.")
+            raise BusinessRuleError(t("error.user.new_email_same"))
         if await self._repo.email_exists(normalized_email, exclude_user_id=target_user.id):
-            raise AlreadyExistsError("Bu e-posta adresi zaten kullanılıyor.")
+            raise AlreadyExistsError(t("error.user.email_already_used"))
 
         await self._invalidate_user_cache(target_user.id, target_user.email)
         updated = await self._repo.update(
@@ -491,7 +661,7 @@ class UserService(AuditableMixin):
         if verification_email is None and not target_user.is_verified:
             verification_email = target_user.email
         if verification_email is None:
-            raise BusinessRuleError("Kullanıcının bekleyen bir e-posta doğrulaması yok.")
+            raise BusinessRuleError(t("error.user.no_pending_verification"))
 
         await self._issue_verification_email(target_user, verification_email)
         await self._audit_log(
@@ -508,10 +678,10 @@ class UserService(AuditableMixin):
         """Yeni bir admin kullanıcı oluşturur ve davet e-postası gönderir."""
         email = data.email.lower()
         if await self._repo.email_exists(email):
-            raise AlreadyExistsError("Bu e-posta adresi zaten kullanılıyor.")
+            raise AlreadyExistsError(t("error.user.email_already_used"))
 
         if data.username and await self._repo.get_by_username(data.username):
-            raise AlreadyExistsError("Bu kullanıcı adı zaten kullanılıyor.")
+            raise AlreadyExistsError(t("error.user.username_already_used"))
 
         role = await self._get_admin_role_or_raise(data.role_name)
         user = await self._repo.create(
@@ -538,7 +708,7 @@ class UserService(AuditableMixin):
         return user
 
     async def resend_admin_invite(self, user_id: UUID, *, actor_user_id: UUID) -> User:
-        """Şifresi henüz belirlenmemiş admin kullanıcıya daveti yeniden gönderir."""
+        """Şifresi henüz belirlenmemiş admin panel kullanıcısına daveti yeniden gönderir."""
         user = await self._repo.get_by_id_or_raise(user_id)
         if user.id == actor_user_id:
             await self._audit_user_management_blocked(
@@ -548,7 +718,7 @@ class UserService(AuditableMixin):
                 reason="self_action",
             )
             raise InsufficientPermissionsError(t("error.user.self_action"))
-        if user.role and user.role.name == "admin":
+        if user.role and user.role.name == PANEL_ADMIN_ROLE:
             await self._audit_user_management_blocked(
                 actor_user_id=actor_user_id,
                 target_user=user,
@@ -557,13 +727,9 @@ class UserService(AuditableMixin):
             )
             raise InsufficientPermissionsError(t("error.user.protected_admin"))
         if user.surface != SurfaceType.ADMIN.value:
-            raise BusinessRuleError(
-                "Yalnızca admin tipindeki kullanıcılar için davet gönderilebilir."
-            )
+            raise BusinessRuleError(t("error.user.invite_admin_only"))
         if user.hashed_password:
-            raise BusinessRuleError(
-                "Şifresi belirlenmiş admin kullanıcıya davet yeniden gönderilemez."
-            )
+            raise BusinessRuleError(t("error.user.invite_password_already_set"))
 
         await self._issue_admin_invite(user)
         await self._audit_log(
@@ -643,7 +809,7 @@ class UserService(AuditableMixin):
 
         Args:
             user_id: Rolü değiştirilecek kullanıcının UUID'si.
-            role_name: Atanacak rolün adı (ör: "admin", "accountant").
+            role_name: Atanacak rolün adı (ör: "panel_admin", "accountant").
 
         Returns:
             Güncellenmiş kullanıcı nesnesi.
@@ -660,7 +826,7 @@ class UserService(AuditableMixin):
 
         new_role = await self._role_repo.get_by_name(role_name)
         if not new_role:
-            raise NotFoundError(f"'{role_name}' adında bir rol bulunamadı.")
+            raise NotFoundError(t("error.role.named_not_found", name=role_name))
 
         old_role_name = current.role.name if current.role else None
         await self._invalidate_user_cache(user_id, current.email, invalidate_permissions=True)
@@ -697,7 +863,7 @@ class UserService(AuditableMixin):
             operation="delete_user",
         )
         if user.is_deleted:
-            raise BusinessRuleError("Kullanıcı zaten silinmiş.")
+            raise BusinessRuleError(t("error.user.already_deleted"))
         await self._invalidate_user_cache(user_id, user.email)
         await self._repo.soft_delete(user_id)
         await self._audit_log(
@@ -731,7 +897,7 @@ class UserService(AuditableMixin):
             include_deleted=True,
         )
         if not user.is_deleted:
-            raise BusinessRuleError("Kullanıcı silinmemiş.")
+            raise BusinessRuleError(t("error.user.not_deleted"))
         await self._invalidate_user_cache(user_id, user.email)
         restored = await self._repo.restore(user_id)
         await self._audit_log(

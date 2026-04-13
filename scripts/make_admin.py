@@ -1,19 +1,11 @@
-"""
-Admin kullanıcı oluşturma / rol atama scripti.
-
-Kullanım:
-    # Mevcut kullanıcıyı admin yap
-    docker compose exec api python scripts/make_admin.py --email user@example.com
-
-    # Yeni admin kullanıcı oluştur
-    docker compose exec api python scripts/make_admin.py --email admin@example.com --password Admin1234 --create
-"""
+"""Mevcut kullanıcıyı panel_admin yap veya yeni panel_admin oluştur."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
 import sys
+from uuid import uuid4
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -22,14 +14,22 @@ sys.path.insert(0, "/app")
 
 from app.core.config import settings
 from app.core.security import hash_password
+from app.core.system_roles import PANEL_ADMIN_ROLE
 
 
 async def make_admin(email: str) -> None:
-    """Mevcut kullanıcının rolünü ADMIN olarak günceller."""
+    """Mevcut kullanıcının rolünü panel_admin olarak günceller."""
     engine = create_async_engine(settings.DATABASE_URL)
     async with AsyncSession(engine) as session:
         result = await session.execute(
-            text("SELECT id, email, role FROM users WHERE email = :email"),
+            text(
+                """
+                SELECT users.id, roles.name AS role_name
+                FROM users
+                JOIN roles ON roles.id = users.role_id
+                WHERE users.email = :email
+                """
+            ),
             {"email": email},
         )
         user = result.fetchone()
@@ -39,23 +39,30 @@ async def make_admin(email: str) -> None:
             await engine.dispose()
             sys.exit(1)
 
-        if user.role == "ADMIN":
-            print(f"ℹ️  {email} zaten admin.")
+        if user.role_name == PANEL_ADMIN_ROLE:
+            print(f"ℹ️  {email} zaten {PANEL_ADMIN_ROLE}.")
             await engine.dispose()
             return
 
         await session.execute(
-            text("UPDATE users SET role = 'ADMIN'::userrole WHERE email = :email"),
-            {"email": email},
+            text(
+                """
+                UPDATE users
+                SET role_id = (SELECT id FROM roles WHERE name = :role_name AND deleted_at IS NULL),
+                    surface = 'admin'
+                WHERE email = :email
+                """
+            ),
+            {"email": email, "role_name": PANEL_ADMIN_ROLE},
         )
         await session.commit()
-        print(f"✅ {email} admin yapıldı.")
+        print(f"✅ {email} {PANEL_ADMIN_ROLE} yapıldı.")
 
     await engine.dispose()
 
 
 async def create_admin(email: str, password: str) -> None:
-    """Yeni admin kullanıcı oluşturur veya mevcutsa rolünü günceller."""
+    """Yeni panel_admin kullanıcı oluşturur veya mevcutsa rolünü günceller."""
     engine = create_async_engine(settings.DATABASE_URL)
     async with AsyncSession(engine) as session:
         result = await session.execute(
@@ -65,31 +72,62 @@ async def create_admin(email: str, password: str) -> None:
         existing = result.fetchone()
 
         if existing:
-            print(f"⚠️  {email} zaten mevcut. Rolü admin yapılıyor...")
+            print(f"⚠️  {email} zaten mevcut. Rolü {PANEL_ADMIN_ROLE} yapılıyor...")
             await session.execute(
-                text("UPDATE users SET role = 'ADMIN'::userrole WHERE email = :email"),
-                {"email": email},
+                text(
+                    """
+                    UPDATE users
+                    SET role_id = (SELECT id FROM roles WHERE name = :role_name AND deleted_at IS NULL),
+                        surface = 'admin'
+                    WHERE email = :email
+                    """
+                ),
+                {"email": email, "role_name": PANEL_ADMIN_ROLE},
             )
             await session.commit()
-            print(f"✅ {email} admin yapıldı.")
+            print(f"✅ {email} {PANEL_ADMIN_ROLE} yapıldı.")
         else:
             hashed = hash_password(password)
             await session.execute(
                 text("""
-                    INSERT INTO users (email, hashed_password, role, is_active, is_verified)
-                    VALUES (:email, :password, 'ADMIN'::userrole, true, true)
+                    INSERT INTO users (
+                        email,
+                        username,
+                        hashed_password,
+                        surface,
+                        role_id,
+                        is_active,
+                        is_verified,
+                        id
+                    )
+                    VALUES (
+                        :email,
+                        :username,
+                        :password,
+                        'admin',
+                        (SELECT id FROM roles WHERE name = :role_name AND deleted_at IS NULL),
+                        true,
+                        true,
+                        :id
+                    )
                 """),
-                {"email": email, "password": hashed},
+                {
+                    "email": email,
+                    "username": email.split("@", 1)[0],
+                    "id": uuid4(),
+                    "password": hashed,
+                    "role_name": PANEL_ADMIN_ROLE,
+                },
             )
             await session.commit()
-            print(f"✅ Admin kullanıcı oluşturuldu: {email}")
+            print(f"✅ {PANEL_ADMIN_ROLE} kullanıcı oluşturuldu: {email}")
 
     await engine.dispose()
 
 
 def main() -> None:
     """CLI argümanlarını parse eder ve ilgili admin işlemini çalıştırır."""
-    parser = argparse.ArgumentParser(description="Admin kullanıcı yönetimi")
+    parser = argparse.ArgumentParser(description="Panel admin kullanıcı yönetimi")
     parser.add_argument("--email", required=True, help="Kullanıcı e-posta adresi")
     parser.add_argument("--password", default="Admin1234!", help="Şifre (--create ile kullanılır)")
     parser.add_argument("--create", action="store_true", help="Kullanıcı yoksa oluştur")
