@@ -10,6 +10,7 @@ import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import quote, urlsplit, urlunsplit
 
 import aioboto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -101,6 +102,11 @@ class StorageBackend(ABC):
         """
         ...
 
+    @abstractmethod
+    async def get_public_url(self, key: str) -> str:
+        """Dosya için doğrudan erişilebilir public URL üretir."""
+        ...
+
 
 # ── Validators ────────────────────────────────────────────────────────────────
 
@@ -155,6 +161,19 @@ def _generate_key(folder: str, filename: str) -> str:
     ext = Path(filename).suffix.lower()
     unique_name = f"{uuid.uuid4().hex}{ext}"
     return f"{folder.strip('/')}/{unique_name}" if folder else unique_name
+
+
+def _build_public_object_url(bucket: str, key: str) -> str:
+    """Bucket/key için dış erişilebilir object URL üretir."""
+    public_base = settings.S3_PUBLIC_URL.strip() or settings.S3_ENDPOINT_URL.strip()
+    parsed = urlsplit(public_base)
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError(t("error.storage.public_url_not_configured"))
+
+    base_path = parsed.path.rstrip("/")
+    encoded_key = quote(key.lstrip("/"), safe="/")
+    object_path = f"{base_path}/{bucket}/{encoded_key}" if base_path else f"/{bucket}/{encoded_key}"
+    return urlunsplit((parsed.scheme, parsed.netloc, object_path, "", ""))
 
 
 # ── S3 / MinIO Backend ────────────────────────────────────────────────────────
@@ -299,6 +318,13 @@ class S3StorageBackend(StorageBackend):
         except (BotoCoreError, ClientError, OSError) as exc:
             raise StorageError(t("error.storage.url_generation_failed", reason=str(exc))) from exc
         return str(url)
+
+    async def get_public_url(self, key: str) -> str:
+        """Dosya için public object URL üretir."""
+        try:
+            return _build_public_object_url(self._bucket, key)
+        except ValueError as exc:
+            raise StorageError(t("error.storage.url_generation_failed", reason=str(exc))) from exc
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────

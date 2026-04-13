@@ -299,7 +299,7 @@ class UserService(AuditableMixin):
         previous_avatar_url = target_user.avatar_url
         previous_key = _extract_managed_storage_key(previous_avatar_url, user_id=target_user.id)
         new_key = await self._storage.upload(file, folder=self._avatar_folder(target_user.id))
-        new_url = await self._storage.get_url(new_key)
+        new_url = await self._storage.get_public_url(new_key)
 
         try:
             if previous_key and previous_key != new_key:

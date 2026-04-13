@@ -20,6 +20,14 @@ def test_extract_managed_storage_key_parses_bucket_path_url() -> None:
     assert _extract_managed_storage_key(url, user_id=user_id) == key
 
 
+def test_extract_managed_storage_key_parses_public_bucket_path_url() -> None:
+    user_id = uuid4()
+    key = f"users/{user_id}/avatars/avatar.jpg"
+    url = f"http://localhost:9000/app-uploads/{key}?X-Amz-Signature=test"
+
+    assert _extract_managed_storage_key(url, user_id=user_id) == key
+
+
 def test_extract_managed_storage_key_rejects_foreign_url() -> None:
     user_id = uuid4()
 

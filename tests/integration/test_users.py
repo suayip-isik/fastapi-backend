@@ -87,11 +87,12 @@ async def _promote_to_admin_surface_role(
     db_session.expire_all()
 
 
-def _mock_storage(*, key: str, url: str) -> MagicMock:
+def _mock_storage(*, key: str, url: str, public_url: str | None = None) -> MagicMock:
     """Avatar upload/delete için storage mock'u."""
     mock = MagicMock()
     mock.upload = AsyncMock(return_value=key)
     mock.get_url = AsyncMock(return_value=url)
+    mock.get_public_url = AsyncMock(return_value=public_url or url)
     mock.delete = AsyncMock()
     return mock
 
@@ -267,6 +268,7 @@ async def test_upload_my_avatar(client: AsyncClient):
     storage = _mock_storage(
         key="users/self-id/avatars/avatar.jpg",
         url="http://minio:9000/app-uploads/users/self-id/avatars/avatar.jpg?sig=test",
+        public_url="http://localhost:9000/app-uploads/users/self-id/avatars/avatar.jpg",
     )
 
     with _override_storage(storage):
@@ -277,7 +279,7 @@ async def test_upload_my_avatar(client: AsyncClient):
         )
 
     assert res.status_code == 200
-    assert res.json()["avatar_url"] == storage.get_url.return_value
+    assert res.json()["avatar_url"] == storage.get_public_url.return_value
     storage.upload.assert_called_once()
     storage.delete.assert_not_called()
 
@@ -295,8 +297,10 @@ async def test_update_my_avatar_deletes_previous_file(
     db_session.expire_all()
 
     new_key = f"users/{user_id}/avatars/new.jpg"
-    new_url = f"http://minio:9000/app-uploads/{new_key}?new=1"
-    storage = _mock_storage(key=new_key, url=new_url)
+    new_url = f"http://localhost:9000/app-uploads/{new_key}"
+    storage = _mock_storage(
+        key=new_key, url=f"http://minio:9000/app-uploads/{new_key}?new=1", public_url=new_url
+    )
 
     with _override_storage(storage):
         res = await client.put(
@@ -793,8 +797,12 @@ async def test_admin_update_user_avatar(client: AsyncClient, db_session: AsyncSe
         permissions=[Permission.ADMIN_PANEL_ACCESS, Permission.USERS_UPLOAD_AVATAR],
     )
     key = f"users/{target_id}/avatars/new.jpg"
-    url = f"http://minio:9000/app-uploads/{key}?sig=test"
-    storage = _mock_storage(key=key, url=url)
+    url = f"http://localhost:9000/app-uploads/{key}"
+    storage = _mock_storage(
+        key=key,
+        url=f"http://minio:9000/app-uploads/{key}?sig=test",
+        public_url=url,
+    )
 
     with _override_storage(storage):
         res = await client.put(

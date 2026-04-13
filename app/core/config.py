@@ -216,6 +216,7 @@ class Settings(BaseSettings):
     # ── Storage ───────────────────────────────────────────────────────────────
     STORAGE_BACKEND: str = "minio"  # minio | s3 | local
     S3_ENDPOINT_URL: str = ""
+    S3_PUBLIC_URL: str = ""
     S3_ACCESS_KEY: str = ""
     S3_SECRET_KEY: str = ""
     S3_BUCKET_NAME: str = "app-uploads"

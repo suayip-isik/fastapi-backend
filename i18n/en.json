@@ -72,6 +72,7 @@
   "error.storage.invalid_file_type_detail": "Unsupported file type: {content_type}. Allowed types: {allowed}",
   "error.storage.upload_failed": "Upload failed: {reason}",
   "error.storage.delete_failed": "Delete failed: {reason}",
+  "error.storage.public_url_not_configured": "Public storage URL base is not configured.",
   "error.storage.url_generation_failed": "URL generation failed: {reason}",
   "error.storage.unknown_backend": "Unknown storage backend: {backend}",
   "error.validation.request": "Request validation error.",
