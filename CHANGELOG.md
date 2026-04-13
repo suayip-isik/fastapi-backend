@@ -17,11 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Consumer-specific OpenAPI kaynakları:
   - `/schema/client/openapi.json`
   - `/schema/admin/openapi.json`
-- Admin panel erişimi için `admin:panel_access`
+- Admin panel erişimi için admin-surface permission doğrulaması
 - Admin kullanıcı oluşturma ve davet akışı:
   - `POST /api/v1/admin/users`
   - `POST /api/v1/admin/users/{user_id}/resend-invite`
-- Yeni permission: `users:create_admin`
+- Yeni permission: `users.create.admin`
 - Yeni worker görevi: `send_admin_invite_email`
 - Admin daveti için yeni audit action'lar:
   - `admin_user_created`
@@ -41,12 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Varsayılan seed kullanıcıları artık `superadmin@example.com` (`panel_admin`) ve `suayip@example.com` (`app_user`) olarak oluşturulur
 - Yeni operasyonel reset komutu ile kullanıcı, rol ve bağlı veriler hard delete edilip canonical seed baştan kurulabilir
 - Admin panel ve admin API erişimi yalnız `surface=admin` kullanıcılar için geçerlidir
-- SQLAdmin auth artık `admin:panel_access` gerektirir; `admin:access` compatibility fallback'i kaldırıldı
+- SQLAdmin auth artık `surface=admin` + admin-surface permission seti gerektirir; `admin:access` compatibility fallback'i kaldırıldı
 - Client kullanıcı oluşturma artık yalnız self-register akışıyla yapılır: `/api/v1/client/auth/register`
 - Admin kullanıcı oluşturma yalnız admin surface altında yapılır ve şifre doğrudan atanmaz
 - Admin davet e-postası mevcut `reset-password` ekranını yeniden kullanır
 - Davet edilen admin kullanıcı ilk şifresini kurduğunda `is_verified=true` olur
-- Shared upload “delete any file” yetkisi artık `surface=admin` + `admin:panel_access` gerektirir
+- Shared upload “delete any file” yetkisi artık `surface=admin` + `uploads.delete.any` gerektirir
 - Admin auth, permission çözümleme ve audit servisleri daha düşük coupling ile injectable provider/gateway sınırlarına taşındı
 - Email/worker/websocket exception boundary'leri daraltıldı
 - Dokümantasyon canonical surface modeliyle eşitlendi
@@ -69,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release
 - Email/password authentication with bcrypt + RS256 JWT
-- User management with roles (ADMIN, USER, MODERATOR)
+- User management with role-based access control
 - File uploads via S3/MinIO with validation
 - WebSocket room-based messaging
 - ARQ background task queue (email, file processing)

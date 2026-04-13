@@ -994,7 +994,7 @@ class UserAdmin(ModelView, model=User):
 - `app/admin/views.py` — `UserAdmin` view'ları
 - `app/admin/auth.py` — JWT doğrulamalı authentication backend
 - `app/admin/seed.py` — `SUPERADMIN_*` ve `DEFAULT_APP_USER_*` ayarlarıyla varsayılan `panel_admin` ve `app_user` kullanıcılarını oluşturur
-- Erişim: http://localhost:8000/admin (yalnızca `surface=admin` + `admin:panel_access`)
+- Erişim: http://localhost:8000/admin (yalnızca `surface=admin` ve admin-surface permission seti taşıyan hesaplar)
 
 ### 13.3 Prometheus Metrikleri
 
