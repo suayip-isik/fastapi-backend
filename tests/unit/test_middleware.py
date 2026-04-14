@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import re
+from unittest.mock import patch
 
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
+
+from app.main import create_app
 
 
 class TestRequestIDMiddleware:
@@ -112,3 +115,27 @@ class TestSecurityHeadersMiddleware:
         csp = res.headers.get("content-security-policy", "")
         assert "default-src 'self'" in csp
         assert "'unsafe-inline'" not in csp
+
+
+class TestTrustedHostMiddleware:
+    """TrustedHostMiddleware davranışı."""
+
+    async def test_rejects_requests_with_untrusted_host(self) -> None:
+        with (
+            patch("app.main.settings.ALLOWED_HOSTS", ["api.example.com"]),
+            patch("app.main.settings.SEED_SYSTEM_ROLES_ON_STARTUP", False),
+            patch("app.main.settings.SEED_DEFAULT_SUPERADMIN", False),
+            patch("app.main.settings.SEED_DEFAULT_APP_USER", False),
+            patch("app.main.settings.ENFORCE_DB_SCHEMA_CHECK", False),
+        ):
+            app = create_app()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://api.example.com",
+        ) as client:
+            allowed = await client.get("/health/live", headers={"host": "api.example.com"})
+            rejected = await client.get("/health/live", headers={"host": "evil.example.com"})
+
+        assert allowed.status_code == 200
+        assert rejected.status_code == 400

@@ -5,33 +5,29 @@ services:
     build:
       target: production
     restart: always
-    deploy:
-      replicas: 2
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 512M
-        reservations:
-          cpus: "0.25"
-          memory: 128M
     environment:
       - APP_ENV=production
       - LOG_FORMAT=json
       - LOG_LEVEL=INFO
       - RATE_LIMIT_ENABLED=true
+      - DOCS_ACCESS_MODE=internal
+      - METRICS_ACCESS_MODE=internal
+      - HEALTH_DETAIL_ACCESS_MODE=internal
+      - SEED_DEFAULT_SUPERADMIN=false
+      - SEED_DEFAULT_APP_USER=false
     # Production'da kod mount edilmez
     volumes: []
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   worker:
     build:
       target: production
     restart: always
-    deploy:
-      replicas: 2
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 256M
     volumes: []
 
   nginx:
@@ -59,8 +55,8 @@ services:
 
   minio:
     restart: always
-    # Production'da S3 kullanılıyor; MinIO'yu devre dışı bırakmak için
-    # docker-compose.prod.yml'de profiles: [dev] eklenebilir
+    # Self-hosted object storage kullanıyorsanız bırakın; managed S3 için
+    # bu servisi compose setinizden çıkarabilirsiniz.
     ports: []
 
 volumes:

@@ -13,8 +13,16 @@ import time
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
+from app.core.access import (
+    RuntimeAccessMode,
+    get_runtime_access_mode,
+    has_internal_access,
+    is_docs_path,
+)
+from app.core.exceptions import InsufficientPermissionsError, NotFoundError
 from app.core.i18n import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, language_var
 from app.core.logging import get_logger, ip_address_var, request_id_var, user_agent_var
 
@@ -54,9 +62,6 @@ class LanguageMiddleware(BaseHTTPMiddleware):
         finally:
             language_var.reset(token)
 
-
-# /docs, /redoc ve audience-specific schema docs için CSP gevşetilir
-DOCS_PATHS = {"/docs", "/redoc", "/openapi.json"}
 
 # HSTS sadece production'da anlamlı; diğer ortamlarda da eklenir ama tarayıcılar
 # localhost için zaten görmezden gelir.
@@ -158,6 +163,28 @@ class TimingMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class RuntimeAccessMiddleware(BaseHTTPMiddleware):
+    """Prod runtime surfaces için public/internal/disabled policy uygular."""
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        mode = get_runtime_access_mode(request.url.path)
+        if mode is None:
+            return await call_next(request)
+
+        from app.core.access import should_enforce_runtime_access
+
+        if not should_enforce_runtime_access():
+            return await call_next(request)
+
+        if mode is RuntimeAccessMode.PUBLIC:
+            return await call_next(request)
+        if mode is RuntimeAccessMode.DISABLED:
+            return JSONResponse(status_code=404, content=NotFoundError().to_dict())
+        if has_internal_access(request):
+            return await call_next(request)
+        return JSONResponse(status_code=403, content=InsufficientPermissionsError().to_dict())
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Tüm HTTP response'lara güvenlik header'ları ekler.
 
@@ -200,7 +227,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
 
         # /docs, /redoc ve /schema/*/docs endpoint'leri için CSP'yi gevşet
-        is_docs = request.url.path in DOCS_PATHS or request.url.path.startswith("/schema/")
+        is_docs = is_docs_path(request.url.path)
         if is_docs:
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "

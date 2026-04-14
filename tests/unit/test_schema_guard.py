@@ -63,6 +63,9 @@ async def test_lifespan_runs_schema_guard_before_seeding() -> None:
         patch("app.main.close_redis", close_redis),
         patch("app.main.engine", mock_engine),
         patch("app.main.settings.ENFORCE_DB_SCHEMA_CHECK", True),
+        patch("app.main.settings.SEED_SYSTEM_ROLES_ON_STARTUP", True),
+        patch("app.main.settings.SEED_DEFAULT_SUPERADMIN", True),
+        patch("app.main.settings.SEED_DEFAULT_APP_USER", True),
     ):
         async with lifespan(FastAPI()):
             pass
@@ -71,3 +74,33 @@ async def test_lifespan_runs_schema_guard_before_seeding() -> None:
     seed_roles.assert_awaited_once()
     create_superadmin.assert_awaited_once()
     create_app_user.assert_awaited_once()
+
+
+async def test_lifespan_skips_optional_seed_steps_when_flags_disabled() -> None:
+    """Startup seed flag'leri kapalıysa mutating seed çağrıları çalışmamalı."""
+    validate_schema = AsyncMock()
+    seed_roles = AsyncMock()
+    create_superadmin = AsyncMock()
+    create_app_user = AsyncMock()
+    close_redis = AsyncMock()
+    mock_engine = SimpleNamespace(dispose=AsyncMock())
+
+    with (
+        patch("app.main.validate_database_schema", validate_schema),
+        patch("app.main.seed_system_roles", seed_roles),
+        patch("app.main.create_default_superadmin", create_superadmin),
+        patch("app.main.create_default_app_user", create_app_user),
+        patch("app.main.close_redis", close_redis),
+        patch("app.main.engine", mock_engine),
+        patch("app.main.settings.ENFORCE_DB_SCHEMA_CHECK", True),
+        patch("app.main.settings.SEED_SYSTEM_ROLES_ON_STARTUP", False),
+        patch("app.main.settings.SEED_DEFAULT_SUPERADMIN", False),
+        patch("app.main.settings.SEED_DEFAULT_APP_USER", False),
+    ):
+        async with lifespan(FastAPI()):
+            pass
+
+    validate_schema.assert_awaited_once_with(mock_engine)
+    seed_roles.assert_not_awaited()
+    create_superadmin.assert_not_awaited()
+    create_app_user.assert_not_awaited()

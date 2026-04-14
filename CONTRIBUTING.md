@@ -1,92 +1,108 @@
 # Contributing Guide
 
-## Setup
+Bu belge, repoya katkı yaparken izlenecek kısa ve canonical akıştır. Daha detaylı contributor rehberi için [docs/contributing.md](./docs/contributing.md) dosyasına bakın.
+
+## Kurulum
 
 ```bash
-git clone <repo>
+git clone <repo-url>
 cd fastapi-backend
-cp .env.example .env     # Edit values
-make keys                # Generate JWT RSA keys
-make dev                 # Start Docker services
-make migrate             # Apply DB migrations
+
+make env
+make keys
+make dev
+make migrate
+make seed-roles
 ```
 
-## Development Workflow
-
-1. Create a feature branch: `git checkout -b feat/my-feature`
-2. Make changes
-3. Run tests: `make test`
-4. Lint + type check: `make check`
-5. Open a pull request to `dev`
-
-## Adding a New Feature
-
-Follow the layered architecture defined in `CLAUDE.md`:
-
-1. **Model** → `app/db/models/` (extend `BaseModel`)
-2. **Migration** → `make migration msg="add my_table"` then `make migrate`
-3. **Repository** → `app/db/repositories/` (extend `BaseRepository[Model]`)
-4. **Service** → `app/services/` (business logic only, inject repository)
-5. **Schema** → `app/schemas/` (Pydantic request/response models)
-6. **Endpoint** → `app/api/v1/endpoints/` (thin handlers, delegate to service)
-7. **Surface seçimi** → Yeni endpoint yalnız bir canonical surface altında yaşamalı:
-   - `client`
-   - `admin`
-   - `shared`
-     Sistem rol adları için canonical isimler `panel_admin` ve `app_user` kullanılmalı; eski `admin/user/moderator` rol adları yeniden tanıtılmamalı
-     Permission isimleri `resource.action.scope` standardında olmalı; `users.create.admin`, `users.read.basic`, `uploads.delete.any` gibi dot-notation dışında alias üretmeyin
-8. **Router** → Register in `app/api/v1/router.py`
-9. **Docs** → README/CHANGELOG ve etkilenen diğer referans dokümanlar (`LEARNING_ROADMAP.md`, `.env.example` vb.) aynı PR'da güncellenmeli
-10. **Tests** → `tests/integration/test_myfeature.py`
-
-## Code Standards
-
-- All code must pass `mypy app/` in strict mode
-- All code must pass `ruff check app/`
-- Test coverage must remain ≥ 80%
-- No direct SQLAlchemy calls from services or endpoints — use repositories
-- No business logic in endpoints — delegate to services
-- Policy-first authorization: inline `surface` / permission kombinasyonları yazmak yerine ortak policy/dependency helper'ları kullan
-- Global `AsyncSessionFactory` import'u service/policy katmanına sızdırma; request dışı DB erişimini provider/gateway arkasına al
-- Admin-only erişim yalnız permission ile değil, `surface=admin` kuralıyla da korunmalı
-- Admin panel veya admin-only akışlarda özel string kontrolü yerine `has_admin_surface_access(...)` ve ilgili dependency/policy helper'larını baz al
-- Security-sensitive failure'larda varsayılan davranış `deny`; side-effect servislerinde `log + degrade`
-- Legacy route eklenmez; yalnız canonical `client/admin/shared` path'leri kullanılır
-
-## Testing
+Varsayılan geliştirme kullanıcılarını oluşturmak isterseniz:
 
 ```bash
-make test          # Full suite with coverage
-make test-fast     # Quick run, no coverage
-make test-k k=test_login   # Run by name pattern
-make test-file f=tests/integration/test_auth.py
+make seed
 ```
 
-Test fixtures are in `tests/conftest.py`:
+## Geliştirme Akışı
 
-- `client` — async httpx client with DB override
-- `db_session` — fresh DB session per test
-- `fake_redis` — fakeredis (no real Redis needed)
-- `mock_enqueue` — ARQ tasks are mocked
+1. Branch açın.
+2. İlgili kodu değiştirin.
+3. Gerekli testleri ekleyin veya güncelleyin.
+4. Aşağıdaki kontrolleri çalıştırın:
 
-Resmi codegen kaynakları:
-
-- `/schema/client/openapi.json`
-- `/schema/admin/openapi.json`
-
-## Environment Variables
-
-Copy `.env.example` to `.env`. All variables are documented there.
-Never commit `.env` or `keys/` to version control.
-
-## Commit Messages
-
-Use [Conventional Commits](https://www.conventionalcommits.org/):
-
+```bash
+make lint
+make typecheck
+make test-fast
 ```
-feat: add TOTP support
-fix: resolve token expiry edge case
-refactor: extract email validation to helper
-test: add API key auth integration tests
-docs: update CHANGELOG
+
+5. Etkilenen dokümantasyonu aynı PR içinde güncelleyin.
+
+## Mimari Kurallar
+
+- Endpoint içinde business logic yazmayın.
+- Service katmanında doğrudan FastAPI `Depends()` kullanmayın.
+- Service veya endpoint içinde doğrudan dağınık SQLAlchemy erişimi yapmayın; repository/gateway katmanını kullanın.
+- Authorization için permission-first helper/policy yapısını kullanın.
+- Yeni route'lar sadece canonical surface modeli altında olmalı:
+  - `client`
+  - `admin`
+  - `shared`
+
+## RBAC / Permission Kuralları
+
+- Permission adları `resource.action.scope` standardında olmalı.
+- Role adına göre inline kontrol yazmayın.
+- Admin-only erişim hem permission hem `surface=admin` ile korunmalı.
+- Yeni permission veya role seti eklerseniz:
+  - `app/core/permissions.py`
+  - ilgili seed/role setleri
+  - testler
+  - dokümantasyon
+
+Rol/permisson değişikliğinden sonra canonical sync:
+
+```bash
+make seed-roles
+```
+
+## Yeni Özellik Eklerken
+
+Tipik sıra:
+
+1. Model
+2. Migration
+3. Repository
+4. Service
+5. Schema
+6. Endpoint
+7. Router kaydı
+8. Tests
+9. Docs
+
+## Dokümantasyon Zorunluluğu
+
+Şu yüzeylerden herhangi biri değişirse markdown dokümanları da güncellenmelidir:
+
+- setup akışı
+- env alanları
+- runtime access policy
+- seed/bootstrap akışı
+- prod deploy davranışı
+- developer workflow
+
+Kontrol edilmesi gereken temel dosyalar:
+
+- `README.md`
+- `docs/*.md`
+- `CHANGELOG.md`
+- gerekiyorsa `CLAUDE.md` ve `AGENTS.md`
+
+## Commit Mesajları
+
+Conventional Commits kullanın:
+
+```text
+feat: add runtime access policy docs
+fix: correct nginx auth route pattern
+docs: update onboarding guides
+test: add runtime surface access coverage
 ```

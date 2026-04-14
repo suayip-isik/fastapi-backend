@@ -69,3 +69,32 @@ def test_default_admin_user_create_rate_limit(tmp_path: Path) -> None:
     """Admin panel kullanıcı oluşturma limiti ayrı ve beklenen değerde olmalı."""
     settings = Settings(**_base_settings_kwargs(tmp_path))
     assert settings.RATE_LIMIT_ADMIN_USER_CREATE == "20/minute"
+
+
+def test_production_settings_reject_wildcard_allowed_hosts(tmp_path: Path) -> None:
+    """Production'da wildcard ALLOWED_HOSTS kabul edilmemeli."""
+    kwargs = _base_settings_kwargs(tmp_path)
+    kwargs["ALLOWED_HOSTS"] = ["*"]
+
+    with pytest.raises(ValueError, match="ALLOWED_HOSTS"):
+        Settings(**kwargs)
+
+
+def test_production_internal_access_requires_token(tmp_path: Path) -> None:
+    """Internal runtime access mode için token zorunlu olmalı."""
+    kwargs = _base_settings_kwargs(tmp_path)
+    kwargs["DOCS_ACCESS_MODE"] = "internal"
+    kwargs["INTERNAL_ACCESS_TOKEN"] = ""
+
+    with pytest.raises(ValueError, match="INTERNAL_ACCESS_TOKEN"):
+        Settings(**kwargs)
+
+
+def test_production_allows_skipping_default_superadmin_seed(tmp_path: Path) -> None:
+    """SUPERADMIN_PASSWORD yoksa fakat seed kapalıysa config geçerli olmalı."""
+    kwargs = _base_settings_kwargs(tmp_path)
+    kwargs["SUPERADMIN_PASSWORD"] = None
+    kwargs["SEED_DEFAULT_SUPERADMIN"] = False
+
+    settings = Settings(**kwargs)
+    assert settings.SEED_DEFAULT_SUPERADMIN is False
