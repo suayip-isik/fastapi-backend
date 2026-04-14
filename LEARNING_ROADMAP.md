@@ -146,9 +146,14 @@ result = await httpx.AsyncClient().get("https://api.example.com")
 ### 3.3 OpenAPI / Swagger
 
 - API dokümantasyonunun otomatik üretimi
-- `GET /docs` adresinde interaktif test
+- Development ortamında `GET /docs` adresinde interaktif test
 
-**Bu projede:** `app/main.py`'deki `/docs`, `/redoc`, `/schema/client/docs`, `/schema/admin/docs`
+**Bu projede:** `app/main.py` ve `app/core/access.py`
+
+Not:
+
+- Local geliştirmede `/docs`, `/redoc`, `/schema/client/docs`, `/schema/admin/docs` açık olabilir
+- Production'da bu yüzeyler `DOCS_ACCESS_MODE` ve `INTERNAL_ACCESS_TOKEN` ile korunabilir
 
 ---
 
@@ -994,6 +999,7 @@ class UserAdmin(ModelView, model=User):
 - `app/admin/views.py` — `UserAdmin` view'ları
 - `app/admin/auth.py` — JWT doğrulamalı authentication backend
 - `app/admin/seed.py` — `SUPERADMIN_*` ve `DEFAULT_APP_USER_*` ayarlarıyla varsayılan `panel_admin` ve `app_user` kullanıcılarını oluşturur
+- Startup davranışı `SEED_SYSTEM_ROLES_ON_STARTUP`, `SEED_DEFAULT_SUPERADMIN`, `SEED_DEFAULT_APP_USER` flag'leriyle kontrol edilir
 - Erişim: http://localhost:8000/admin (yalnızca `surface=admin` ve admin-surface permission seti taşıyan hesaplar)
 
 ### 13.3 Prometheus Metrikleri
@@ -1003,7 +1009,7 @@ Prometheus, zaman serisi metrik toplama sistemidir. `prometheus-fastapi-instrume
 - **Counter:** Yalnızca artan sayaç (toplam istek sayısı)
 - **Histogram:** Değer dağılımı (yanıt süresi yüzdelik dilimleri)
 - **Gauge:** Anlık değer (aktif bağlantı sayısı)
-- **Scraping:** Prometheus, `/metrics` endpoint'ini periyodik olarak çekerek veri toplar
+- **Scraping:** Prometheus, izin veriliyorsa `/metrics` endpoint'ini periyodik olarak çekerek veri toplar
 
 Otomatik üretilen metrikler: `http_requests_total`, `http_request_duration_seconds`, `http_request_size_bytes` vb.
 
@@ -1011,6 +1017,7 @@ Otomatik üretilen metrikler: `http_requests_total`, `http_request_duration_seco
 
 - `app/core/metrics.py` — instrumentator kurulumu
 - `GET /metrics` — Prometheus scrape endpoint'i
+- Production'da erişim `METRICS_ACCESS_MODE` ve `INTERNAL_ACCESS_TOKEN` ile sınırlandırılabilir
 
 ### 13.4 Sentry — Hata Takibi
 

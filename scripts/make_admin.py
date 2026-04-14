@@ -129,11 +129,13 @@ def main() -> None:
     """CLI argümanlarını parse eder ve ilgili admin işlemini çalıştırır."""
     parser = argparse.ArgumentParser(description="Panel admin kullanıcı yönetimi")
     parser.add_argument("--email", required=True, help="Kullanıcı e-posta adresi")
-    parser.add_argument("--password", default="Admin1234!", help="Şifre (--create ile kullanılır)")
+    parser.add_argument("--password", help="Şifre (--create ile birlikte zorunlu)")
     parser.add_argument("--create", action="store_true", help="Kullanıcı yoksa oluştur")
     args = parser.parse_args()
 
     if args.create:
+        if not args.password:
+            parser.error("--create kullanırken --password zorunludur")
         asyncio.run(create_admin(args.email, args.password))
     else:
         asyncio.run(make_admin(args.email))

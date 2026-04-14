@@ -36,8 +36,10 @@ help:
 	@echo ""
 	@echo "  Setup"
 	@echo "    keys       Generate RSA key pair for JWT"
+	@echo "    seed-roles Sync canonical system roles"
 	@echo "    reset-seed Hard-delete users/roles and rebuild canonical seed data"
 	@echo "    seed       Create default system users"
+	@echo "    make-admin Promote existing user or create a panel_admin"
 	@echo "    env        Copy .env.example to .env (if not exists)"
 	@echo "    install    Install dev dependencies locally"
 
@@ -134,6 +136,14 @@ keys:
 .PHONY: seed
 seed:
 	$(API) python -c "import asyncio; from app.admin.seed import create_default_app_user, create_default_superadmin; asyncio.run(create_default_superadmin()); asyncio.run(create_default_app_user())"
+
+.PHONY: seed-roles
+seed-roles:
+	$(API) python -c "import asyncio; from app.admin.seed import seed_system_roles; asyncio.run(seed_system_roles())"
+
+.PHONY: make-admin
+make-admin:
+	$(API) python scripts/make_admin.py --email "$(email)" $(if $(password),--password "$(password)",) $(if $(create),--create,)
 
 .PHONY: reset-seed
 reset-seed:

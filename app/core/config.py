@@ -166,6 +166,10 @@ class Settings(BaseSettings):
     COOKIE_SECURE: bool = True
     COOKIE_SAMESITE: str = "lax"
     COOKIE_PATH: str = "/"
+    ADMIN_SESSION_COOKIE_NAME: str = "admin_session"
+    ADMIN_SESSION_COOKIE_SECURE: bool = True
+    ADMIN_SESSION_COOKIE_SAMESITE: str = "lax"
+    ADMIN_SESSION_MAX_AGE: int = 28800
 
     @property
     def JWT_PRIVATE_KEY(self) -> str:
@@ -286,6 +290,15 @@ class Settings(BaseSettings):
 
     # ── Startup Guards ────────────────────────────────────────────────────────
     ENFORCE_DB_SCHEMA_CHECK: bool = True
+    SEED_SYSTEM_ROLES_ON_STARTUP: bool = True
+    SEED_DEFAULT_SUPERADMIN: bool = False
+    SEED_DEFAULT_APP_USER: bool = False
+
+    # ── Runtime Access Policies ──────────────────────────────────────────────
+    DOCS_ACCESS_MODE: str = "public"  # public | internal | disabled
+    METRICS_ACCESS_MODE: str = "public"  # public | internal | disabled
+    HEALTH_DETAIL_ACCESS_MODE: str = "public"  # public | internal | disabled
+    INTERNAL_ACCESS_TOKEN: str = ""
 
     # ── Sentry ────────────────────────────────────────────────────────────────
     SENTRY_DSN: str = ""
@@ -392,6 +405,34 @@ class Settings(BaseSettings):
             raise ValueError(f"Rate limit '{v}' '100/minute' formatında olmalı.")
         return v
 
+    @field_validator("COOKIE_SAMESITE", "ADMIN_SESSION_COOKIE_SAMESITE", mode="after")
+    @classmethod
+    def _validate_samesite(cls, v: str) -> str:
+        normalized = v.strip().lower()
+        if normalized not in {"lax", "strict", "none"}:
+            raise ValueError("SameSite değeri lax, strict veya none olmalı.")
+        return normalized
+
+    @field_validator("ADMIN_SESSION_MAX_AGE", mode="after")
+    @classmethod
+    def _validate_admin_session_max_age(cls, v: int) -> int:
+        if not (300 <= v <= 604800):
+            raise ValueError("ADMIN_SESSION_MAX_AGE 300-604800 aralığında olmalı.")
+        return v
+
+    @field_validator(
+        "DOCS_ACCESS_MODE",
+        "METRICS_ACCESS_MODE",
+        "HEALTH_DETAIL_ACCESS_MODE",
+        mode="after",
+    )
+    @classmethod
+    def _validate_runtime_access_mode(cls, v: str) -> str:
+        normalized = v.strip().lower()
+        if normalized not in {"public", "internal", "disabled"}:
+            raise ValueError("Runtime access mode public, internal veya disabled olmalı.")
+        return normalized
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def parse_cors(cls, v: Any) -> list[Any]:
@@ -410,6 +451,15 @@ class Settings(BaseSettings):
             >>> cls.parse_cors('["http://localhost:3000", "https://app.com"]')
             ['http://localhost:3000', 'https://app.com']
         """
+        if isinstance(v, str):
+            result: list[Any] = json.loads(v)
+            return result
+        return list(v)
+
+    @field_validator("ALLOWED_HOSTS", mode="before")
+    @classmethod
+    def parse_allowed_hosts(cls, v: Any) -> list[Any]:
+        """ALLOWED_HOSTS değerini parse eder."""
         if isinstance(v, str):
             result: list[Any] = json.loads(v)
             return result
@@ -477,17 +527,47 @@ class Settings(BaseSettings):
                 raise ValueError("Production'da FRONTEND_URL gerçek frontend domain'i olmalı!")
             if not frontend_url.startswith("https://"):
                 raise ValueError("Production'da FRONTEND_URL HTTPS olmalıdır!")
+            if not self.ALLOWED_HOSTS:
+                raise ValueError("Production'da ALLOWED_HOSTS boş bırakılamaz!")
+            normalized_hosts = {host.strip().lower() for host in self.ALLOWED_HOSTS}
+            if "*" in normalized_hosts:
+                raise ValueError("Production'da ALLOWED_HOSTS içinde '*' kullanılamaz!")
             if not self.CORS_ORIGINS:
                 raise ValueError("Production'da CORS_ORIGINS boş bırakılamaz!")
-            if self.SUPERADMIN_PASSWORD is None:
-                raise ValueError(
-                    "Production'da SUPERADMIN_PASSWORD ayarlanmalıdır! "
-                    "Seed'i devre dışı bırakmak için kullanıcıyı elle oluşturun."
-                )
             insecure_passwords = {"changeme", "admin", "password", "123456", ""}
-            if self.SUPERADMIN_PASSWORD.strip().lower() in insecure_passwords:
+            if not self.COOKIE_SECURE:
+                raise ValueError("Production'da COOKIE_SECURE=true olmalıdır!")
+            if not self.ADMIN_SESSION_COOKIE_SECURE:
+                raise ValueError("Production'da ADMIN_SESSION_COOKIE_SECURE=true olmalıdır!")
+            if self.SEED_DEFAULT_SUPERADMIN and self.SUPERADMIN_PASSWORD is None:
+                raise ValueError(
+                    "SEED_DEFAULT_SUPERADMIN=true iken SUPERADMIN_PASSWORD ayarlanmalıdır!"
+                )
+            if (
+                self.SEED_DEFAULT_SUPERADMIN
+                and self.SUPERADMIN_PASSWORD is not None
+                and self.SUPERADMIN_PASSWORD.strip().lower() in insecure_passwords
+            ):
                 raise ValueError(
                     "Production'da SUPERADMIN_PASSWORD güvenli bir değere ayarlanmalı!"
+                )
+            if (
+                self.SEED_DEFAULT_APP_USER
+                and self.DEFAULT_APP_USER_PASSWORD is not None
+                and self.DEFAULT_APP_USER_PASSWORD.strip().lower() in insecure_passwords
+            ):
+                raise ValueError(
+                    "Production'da DEFAULT_APP_USER_PASSWORD güvenli bir değere " "ayarlanmalı!"
+                )
+            runtime_modes = {
+                self.DOCS_ACCESS_MODE,
+                self.METRICS_ACCESS_MODE,
+                self.HEALTH_DETAIL_ACCESS_MODE,
+            }
+            if "internal" in runtime_modes and not self.INTERNAL_ACCESS_TOKEN.strip():
+                raise ValueError(
+                    "Production'da internal access mode kullanılıyorsa "
+                    "INTERNAL_ACCESS_TOKEN ayarlanmalıdır!"
                 )
             self.RATE_LIMIT_ENABLED = True
             if not self.JWT_PRIVATE_KEY_PATH.exists():

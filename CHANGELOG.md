@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Runtime access policy dokümantasyonu ve testleri:
+  - `DOCS_ACCESS_MODE`
+  - `METRICS_ACCESS_MODE`
+  - `HEALTH_DETAIL_ACCESS_MODE`
+  - `INTERNAL_ACCESS_TOKEN`
+- Yeni bootstrap ve operasyon komutları:
+  - `make seed-roles`
+  - `make make-admin`
+- Başlangıç, konfigürasyon, production ve operasyon belgeleri:
+  - `docs/getting-started.md`
+  - `docs/configuration.md`
+  - `docs/production.md`
+  - `docs/operations.md`
+  - `docs/contributing.md`
 - `surface` tabanlı actor ayrımı (`client`, `admin`)
 - Canonical API surface modeli:
   - `/api/v1/client/*`
@@ -34,6 +48,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Production runtime surfaces artık policy kontrollüdür:
+  - `/docs`
+  - `/redoc`
+  - `/schema/*`
+  - `/metrics`
+  - `/health`
+  - `/health/ready`
+- Trusted host enforcement aktif hale getirildi
+- Admin session cookie ayarları explicit config alanlarına taşındı
+- Startup seed davranışı flag kontrollü hale getirildi
+- Default user/admin seed'leri production startup'ında önerilmeyen davranış olarak ayrıldı
+- Nginx auth rate-limit path'leri canonical route yapısına göre düzeltildi
+- Production compose örneği tek-host kullanım için netleştirildi
+- README ve tüm ana markdown belgeleri yeni kullanıcı onboarding akışına göre yeniden düzenlendi
 - `role_permissions.permission` artık canonical RBAC sözlüğünü PostgreSQL enum + app guard ile zorunlu kılar
 - Web ve mobil istemciler artık tek `client` surface üzerinden çalışır
 - Sistem roller `panel_admin` ve `app_user` olarak yenilendi; `moderator` sistem rolü kaldırıldı

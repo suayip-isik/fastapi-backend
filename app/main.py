@@ -14,11 +14,16 @@ from fastapi.responses import HTMLResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.admin import get_all_views
 from app.admin.auth import AdminAuthBackend
 from app.admin.panel import PermissionAwareAdmin
-from app.admin.seed import create_default_app_user, create_default_superadmin, seed_system_roles
+from app.admin.seed import (
+    create_default_app_user,
+    create_default_superadmin,
+    seed_system_roles,
+)
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
@@ -27,6 +32,7 @@ from app.core.logging import setup_logging
 from app.core.middleware import (
     LanguageMiddleware,
     RequestIDMiddleware,
+    RuntimeAccessMiddleware,
     SecurityHeadersMiddleware,
     TimingMiddleware,
 )
@@ -91,9 +97,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("app_starting", version=settings.APP_VERSION, env=settings.APP_ENV)
     if settings.ENFORCE_DB_SCHEMA_CHECK:
         await validate_database_schema(engine)
-    await seed_system_roles()
-    await create_default_superadmin()
-    await create_default_app_user()
+    if settings.SEED_SYSTEM_ROLES_ON_STARTUP:
+        await seed_system_roles()
+    if settings.SEED_DEFAULT_SUPERADMIN:
+        await create_default_superadmin()
+    if settings.SEED_DEFAULT_APP_USER:
+        await create_default_app_user()
     yield
     await engine.dispose()
     await close_redis()
@@ -119,7 +128,15 @@ def create_app() -> FastAPI:
     )
 
     # Session Middleware (SQLAdmin icin zorunlu)
-    app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=settings.SECRET_KEY,
+        session_cookie=settings.ADMIN_SESSION_COOKIE_NAME,
+        same_site=settings.ADMIN_SESSION_COOKIE_SAMESITE,
+        https_only=settings.ADMIN_SESSION_COOKIE_SECURE,
+        max_age=settings.ADMIN_SESSION_MAX_AGE,
+    )
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.ALLOWED_HOSTS)
 
     # Rate Limiting
     app.state.limiter = limiter
@@ -137,11 +154,13 @@ def create_app() -> FastAPI:
             "X-API-Key",
             "X-Request-ID",
             "Accept-Language",
+            "X-Internal-Access-Token",
         ],
         expose_headers=["X-Request-ID", "X-Process-Time-Ms"],
     )
 
     # Middleware
+    app.add_middleware(RuntimeAccessMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(TimingMiddleware)
     app.add_middleware(RequestIDMiddleware)
